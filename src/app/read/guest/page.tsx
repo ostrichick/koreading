@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/contexts/AuthContext';
 import { lookupWord, TOPICS } from '@/lib/gemini';
@@ -37,10 +37,22 @@ export default function GuestReadPage() {
   const [readingDone, setReadingDone] = useState(false);
   const [signingIn, setSigningIn] = useState(false);
 
+  // Hover lookup state
+  const [hoverLookup, setHoverLookup] = useState(false);
+  const hoverTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+
   useEffect(() => {
+    // Load hover preference from localStorage
+    const savedHover = localStorage.getItem('koreading_hover_lookup') === 'true';
+    setHoverLookup(savedHover);
+
     const a = getGuestArticle();
     if (!a) { router.push('/library'); return; }
     setArticle(a);
+
+    return () => {
+      if (hoverTimeoutRef.current) clearTimeout(hoverTimeoutRef.current);
+    };
   }, [router]);
 
   const handleWordClick = useCallback(async (word: string, sentence: string) => {
@@ -55,10 +67,31 @@ export default function GuestReadPage() {
     finally { setLoadingWord(false); }
   }, [profile]);
 
+  // Debounced Hover Handler
+  const handleWordMouseEnter = (word: string, sentence: string) => {
+    if (!hoverLookup) return;
+    if (hoverTimeoutRef.current) clearTimeout(hoverTimeoutRef.current);
+    
+    hoverTimeoutRef.current = setTimeout(() => {
+      handleWordClick(word, sentence);
+    }, 250); // REST threshold delay to trigger dictionary
+  };
+
+  const handleWordMouseLeave = () => {
+    if (hoverTimeoutRef.current) {
+      clearTimeout(hoverTimeoutRef.current);
+      hoverTimeoutRef.current = null;
+    }
+  };
+
+  const closePopup = () => {
+    setWordData(null);
+    setLoadingWord(false);
+  };
+
   const handleSaveWord = async () => {
     if (!wordData) return;
     if (!user) {
-      // Not logged in → show login prompt instead
       setWordData(null);
       setShowLoginModal(true);
       return;
@@ -76,12 +109,12 @@ export default function GuestReadPage() {
         articleTitle: article?.title || '',
       });
       setSavedWords(prev => new Set([...prev, wordData.word]));
-      setWordData(null);
+      closePopup();
     } catch (e) { console.error(e); }
   };
 
   const handleDoneReading = () => {
-    const count = incrementGuestReadCount();
+    incrementGuestReadCount();
     setReadingDone(true);
     setShowLoginModal(true);
   };
@@ -106,6 +139,27 @@ export default function GuestReadPage() {
 
   return (
     <div style={{ minHeight: '100vh', padding: '40px 24px' }}>
+      {/* Styles inject */}
+      <style>{`
+        @keyframes skeleton-pulse {
+          0% {
+            background-color: var(--border-subtle);
+            opacity: 0.6;
+          }
+          50% {
+            background-color: var(--border-medium);
+            opacity: 1;
+          }
+          100% {
+            background-color: var(--border-subtle);
+            opacity: 0.6;
+          }
+        }
+        .skeleton {
+          animation: skeleton-pulse 1.4s ease-in-out infinite;
+        }
+      `}</style>
+
       <div className="container" style={{ maxWidth: '760px' }}>
         {/* Breadcrumb */}
         <div style={{ display: 'flex', gap: '8px', alignItems: 'center', marginBottom: '24px', fontSize: '0.8rem', color: 'var(--text-muted)' }}>
@@ -131,9 +185,56 @@ export default function GuestReadPage() {
           <p style={{ color: 'var(--text-secondary)', fontSize: '0.875rem', fontStyle: 'italic' }}>{article.summary}</p>
         </div>
 
-        {/* Tip */}
-        <div style={{ background: 'rgba(99,102,241,0.08)', border: '1px solid var(--border-medium)', borderRadius: 'var(--radius-md)', padding: '12px 16px', marginBottom: '32px', fontSize: '0.8rem', color: 'var(--text-secondary)', display: 'flex', alignItems: 'center', gap: '8px' }}>
-          💡 모르는 단어를 <strong style={{ color: 'var(--accent-primary)' }}>클릭</strong>하면 사전과 번역이 표시됩니다.
+        {/* Settings Toggle Bar */}
+        <div style={{
+          display: 'flex',
+          justifyContent: 'space-between',
+          alignItems: 'center',
+          gap: '12px',
+          marginBottom: '24px',
+          background: 'var(--bg-card)',
+          border: '1px solid var(--border-subtle)',
+          borderRadius: 'var(--radius-md)',
+          padding: '10px 16px',
+        }}>
+          <span style={{ fontSize: '0.85rem', color: 'var(--text-muted)', display: 'flex', alignItems: 'center', gap: '6px' }}>
+            💡 모르는 단어를 클릭하면 사전이 뜹니다.
+          </span>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+            <span style={{ fontSize: '0.85rem', fontWeight: 600, color: 'var(--text-secondary)' }}>
+              🔍 마우스 오버로 즉시 검색
+            </span>
+            <button
+              onClick={() => {
+                const next = !hoverLookup;
+                setHoverLookup(next);
+                localStorage.setItem('koreading_hover_lookup', String(next));
+              }}
+              style={{
+                position: 'relative',
+                width: '46px',
+                height: '24px',
+                borderRadius: '100px',
+                background: hoverLookup ? 'var(--accent-primary)' : 'var(--border-medium)',
+                border: 'none',
+                cursor: 'pointer',
+                transition: 'background-color 200ms ease',
+                padding: 0,
+              }}
+            >
+              <div style={{
+                position: 'absolute',
+                top: '3px',
+                left: hoverLookup ? '25px' : '3px',
+                width: '18px',
+                height: '18px',
+                borderRadius: '50%',
+                background: 'white',
+                boxShadow: 'var(--shadow-sm)',
+                transition: 'left 200ms cubic-bezier(0.4, 0, 0.2, 1)',
+              }} />
+            </button>
+          </div>
         </div>
 
         {/* Key vocabulary */}
@@ -142,7 +243,24 @@ export default function GuestReadPage() {
             <div style={{ fontSize: '0.75rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.1em', color: 'var(--text-muted)', marginBottom: '12px' }}>핵심 어휘</div>
             <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
               {article.keyVocabulary.map((word: string, i: number) => (
-                <button key={i} onClick={() => handleWordClick(word, article.content)} style={{ background: savedWords.has(word) ? 'rgba(16,185,129,0.15)' : 'var(--bg-secondary)', border: '1px solid', borderColor: savedWords.has(word) ? 'rgba(16,185,129,0.4)' : 'var(--border-subtle)', color: savedWords.has(word) ? '#10b981' : 'var(--text-primary)', padding: '6px 14px', borderRadius: '100px', fontSize: '0.875rem', cursor: 'pointer', fontFamily: 'Noto Sans KR, sans-serif', transition: 'all 150ms ease' }}>
+                <button
+                  key={i}
+                  onClick={() => handleWordClick(word, article.content)}
+                  onMouseEnter={() => handleWordMouseEnter(word, article.content)}
+                  onMouseLeave={handleWordMouseLeave}
+                  style={{
+                    background: savedWords.has(word) ? 'rgba(16,185,129,0.15)' : 'var(--bg-secondary)',
+                    border: '1px solid',
+                    borderColor: savedWords.has(word) ? 'rgba(16,185,129,0.4)' : 'var(--border-subtle)',
+                    color: savedWords.has(word) ? '#10b981' : 'var(--text-primary)',
+                    padding: '6px 14px',
+                    borderRadius: '100px',
+                    fontSize: '0.875rem',
+                    cursor: 'pointer',
+                    fontFamily: 'Noto Sans KR, sans-serif',
+                    transition: 'all 150ms ease'
+                  }}
+                >
                   {word}
                 </button>
               ))}
@@ -158,7 +276,16 @@ export default function GuestReadPage() {
               <p key={pIdx} style={{ fontFamily: 'Noto Sans KR, sans-serif', fontSize: '1.1rem', lineHeight: 2.2, marginBottom: '20px', color: 'var(--text-primary)' }}>
                 {tokens.map((token, tIdx) =>
                   isKoreanWord(token) ? (
-                    <span key={tIdx} className={`reading-word ${savedWords.has(token) ? 'saved' : ''}`} onClick={() => handleWordClick(token, paragraph)} title="클릭하여 뜻 보기">{token}</span>
+                    <span
+                      key={tIdx}
+                      className={`reading-word ${savedWords.has(token) ? 'saved' : ''}`}
+                      onClick={() => handleWordClick(token, paragraph)}
+                      onMouseEnter={() => handleWordMouseEnter(token, paragraph)}
+                      onMouseLeave={handleWordMouseLeave}
+                      title="클릭/오버하여 뜻 보기"
+                    >
+                      {token}
+                    </span>
                   ) : (
                     <span key={tIdx}>{token}</span>
                   )
@@ -179,14 +306,39 @@ export default function GuestReadPage() {
         )}
       </div>
 
-      {/* Word Popup */}
+      {/* Word Popup with Skeletons */}
       {(loadingWord || wordData) && (
-        <div className="word-popup-overlay" onClick={e => { if (e.target === e.currentTarget) setWordData(null); }}>
-          <div className="word-popup">
+        <div className="word-popup-overlay" onClick={e => { if (e.target === e.currentTarget) closePopup(); }}>
+          <div className="word-popup" style={{ minHeight: '380px', display: 'flex', flexDirection: 'column' }}>
             {loadingWord ? (
-              <div className="loading-wrapper" style={{ padding: '40px' }}>
-                <div className="loading-spinner" />
-                <span style={{ color: 'var(--text-muted)', fontSize: '0.875rem' }}>단어 검색 중...</span>
+              <div style={{ padding: '8px 4px' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '24px' }}>
+                  <div style={{ width: '80%' }}>
+                    <div className="skeleton" style={{ width: '55%', height: '28px', marginBottom: '10px', borderRadius: '6px' }} />
+                    <div className="skeleton" style={{ width: '30%', height: '14px', borderRadius: '4px' }} />
+                  </div>
+                  <button className="word-popup-close" onClick={closePopup}>✕</button>
+                </div>
+
+                <div className="skeleton" style={{ width: '18%', height: '18px', marginBottom: '24px', borderRadius: '4px' }} />
+
+                <div style={{ marginBottom: '20px' }}>
+                  <div className="skeleton" style={{ width: '35%', height: '12px', marginBottom: '10px', borderRadius: '4px' }} />
+                  <div className="skeleton" style={{ width: '92%', height: '16px', borderRadius: '4px' }} />
+                </div>
+
+                <div style={{ marginBottom: '24px' }}>
+                  <div className="skeleton" style={{ width: '40%', height: '12px', marginBottom: '10px', borderRadius: '4px' }} />
+                  <div className="skeleton" style={{ width: '85%', height: '16px', borderRadius: '4px' }} />
+                </div>
+
+                <div>
+                  <div className="skeleton" style={{ width: '25%', height: '12px', marginBottom: '12px', borderRadius: '4px' }} />
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                    <div className="skeleton" style={{ width: '95%', height: '14px', borderRadius: '4px' }} />
+                    <div className="skeleton" style={{ width: '60%', height: '12px', borderRadius: '4px' }} />
+                  </div>
+                </div>
               </div>
             ) : wordData && (
               <>
@@ -195,7 +347,7 @@ export default function GuestReadPage() {
                     <div className="word-popup-word">{wordData.word}</div>
                     <div className="word-popup-pronunciation">[{wordData.pronunciation}]</div>
                   </div>
-                  <button className="word-popup-close" onClick={() => setWordData(null)}>✕</button>
+                  <button className="word-popup-close" onClick={closePopup}>✕</button>
                 </div>
                 <span className="word-popup-pos">{wordData.partOfSpeech}</span>
                 <div className="word-popup-section">
