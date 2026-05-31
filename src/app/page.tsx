@@ -7,55 +7,54 @@ import Image from 'next/image';
 import { useAuth } from '@/contexts/AuthContext';
 import { getGuestLevel } from '@/lib/storage';
 
-// Bilingual text component — shows English, reveals Korean on hover
+// Bilingual text component — shows English, reveals Korean on hover with ZERO layout shifting
 function BilingualText({
   en,
   ko,
-  as: Tag = 'span',
   style = {},
 }: {
   en: string;
   ko: string;
-  as?: keyof JSX.IntrinsicElements;
   style?: React.CSSProperties;
 }) {
   const [hovered, setHovered] = useState(false);
   return (
-    <Tag
+    <span
       onMouseEnter={() => setHovered(true)}
       onMouseLeave={() => setHovered(false)}
       style={{
         cursor: 'default',
+        display: 'grid',
+        gridTemplateColumns: '1fr',
+        gridTemplateRows: '1fr',
         transition: 'all 0.3s ease',
-        display: 'inline-block',
         position: 'relative',
+        alignItems: 'center',
+        justifyContent: 'center',
         ...style,
       }}
     >
       <span style={{
-        display: 'block',
-        transition: 'opacity 0.25s ease, transform 0.25s ease',
+        gridArea: '1 / 1 / 2 / 2',
+        transition: 'opacity 0.25s ease, transform 0.25s ease, visibility 0.25s ease',
         opacity: hovered ? 0 : 1,
-        transform: hovered ? 'translateY(-6px)' : 'translateY(0)',
-        position: hovered ? 'absolute' : 'relative',
-        width: '100%',
-        fontFamily: hovered ? 'Noto Sans KR, sans-serif' : 'inherit',
+        transform: hovered ? 'translateY(-4px)' : 'translateY(0)',
+        visibility: hovered ? 'hidden' : 'visible',
       }}>
         {en}
       </span>
       <span style={{
-        display: 'block',
-        transition: 'opacity 0.25s ease, transform 0.25s ease',
+        gridArea: '1 / 1 / 2 / 2',
+        transition: 'opacity 0.25s ease, transform 0.25s ease, visibility 0.25s ease',
         opacity: hovered ? 1 : 0,
-        transform: hovered ? 'translateY(0)' : 'translateY(6px)',
-        position: hovered ? 'relative' : 'absolute',
-        width: '100%',
-        fontFamily: 'Noto Sans KR, sans-serif',
+        transform: hovered ? 'translateY(0)' : 'translateY(4px)',
+        visibility: hovered ? 'visible' : 'hidden',
         color: 'var(--accent-primary)',
+        fontFamily: 'Noto Sans KR, sans-serif',
       }}>
         {ko}
       </span>
-    </Tag>
+    </span>
   );
 }
 
@@ -134,7 +133,7 @@ export default function HomePage() {
           {/* Logo mark */}
           <div style={{ display: 'flex', justifyContent: 'center', marginBottom: '28px' }}>
             <div style={{ width: '80px', height: '80px', borderRadius: '20px', overflow: 'hidden', boxShadow: '0 0 40px rgba(99,102,241,0.4)', border: '1px solid var(--border-medium)' }}>
-              <Image src="/logo.png" alt="Korider" width={80} height={80} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+              <Image src="/logo.png" alt="Koreading logo" width={80} height={80} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
             </div>
           </div>
 
@@ -157,12 +156,12 @@ export default function HomePage() {
           </p>
 
           {/* Bilingual subtitle */}
-          <div style={{ maxWidth: '640px', margin: '0 auto 48px', lineHeight: 2 }}>
-            <p style={{ fontSize: '1.15rem', color: 'var(--text-secondary)' }}>
-              <BilingualText en="Korider gives you Korean texts perfectly matched to your level." ko="코리더는 당신의 레벨에 딱 맞는 한국어 텍스트를 제공합니다." />{' '}
-              <BilingualText en="Click any word for an instant dictionary lookup." ko="모르는 단어는 클릭 한 번으로 즉시 사전을 확인하세요." />{' '}
+          <div style={{ maxWidth: '640px', margin: '0 auto 48px' }}>
+            <div style={{ fontSize: '1.15rem', color: 'var(--text-secondary)', display: 'flex', flexDirection: 'column', gap: '16px', textAlign: 'center', lineHeight: 1.6 }}>
+              <BilingualText en="Koreading gives you Korean texts perfectly matched to your level." ko="코리딩은 당신의 레벨에 딱 맞는 한국어 텍스트를 제공합니다." />
+              <BilingualText en="Click any word for an instant dictionary lookup." ko="모르는 단어는 클릭 한 번으로 즉시 사전을 확인하세요." />
               <BilingualText en="No login needed to start." ko="시작하는 데 로그인이 필요 없어요." />
-            </p>
+            </div>
           </div>
 
           {/* CTA */}
@@ -217,9 +216,9 @@ export default function HomePage() {
           <h2 style={{ fontSize: '1.8rem', fontWeight: 900, marginBottom: '16px' }}>
             Ready to read Korean?
           </h2>
-          <p style={{ color: 'var(--text-secondary)', marginBottom: '32px' }}>
+          <div style={{ color: 'var(--text-secondary)', marginBottom: '32px', display: 'flex', justifyContent: 'center' }}>
             <BilingualText en="Take a 5-minute level test and start reading immediately." ko="5분 레벨 테스트로 바로 시작하세요." />
-          </p>
+          </div>
           <Link href="/test" className="btn btn-primary btn-lg">
             🚀 Start for Free
           </Link>
@@ -229,8 +228,8 @@ export default function HomePage() {
       {/* ── Footer ── */}
       <footer style={{ padding: '28px 24px', borderTop: '1px solid var(--border-subtle)', textAlign: 'center', color: 'var(--text-muted)', fontSize: '0.8rem' }}>
         <div className="container" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px' }}>
-          <Image src="/logo.png" alt="Korider" width={20} height={20} style={{ borderRadius: '4px', opacity: 0.6 }} />
-          Korider — Korean Reading for Every Level
+          <Image src="/logo.png" alt="Koreading logo" width={20} height={20} style={{ borderRadius: '4px', opacity: 0.6 }} />
+          Koreading — Korean Reading for Every Level
         </div>
       </footer>
     </div>

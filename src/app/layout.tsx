@@ -4,8 +4,11 @@ import { AuthProvider } from '@/contexts/AuthContext';
 import NavBar from '@/components/NavBar';
 
 export const metadata: Metadata = {
-  title: 'Korider — Korean Reading for Every Level',
+  title: 'Koreading — Korean Reading for Every Level',
   description: 'Read Korean texts perfectly matched to your level. Click any word for instant definitions, examples, and translations.',
+  icons: {
+    icon: '/logo.png',
+  },
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {

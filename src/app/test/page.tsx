@@ -70,10 +70,21 @@ export default function TestPage() {
       if (currentQIdx + 1 < level.questions.length) {
         setCurrentQIdx(prev => prev + 1);
       } else {
-        if (currentLevelIdx + 1 < (testData?.levels.length || 0)) {
+        // Finished all questions for this level. Check if they passed this level (>= 50% correct)
+        const currentLevelAnswers = newAnswers[level.level] || [];
+        const score = currentLevelAnswers.reduce((a, b) => a + b, 0) / (currentLevelAnswers.length || 1);
+
+        if (score < 0.5) {
+          // If they failed the current level, stop immediately and calculate final level
+          const result = calculateLevel(newAnswers);
+          setResultLevel(result);
+          setStep('done');
+        } else if (currentLevelIdx + 1 < (testData?.levels.length || 0)) {
+          // If they passed and there is a next level, proceed
           setCurrentLevelIdx(prev => prev + 1);
           setCurrentQIdx(0);
         } else {
+          // Finished all levels
           const result = calculateLevel(newAnswers);
           setResultLevel(result);
           setStep('done');

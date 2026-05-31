@@ -48,11 +48,12 @@ Return a JSON object ONLY (no markdown):
   "keyVocabulary": ["word1", "word2", "word3", "word4", "word5"]
 }`;
 
-      const result = await model.generateContent(prompt);
+      const result = await model.generateContent({
+        contents: [{ role: 'user', parts: [{ text: prompt }] }],
+        generationConfig: { responseMimeType: 'application/json' }
+      });
       const text = result.response.text();
-      const jsonMatch = text.match(/\{[\s\S]*\}/);
-      if (!jsonMatch) throw new Error('Failed to parse article');
-      return NextResponse.json(JSON.parse(jsonMatch[0]));
+      return NextResponse.json(JSON.parse(text));
 
     } else if (action === 'lookupWord') {
       const langName = nativeLang === 'es' ? 'Spanish' : 'English';
@@ -77,11 +78,12 @@ Return JSON ONLY (no markdown):
   "level": "CEFR level (A1/A2/B1/B2/C1/C2)"
 }`;
 
-      const result = await model.generateContent(prompt);
+      const result = await model.generateContent({
+        contents: [{ role: 'user', parts: [{ text: prompt }] }],
+        generationConfig: { responseMimeType: 'application/json' }
+      });
       const text = result.response.text();
-      const jsonMatch = text.match(/\{[\s\S]*\}/);
-      if (!jsonMatch) throw new Error('Failed to parse word lookup');
-      return NextResponse.json(JSON.parse(jsonMatch[0]));
+      return NextResponse.json(JSON.parse(text));
 
     } else if (action === 'generateTest') {
       const prompt = `Create a Korean reading placement test with texts for 5 levels.
@@ -102,11 +104,12 @@ Return JSON ONLY (no markdown, no code blocks):
 
 Include levels: A1, A2, B1, B2, C1. Korean texts only in the text field.`;
 
-      const result = await model.generateContent(prompt);
+      const result = await model.generateContent({
+        contents: [{ role: 'user', parts: [{ text: prompt }] }],
+        generationConfig: { responseMimeType: 'application/json' }
+      });
       const text = result.response.text();
-      const jsonMatch = text.match(/\{[\s\S]*\}/);
-      if (!jsonMatch) throw new Error('Failed to parse test');
-      return NextResponse.json(JSON.parse(jsonMatch[0]));
+      return NextResponse.json(JSON.parse(text));
     }
 
     return NextResponse.json({ error: 'Unknown action' }, { status: 400 });

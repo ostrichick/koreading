@@ -43,8 +43,8 @@ export default function NavBar() {
     <nav className="nav">
       <div className="container nav-inner">
         <Link href="/" className="nav-logo">
-          <Image src="/logo.png" alt="Korider logo" width={32} height={32} style={{ borderRadius: '8px' }} />
-          Korider
+          <Image src="/logo.png" alt="Koreading logo" width={32} height={32} style={{ borderRadius: '8px' }} />
+          Koreading
         </Link>
 
         <div className="nav-links">
