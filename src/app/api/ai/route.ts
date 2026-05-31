@@ -137,12 +137,17 @@ Return a JSON object ONLY (no markdown):
 Look up the Korean word: "${word}"
 Context sentence: "${sentence}"
 
+CRITICAL HARD CONSTRAINTS:
+1. The "definition" field MUST be written in 100% PURE KOREAN characters (한글). Absolutely do NOT use Japanese (日本語), English, Chinese characters (漢字), or any other foreign languages in the "definition" field.
+2. The "partOfSpeech" field must be written in Korean (e.g. 명사, 동사, 형용사, 부사, 조사, 어미).
+3. The "translation" field must be in ${langName}.
+
 Return JSON ONLY (no markdown):
 {
   "word": "${word}",
   "pronunciation": "romanization",
   "partOfSpeech": "품사 in Korean",
-  "definition": "Korean definition",
+  "definition": "Korean definition (Must be 100% pure Korean)",
   "translation": "Translation in ${langName}",
   "level": "CEFR level (A1/A2/B1/B2/C1/C2)"
 }`;
@@ -155,9 +160,14 @@ Return JSON ONLY (no markdown):
 Analyze the word: "${word}"
 In the context sentence: "${sentence}"
 
+CRITICAL HARD CONSTRAINTS:
+1. The "structure" field MUST be written in 100% PURE KOREAN characters (한글). Absolutely do NOT use Japanese (日本語), English, Chinese characters (漢字), or any other foreign languages in the "structure" field.
+2. The "korean" field in the "examples" array must be in 100% PURE KOREAN.
+3. The "translation" field in the "examples" array must be in ${langName}.
+
 Return JSON ONLY (no markdown):
 {
-  "structure": "How the word is formed/conjugated in Korean (e.g., for '다녀왔습니다', write '동사 다니다 + 오다 + -었습니다 / -습니다' showing grammatical particles, endings, auxiliary verbs, or compounds. Keep it concise, educational and clear in Korean)",
+  "structure": "How the word is formed/conjugated in Korean (e.g., for '다녀왔습니다', write '동사 다니다 + 오다 + -었습니다 / -습니다' showing grammatical particles, endings, auxiliary verbs, or compounds. Keep it concise, educational and clear in Korean, written strictly in pure Korean)",
   "examples": [
     {"korean": "example sentence 1 using the word in correct context", "translation": "translation in ${langName}"},
     {"korean": "example sentence 2", "translation": "translation 2"},
@@ -171,6 +181,10 @@ Return JSON ONLY (no markdown):
 
     } else if (action === 'generateTest') {
       const prompt = `Create a Korean reading placement test with texts for 5 levels.
+
+CRITICAL HARD CONSTRAINTS:
+1. The "text" field MUST be in 100% PURE KOREAN. Absolutely no Japanese or other foreign characters.
+2. Questions and options must be in English.
 
 Return JSON ONLY (no markdown, no code blocks):
 {
