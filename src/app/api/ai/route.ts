@@ -8,7 +8,43 @@ if (!process.env.GEMINI_API_KEY) {
 }
 
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || '');
-const model = genAI.getGenerativeModel({ model: 'gemini-2.5-flash' });
+const model25 = genAI.getGenerativeModel({ model: 'gemini-2.5-flash' });
+const model15 = genAI.getGenerativeModel({ model: 'gemini-1.5-flash' });
+
+/**
+ * Helper to call Gemini 2.5-flash with an automatic robust fallback to Gemini 1.5-flash
+ * if the 20 requests/day free tier quota limit is exceeded (429 Too Many Requests).
+ */
+async function generateWithFallback(prompt: string, responseMimeType?: string) {
+  const config = responseMimeType ? { responseMimeType } : undefined;
+  
+  // Try 1: Gemini 2.5-flash (primary, daily quota: 20)
+  try {
+    const result = await model25.generateContent({
+      contents: [{ role: 'user', parts: [{ text: prompt }] }],
+      generationConfig: config
+    });
+    return result.response.text();
+  } catch (err: any) {
+    const msg = err?.message || String(err);
+    console.warn(`[Gemini 2.5-flash error, attempting fallback to 1.5-flash]: ${msg}`);
+    
+    // Try 2: Gemini 1.5-flash (fallback, daily quota: 1500)
+    try {
+      const result = await model15.generateContent({
+        contents: [{ role: 'user', parts: [{ text: prompt }] }],
+        generationConfig: config
+      });
+      return result.response.text();
+    } catch (fallbackErr: any) {
+      const fallbackMsg = fallbackErr?.message || String(fallbackErr);
+      console.error(`❌ Gemini 1.5-flash fallback also failed: ${fallbackMsg}`);
+      
+      // Throw the primary error to show detailed diagnostic quota information if both failed
+      throw err;
+    }
+  }
+}
 
 export async function POST(req: NextRequest) {
   try {
@@ -48,11 +84,7 @@ Return a JSON object ONLY (no markdown):
   "keyVocabulary": ["word1", "word2", "word3", "word4", "word5"]
 }`;
 
-      const result = await model.generateContent({
-        contents: [{ role: 'user', parts: [{ text: prompt }] }],
-        generationConfig: { responseMimeType: 'application/json' }
-      });
-      const text = result.response.text();
+      const text = await generateWithFallback(prompt, 'application/json');
       return NextResponse.json(JSON.parse(text));
 
     } else if (action === 'lookupWord') {
@@ -75,11 +107,7 @@ Return JSON ONLY (no markdown):
   "level": "CEFR level (A1/A2/B1/B2/C1/C2)"
 }`;
 
-        const result = await model.generateContent({
-          contents: [{ role: 'user', parts: [{ text: prompt }] }],
-          generationConfig: { responseMimeType: 'application/json' }
-        });
-        const text = result.response.text();
+        const text = await generateWithFallback(prompt, 'application/json');
         return NextResponse.json(JSON.parse(text));
       } else {
         const prompt = `You are a Korean grammar and linguistics expert.
@@ -97,11 +125,7 @@ Return JSON ONLY (no markdown):
   ]
 }`;
 
-        const result = await model.generateContent({
-          contents: [{ role: 'user', parts: [{ text: prompt }] }],
-          generationConfig: { responseMimeType: 'application/json' }
-        });
-        const text = result.response.text();
+        const text = await generateWithFallback(prompt, 'application/json');
         return NextResponse.json(JSON.parse(text));
       }
 
@@ -124,11 +148,7 @@ Return JSON ONLY (no markdown, no code blocks):
 
 Include levels: A1, A2, B1, B2, C1. Korean texts only in the text field.`;
 
-      const result = await model.generateContent({
-        contents: [{ role: 'user', parts: [{ text: prompt }] }],
-        generationConfig: { responseMimeType: 'application/json' }
-      });
-      const text = result.response.text();
+      const text = await generateWithFallback(prompt, 'application/json');
       return NextResponse.json(JSON.parse(text));
     }
 
