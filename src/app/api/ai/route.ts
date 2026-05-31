@@ -112,11 +112,12 @@ CRITICAL HARD CONSTRAINTS (CRITICAL FOR LLAMA ACCURACY):
 3. i+1 Principle Restriction: When challenging the learner (10% new vocabulary), use SLIGHTLY ADVANCED KOREAN WORDS (어려운 한국어 단어), NEVER foreign words or other languages. The entire text must read as natural, correct, 100% pure Korean.
 4. Sentences structure constraint:
 - ${levelConfig[level as CEFRLevel]}
+5. Paragraph Structure Constraint: Write the text in proper paragraphs. Each paragraph MUST contain multiple naturally connected sentences (at least 3-4 sentences per paragraph, except possibly for very short A1/A2 texts which should still be structured as a solid paragraph of 4-6 sentences, not single-sentence lines separated by newlines). Absolutely do NOT write the text as single-sentence lines or put a newline after every single sentence.
 
 Return a JSON object ONLY (no markdown):
 {
   "title": "텍스트 제목 (Must be 100% pure Korean)",
-  "content": "전체 텍스트 내용 (Must be 100% natural and pure Korean, separated by newlines for paragraphs)",
+  "content": "전체 텍스트 내용 (Must be 100% natural and pure Korean, structured into coherent paragraphs with multiple sentences each)",
   "summary": "One sentence summary in ${langNote}",
   "topicCategory": "${topic}",
   "level": "${level}",
