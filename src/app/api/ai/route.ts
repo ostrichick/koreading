@@ -48,6 +48,7 @@ export async function POST(req: NextRequest) {
             },
             body: JSON.stringify({
               model: 'llama-3.3-70b-versatile',
+              temperature: 0.1, // Set extremely low temperature to force strict instruction compliance!
               messages: [
                 { role: 'system', content: systemInstruction },
                 { role: 'user', content: prompt }
@@ -67,7 +68,10 @@ export async function POST(req: NextRequest) {
       }
 
       // 2. Fallback to Gemini 2.5-flash/1.5-flash (primary, daily quota: 20 on free tier)
-      const config = responseMimeType ? { responseMimeType } : undefined;
+      const config = {
+        temperature: 0.1, // Set extremely low temperature to force strict instruction compliance!
+        responseMimeType: responseMimeType === 'application/json' ? 'application/json' : undefined
+      };
       try {
         const result = await model25.generateContent({
           contents: [{ role: 'user', parts: [{ text: prompt }] }],
@@ -111,8 +115,8 @@ CEFR ${level} 레벨의 한국어 학습자를 위한 "${topicLabel}" 주제의 
 
 [절대 준수해야 하는 강한 제약 조건 (CRITICAL)]:
 1. "title"과 "content" 필드는 반드시 100% 순수한 한글(한국어 문자)로만 작성해야 합니다.
-2. 절대 본문("content")이나 제목("title")에 영어, 스페인어, 한자(漢字), 일본어, 터키어, 힌디어, 베트남어 등 그 어떤 외국어 문자, 알파벳, 단어(예: domestic, countries, 影響力, 需求, ülk 등)도 단 한 글자도 포함해서는 안 됩니다. 100% 완벽한 한글로만 구성해야 합니다.
-3. 100% 순수 한국어 제약: 어려운 어휘를 설명하거나 수준 높은 어휘를 제공할 때도 반드시 그에 매칭되는 적절한 한국어 어휘를 한글로 사용해야 하며, 외국어 알파벳이나 타국 문자를 괄호 등으로 섞어 쓰지 마십시오.
+2. 절대 본문("content")이나 제목("title")에 영어, 스페인어, 한자(漢字/简繁体字), 일본어(日本語/かな/カナ), 러시아어, 터키어, 힌디어, 베트남어 등 그 어떤 외국어 문자, 알파벳, 단어(예: domestic, countries, 影響力, 需求, ülk, contexto, изуч, 过程, 技术, 吸收, 世界, 보는 -> 見る 등)도 단 한 글자도 포함해서는 안 됩니다. 100% 완벽한 한글로만 구성해야 합니다.
+3. 100% 순수 한국어 제약: 어려운 어휘를 설명하거나 학습 자료를 구성할 때, 괄호 속 번역이나 외국어 주석(예: '맥락(contexto)' 또는 '공부(изуч)하다' 또는 '건강(健康)' 등)을 절대로 본문에 집어넣지 마십시오. 모든 단어는 괄호나 번역 표기 없이 100% 순수한 한글 단어(예: '맥락', '공부', '건강')로만 문장 속에 자연스럽게 녹여내야 합니다. 번역 설명용 외래 문자는 절대 금지입니다.
 4. 문장 구조 제약 조건:
 - ${levelConfig[level as CEFRLevel]}
 5. 본문은 한 문장마다 줄바꿈을 하지 말고, 3~4개 이상의 문장이 자연스럽게 연결된 완성도 높은 문단(Paragraph)으로 구성해 주세요. (A1/A2 레벨의 경우에도 4~6개의 문장이 하나의 유기적인 문단으로 묶여 있어야 합니다.)
