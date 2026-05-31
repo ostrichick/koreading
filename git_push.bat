@@ -1,6 +1,6 @@
 @echo off
 set GIT="C:\Program Files\Git\bin\git.exe"
 %GIT% add -A
-%GIT% commit -m "feat: add debounced hover-lookup settings toggle and premium pulsing skeleton loaders in dictionary modals"
+%GIT% commit -m "feat: display grammatical word structure analysis with skeleton pulses in lookup popup card"
 %GIT% push origin main
 echo PUSH_DONE

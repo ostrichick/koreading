@@ -11,6 +11,7 @@ interface WordData {
   word: string;
   pronunciation: string;
   partOfSpeech: string;
+  structure?: string;
   definition: string;
   translation: string;
   examples: { korean: string; translation: string }[];
@@ -322,6 +323,12 @@ export default function GuestReadPage() {
 
                 <div className="skeleton" style={{ width: '18%', height: '18px', marginBottom: '24px', borderRadius: '4px' }} />
 
+                {/* Pulsing Structure Section */}
+                <div style={{ marginBottom: '20px' }}>
+                  <div className="skeleton" style={{ width: '45%', height: '12px', marginBottom: '10px', borderRadius: '4px' }} />
+                  <div className="skeleton" style={{ width: '88%', height: '16px', borderRadius: '4px' }} />
+                </div>
+
                 <div style={{ marginBottom: '20px' }}>
                   <div className="skeleton" style={{ width: '35%', height: '12px', marginBottom: '10px', borderRadius: '4px' }} />
                   <div className="skeleton" style={{ width: '92%', height: '16px', borderRadius: '4px' }} />
@@ -350,6 +357,18 @@ export default function GuestReadPage() {
                   <button className="word-popup-close" onClick={closePopup}>✕</button>
                 </div>
                 <span className="word-popup-pos">{wordData.partOfSpeech}</span>
+
+                {wordData.structure && (
+                  <div className="word-popup-section" style={{ background: 'rgba(99,102,241,0.05)', borderRadius: 'var(--radius-sm)', padding: '12px 16px', border: '1px solid rgba(99,102,241,0.1)', marginBottom: '20px' }}>
+                    <div className="word-popup-section-title" style={{ color: 'var(--accent-primary)', display: 'flex', alignItems: 'center', gap: '6px', fontWeight: 700 }}>
+                      🧱 단어 구조 분석 (Word Structure)
+                    </div>
+                    <div style={{ fontSize: '0.9rem', fontWeight: 600, color: 'var(--text-primary)', fontFamily: 'Noto Sans KR, sans-serif', marginTop: '6px', lineHeight: 1.5 }}>
+                      {wordData.structure}
+                    </div>
+                  </div>
+                )}
+
                 <div className="word-popup-section">
                   <div className="word-popup-section-title">📖 한국어 정의</div>
                   <div className="word-popup-definition">{wordData.definition}</div>

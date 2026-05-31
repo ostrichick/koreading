@@ -68,6 +68,7 @@ Return JSON ONLY (no markdown):
   "word": "${word}",
   "pronunciation": "romanization",
   "partOfSpeech": "품사 in Korean",
+  "structure": "How the word is formed/conjugated in Korean (e.g., for '다녀왔습니다', write '동사 다니다 + 오다 + -었습니다 / -습니다' showing grammatical particles, endings, auxiliary verbs, or compounds. Keep it concise, educational and clear in Korean)",
   "definition": "Korean definition",
   "translation": "Translation in ${langName}",
   "examples": [
