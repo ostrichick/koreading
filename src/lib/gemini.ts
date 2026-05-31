@@ -29,8 +29,9 @@ async function callAI(body: object) {
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(body),
   });
-  if (!res.ok) throw new Error('AI request failed');
-  return res.json();
+  const data = await res.json();
+  if (!res.ok) throw new Error(data.detail || data.error || 'AI request failed');
+  return data;
 }
 
 export async function generateArticle(level: CEFRLevel, topic: string, nativeLang: NativeLanguage) {

@@ -3,8 +3,12 @@ import { GoogleGenerativeAI } from '@google/generative-ai';
 import type { CEFRLevel, NativeLanguage } from '@/lib/gemini';
 import { TOPICS } from '@/lib/gemini';
 
+if (!process.env.GEMINI_API_KEY) {
+  console.error('❌ GEMINI_API_KEY is not set!');
+}
+
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || '');
-const model = genAI.getGenerativeModel({ model: 'gemini-1.5-flash' });
+const model = genAI.getGenerativeModel({ model: 'gemini-2.0-flash' });
 
 export async function POST(req: NextRequest) {
   try {
@@ -106,8 +110,12 @@ Include levels: A1, A2, B1, B2, C1. Korean texts only in the text field.`;
     }
 
     return NextResponse.json({ error: 'Unknown action' }, { status: 400 });
-  } catch (err) {
-    console.error('Gemini API error:', err);
-    return NextResponse.json({ error: 'AI request failed' }, { status: 500 });
+  } catch (err: any) {
+    const message = err?.message || String(err);
+    console.error('Gemini API error:', message);
+    return NextResponse.json(
+      { error: 'AI request failed', detail: message, hasKey: !!process.env.GEMINI_API_KEY },
+      { status: 500 }
+    );
   }
 }

@@ -47,9 +47,9 @@ export default function TestPage() {
       const data = await generatePlacementTest();
       setTestData(data);
       setStep('testing');
-    } catch {
+    } catch (err: any) {
       setStep('intro');
-      alert('테스트 로딩에 실패했습니다. 다시 시도해주세요.');
+      alert(`테스트 로딩 실패: ${err?.message || JSON.stringify(err)}`);
     }
   };
 
