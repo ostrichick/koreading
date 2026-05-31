@@ -27,9 +27,10 @@ export async function POST(req: NextRequest) {
       );
     }
 
+    const systemInstruction = 'You are an expert Korean linguist and language teacher. You must strictly follow all instructions. You must NEVER output Japanese (日本語, Hiragana, Katakana, Kanji, or Japanese vocabulary like "食べる") in fields designed for Korean. All fields designated for Korean must be written strictly in 100% pure Korean (한글). When writing the Korean definition or morphological structure, write them 100% in natural and pure Korean (한글), never Japanese.';
     const genAI = new GoogleGenerativeAI(activeApiKey);
-    const model25 = genAI.getGenerativeModel({ model: 'gemini-2.5-flash' });
-    const model15 = genAI.getGenerativeModel({ model: 'gemini-1.5-flash' });
+    const model25 = genAI.getGenerativeModel({ model: 'gemini-2.5-flash', systemInstruction });
+    const model15 = genAI.getGenerativeModel({ model: 'gemini-1.5-flash', systemInstruction });
 
     /**
      * Helper to call AI with primary Groq Llama 3.1 70B and dynamic fallback to Gemini
@@ -47,7 +48,10 @@ export async function POST(req: NextRequest) {
             },
             body: JSON.stringify({
               model: 'llama-3.3-70b-versatile',
-              messages: [{ role: 'user', content: prompt }],
+              messages: [
+                { role: 'system', content: systemInstruction },
+                { role: 'user', content: prompt }
+              ],
               response_format: responseMimeType === 'application/json' ? { type: 'json_object' } : undefined
             })
           });
