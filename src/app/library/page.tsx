@@ -105,10 +105,23 @@ export default function LibraryPage() {
     setGenerating(true);
     try {
       const data = await generateArticle(level, topic, lang);
-      // Always save to Firestore persistently so all readers can see it
-      const id = await saveArticle(data);
-      setShowGenModal(false);
-      router.push(`/read/${id}`);
+      
+      try {
+        // Try saving to Firestore persistently so all readers can see it
+        const id = await saveArticle(data);
+        setShowGenModal(false);
+        router.push(`/read/${id}`);
+      } catch (dbErr: any) {
+        console.warn('Firestore save failed, falling back to local guest storage:', dbErr);
+        // Save locally to sessionStorage for fallback guest reading
+        sessionStorage.setItem('koreading_guest_article', JSON.stringify({ ...data, id: 'guest' }));
+        setShowGenModal(false);
+        
+        // Show a helpful warning explaining the Firebase rule constraint and how to fix it
+        alert('ℹ️ Firebase Database 권한 설정(Missing or insufficient permissions)으로 인해 도서관에 저장되지 못했습니다.\n\n걱정 마세요! 생성된 글은 임시 페이지에 로드되므로 지금 바로 읽으실 수 있습니다.\n\n(영구 저장하여 공유하시려면 Google 로그인 후 글을 생성하시거나, Firebase 콘솔의 Firestore 규칙에서 articles 컬렉션의 write 권한을 허용 [allow read, write: if true;]해 주세요!)');
+        
+        router.push('/read/guest');
+      }
     } catch (err: any) {
       console.error(err);
       alert(`텍스트 생성에 실패했습니다: ${err?.message || JSON.stringify(err)}`);
