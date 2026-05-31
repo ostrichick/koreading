@@ -3,8 +3,9 @@
 import { useState, useEffect, useCallback, use } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/contexts/AuthContext';
-import { getArticleById, markArticleRead, saveVocabulary, getReadArticles, Article } from '@/lib/db';
+import { getArticleById, markArticleRead, saveVocabulary, getReadArticles, Article, saveReview, getReviews, Review } from '@/lib/db';
 import { lookupWord, TOPICS } from '@/lib/gemini';
+import { getGuestLang } from '@/lib/storage';
 
 interface WordData {
   word: string;
@@ -17,7 +18,6 @@ interface WordData {
 }
 
 function tokenizeKorean(text: string): string[] {
-  // Split into words while preserving punctuation
   return text.split(/(\s+|[.!?,。、])/g).filter(t => t.length > 0);
 }
 
@@ -40,37 +40,58 @@ export default function ReadPage({ params }: { params: Promise<{ id: string }> }
   const [isRead, setIsRead] = useState(false);
   const [markingRead, setMarkingRead] = useState(false);
 
+  // Reviews states
+  const [reviews, setReviews] = useState<Review[]>([]);
+  const [rating, setRating] = useState<number>(0);
+  const [hoverRating, setHoverRating] = useState<number>(0);
+  const [pros, setPros] = useState('');
+  const [cons, setCons] = useState('');
+  const [submittingReview, setSubmittingReview] = useState(false);
+  const [hasReviewed, setHasReviewed] = useState(false);
+
   useEffect(() => {
-    if (!user) { router.push('/login'); return; }
     const load = async () => {
       const a = await getArticleById(id);
       if (!a) { router.push('/library'); return; }
       setArticle(a);
-      const readIds = await getReadArticles(user.uid);
-      setIsRead(readIds.includes(id));
+      
+      if (user) {
+        const readIds = await getReadArticles(user.uid);
+        setIsRead(readIds.includes(id));
+      }
+      
+      const list = await getReviews(id);
+      setReviews(list);
       setLoading(false);
     };
     load();
   }, [id, user, router]);
 
   const handleWordClick = useCallback(async (word: string, sentence: string) => {
-    if (!isKoreanWord(word) || !profile?.nativeLanguage) return;
+    if (!isKoreanWord(word)) return;
+    const nativeLang = user ? (profile?.nativeLanguage || 'en') : getGuestLang();
+    if (!nativeLang) return;
+    
     setWordData(null);
     setLoadingWord(true);
     try {
-      const data = await lookupWord(word, sentence, profile.nativeLanguage);
+      const data = await lookupWord(word, sentence, nativeLang);
       setWordData(data);
     } catch (err) {
       console.error(err);
     } finally {
       setLoadingWord(false);
     }
-  }, [profile]);
+  }, [profile, user]);
 
   const closePopup = () => setWordData(null);
 
   const handleSaveWord = async () => {
-    if (!user || !wordData || !article) return;
+    if (!user || !wordData || !article) {
+      alert('단어를 저장하려면 로그인해야 합니다.');
+      router.push('/login');
+      return;
+    }
     setSavingWord(true);
     try {
       await saveVocabulary(user.uid, {
@@ -96,11 +117,49 @@ export default function ReadPage({ params }: { params: Promise<{ id: string }> }
   };
 
   const handleMarkRead = async () => {
-    if (!user || isRead) return;
+    if (!user) {
+      setIsRead(true);
+      return;
+    }
     setMarkingRead(true);
     await markArticleRead(user.uid, id);
     setIsRead(true);
     setMarkingRead(false);
+  };
+
+  const handleSubmitReview = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (rating === 0) {
+      alert('별점을 선택해주세요!');
+      return;
+    }
+    setSubmittingReview(true);
+    try {
+      const name = user?.displayName || '게스트';
+      await saveReview(id, {
+        rating,
+        pros,
+        cons,
+        userDisplayName: name,
+      });
+      setHasReviewed(true);
+      setPros('');
+      setCons('');
+      setRating(0);
+      
+      // Refresh reviews list
+      const list = await getReviews(id);
+      setReviews(list);
+      
+      // Refresh parent article aggregate ratings
+      const updatedArticle = await getArticleById(id);
+      if (updatedArticle) setArticle(updatedArticle);
+    } catch (err) {
+      console.error(err);
+      alert('리뷰 등록에 실패했습니다. 잠시 후 다시 시도해 주세요.');
+    } finally {
+      setSubmittingReview(false);
+    }
   };
 
   if (loading) return (
@@ -113,9 +172,8 @@ export default function ReadPage({ params }: { params: Promise<{ id: string }> }
   if (!article) return null;
 
   const topicInfo = TOPICS.find(t => t.id === article.topicCategory);
-
-  // Tokenize article content into paragraphs and words
   const paragraphs = article.content.split('\n').filter(p => p.trim());
+  const activeNativeLang = user ? (profile?.nativeLanguage || 'en') : getGuestLang();
 
   return (
     <div style={{ minHeight: '100vh', padding: '40px 24px' }}>
@@ -137,6 +195,11 @@ export default function ReadPage({ params }: { params: Promise<{ id: string }> }
               </span>
             )}
             <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>⏱ {article.estimatedMinutes}분</span>
+            {article.averageRating ? (
+              <span style={{ fontSize: '0.75rem', color: '#fbbf24', background: 'rgba(251,191,36,0.1)', padding: '3px 10px', borderRadius: '100px', border: '1px solid rgba(251,191,36,0.3)', fontWeight: 700 }}>
+                ★ {article.averageRating} ({article.ratingCount}개 평가)
+              </span>
+            ) : null}
             {isRead && (
               <span style={{ fontSize: '0.75rem', background: 'rgba(16,185,129,0.15)', color: '#10b981', padding: '3px 10px', borderRadius: '100px', border: '1px solid rgba(16,185,129,0.3)' }}>
                 ✓ 읽음
@@ -233,6 +296,174 @@ export default function ReadPage({ params }: { params: Promise<{ id: string }> }
           })}
         </div>
 
+        {/* Rating and Comment Section */}
+        <div className="card" style={{ marginBottom: '32px', padding: '32px' }}>
+          <h2 style={{ fontSize: '1.25rem', fontWeight: 800, marginBottom: '20px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+            💬 이 읽기 자료에 평가 남기기
+          </h2>
+          
+          {hasReviewed ? (
+            <div style={{ background: 'rgba(16,185,129,0.08)', border: '1px solid rgba(16,185,129,0.2)', borderRadius: 'var(--radius-md)', padding: '16px', color: '#10b981', fontSize: '0.9rem', marginBottom: '24px', fontWeight: 600, textAlign: 'center' }}>
+              🎉 별점과 코멘트가 성공적으로 등록되었습니다. 감사합니다!
+            </div>
+          ) : (
+            <form onSubmit={handleSubmitReview} style={{ marginBottom: '32px' }}>
+              {/* Star Rating Select */}
+              <div style={{ marginBottom: '20px' }}>
+                <label style={{ display: 'block', fontSize: '0.875rem', fontWeight: 600, color: 'var(--text-secondary)', marginBottom: '8px' }}>
+                  별점을 선택해주세요 (필수)
+                </label>
+                <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                  {[1, 2, 3, 4, 5].map(star => {
+                    const active = star <= (hoverRating || rating);
+                    return (
+                      <button
+                        key={star}
+                        type="button"
+                        onClick={() => setRating(star)}
+                        onMouseEnter={() => setHoverRating(star)}
+                        onMouseLeave={() => setHoverRating(0)}
+                        style={{
+                          background: 'none',
+                          border: 'none',
+                          cursor: 'pointer',
+                          fontSize: '2rem',
+                          padding: 0,
+                          color: active ? '#fbbf24' : 'var(--border-medium)',
+                          transition: 'transform 100ms ease, color 150ms ease',
+                          transform: active ? 'scale(1.1)' : 'scale(1)',
+                        }}
+                      >
+                        ★
+                      </button>
+                    );
+                  })}
+                  {rating > 0 && (
+                    <span style={{ fontSize: '0.875rem', color: 'var(--text-muted)', marginLeft: '8px', fontWeight: 600 }}>
+                      {rating}점 / 5점
+                    </span>
+                  )}
+                </div>
+              </div>
+
+              {/* Pros Input */}
+              <div style={{ marginBottom: '16px' }}>
+                <label style={{ display: 'block', fontSize: '0.875rem', fontWeight: 600, color: 'var(--text-secondary)', marginBottom: '8px' }}>
+                  👍 좋았던 점
+                </label>
+                <textarea
+                  value={pros}
+                  onChange={e => setPros(e.target.value)}
+                  placeholder="단어 구성, 흥미로운 주제, 난이도 적절성 등 좋았던 부분을 작성해보세요."
+                  rows={2}
+                  style={{
+                    width: '100%',
+                    padding: '12px',
+                    borderRadius: 'var(--radius-md)',
+                    border: '1px solid var(--border-medium)',
+                    background: 'var(--bg-secondary)',
+                    color: 'var(--text-primary)',
+                    fontFamily: 'inherit',
+                    fontSize: '0.875rem',
+                    resize: 'vertical',
+                    outline: 'none',
+                  }}
+                  onFocus={e => (e.currentTarget.style.borderColor = 'var(--accent-primary)')}
+                  onBlur={e => (e.currentTarget.style.borderColor = 'var(--border-medium)')}
+                />
+              </div>
+
+              {/* Cons Input */}
+              <div style={{ marginBottom: '24px' }}>
+                <label style={{ display: 'block', fontSize: '0.875rem', fontWeight: 600, color: 'var(--text-secondary)', marginBottom: '8px' }}>
+                  👎 아쉬운 점
+                </label>
+                <textarea
+                  value={cons}
+                  onChange={e => setCons(e.target.value)}
+                  placeholder="번역 개선점, 어려운 단어 분포 등 아쉬웠던 부분을 편하게 알려주세요."
+                  rows={2}
+                  style={{
+                    width: '100%',
+                    padding: '12px',
+                    borderRadius: 'var(--radius-md)',
+                    border: '1px solid var(--border-medium)',
+                    background: 'var(--bg-secondary)',
+                    color: 'var(--text-primary)',
+                    fontFamily: 'inherit',
+                    fontSize: '0.875rem',
+                    resize: 'vertical',
+                    outline: 'none',
+                  }}
+                  onFocus={e => (e.currentTarget.style.borderColor = 'var(--accent-primary)')}
+                  onBlur={e => (e.currentTarget.style.borderColor = 'var(--border-medium)')}
+                />
+              </div>
+
+              <button
+                type="submit"
+                disabled={submittingReview || rating === 0}
+                className="btn btn-primary"
+                style={{ width: '100%', justifyContent: 'center' }}
+              >
+                {submittingReview ? '제출 중...' : '별점 및 평가 등록하기'}
+              </button>
+            </form>
+          )}
+
+          <hr style={{ border: 'none', borderTop: '1px solid var(--border-subtle)', margin: '32px 0' }} />
+
+          {/* User Reviews List */}
+          <div>
+            <h3 style={{ fontSize: '1.05rem', fontWeight: 700, marginBottom: '20px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <span>⭐ 독자 평가 ({reviews.length}개)</span>
+              {article.averageRating ? (
+                <span style={{ color: '#fbbf24', fontSize: '1.1rem', fontWeight: 800 }}>
+                  ★ {article.averageRating} / 5.0
+                </span>
+              ) : (
+                <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>평가 없음</span>
+              )}
+            </h3>
+
+            {reviews.length === 0 ? (
+              <div style={{ textAlign: 'center', padding: '32px 0', color: 'var(--text-muted)', fontSize: '0.875rem' }}>
+                아직 작성된 평가가 없습니다. 첫 번째 평가를 남겨보세요!
+              </div>
+            ) : (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+                {reviews.map(rev => (
+                  <div key={rev.id} style={{ background: 'var(--bg-secondary)', border: '1px solid var(--border-subtle)', borderRadius: 'var(--radius-md)', padding: '16px' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '12px', alignItems: 'center' }}>
+                      <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                        <span style={{ fontSize: '0.85rem', fontWeight: 700 }}>{rev.userDisplayName}</span>
+                        <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>· 독자</span>
+                      </div>
+                      <div style={{ color: '#fbbf24', fontWeight: 700, fontSize: '0.9rem' }}>
+                        {'★'.repeat(rev.rating)}{'☆'.repeat(5 - rev.rating)}
+                      </div>
+                    </div>
+
+                    {rev.pros && (
+                      <div style={{ fontSize: '0.85rem', marginBottom: '8px', lineHeight: 1.5 }}>
+                        <span style={{ color: '#10b981', fontWeight: 700, marginRight: '6px' }}>👍 좋았던 점:</span>
+                        <span style={{ color: 'var(--text-secondary)' }}>{rev.pros}</span>
+                      </div>
+                    )}
+
+                    {rev.cons && (
+                      <div style={{ fontSize: '0.85rem', lineHeight: 1.5 }}>
+                        <span style={{ color: '#fb7185', fontWeight: 700, marginRight: '6px' }}>👎 아쉬운 점:</span>
+                        <span style={{ color: 'var(--text-secondary)' }}>{rev.cons}</span>
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+
         {/* Mark as read */}
         <div style={{ display: 'flex', gap: '12px', justifyContent: 'flex-end', marginBottom: '60px', flexWrap: 'wrap' }}>
           <a href="/library" className="btn btn-ghost">← 도서관으로</a>
@@ -277,7 +508,7 @@ export default function ReadPage({ params }: { params: Promise<{ id: string }> }
 
                 <div className="word-popup-section">
                   <div className="word-popup-section-title">
-                    🌐 {profile?.nativeLanguage === 'es' ? '스페인어' : '영어'} 번역
+                    🌐 {activeNativeLang === 'es' ? '스페인어' : '영어'} 번역
                   </div>
                   <div className="word-popup-translation">{wordData.translation}</div>
                 </div>

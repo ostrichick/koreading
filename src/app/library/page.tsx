@@ -5,9 +5,17 @@ import { useRouter } from 'next/navigation';
 import { useAuth } from '@/contexts/AuthContext';
 import { TOPICS, CEFRLevel, generateArticle } from '@/lib/gemini';
 import { getArticlesByLevel, saveArticle, getReadArticles, Article } from '@/lib/db';
-import { getGuestLevel, getGuestLang, saveGuestArticle } from '@/lib/storage';
+import { getGuestLevel, getGuestLang } from '@/lib/storage';
 
 const LEVELS: CEFRLevel[] = ['A1', 'A2', 'B1', 'B2', 'C1', 'C2'];
+const LEVEL_LABELS: Record<CEFRLevel, string> = {
+  A1: '입문 (A1)',
+  A2: '초급 (A2)',
+  B1: '중급 (B1)',
+  B2: '중상급 (B2)',
+  C1: '고급 (C1)',
+  C2: '최고급 (C2)',
+};
 
 export default function LibraryPage() {
   const { user, profile } = useAuth();
@@ -21,18 +29,28 @@ export default function LibraryPage() {
   const [generating, setGenerating] = useState(false);
   const [userLevel, setUserLevel] = useState<CEFRLevel | null>(null);
 
+  // Sorting state
+  const [sortBy, setSortBy] = useState<'rating' | 'newest'>('rating');
+
+  // Generation Modal States
+  const [showGenModal, setShowGenModal] = useState(false);
+  const [genLevels, setGenLevels] = useState<CEFRLevel[]>([]);
+  const [genTopics, setGenTopics] = useState<string[]>([]);
+
   useEffect(() => {
-    // Get level from profile (logged in) or localStorage (guest)
     const level = profile?.level || getGuestLevel();
     if (!level) {
       router.push('/test');
       return;
     }
     setUserLevel(level);
+    // Initialize checked levels for generation to the user's current level
+    setGenLevels([level]);
+    // Initialize checked topics for generation to all topics
+    setGenTopics(TOPICS.map(t => t.id));
   }, [profile, router]);
 
-  const loadArticles = useCallback(async (level: CEFRLevel | 'all') => {
-    if (!user) return; // Guest users don't have Firestore access
+  const loadArticles = useCallback(async (level: CEFRLevel | 'all', currentSort: 'rating' | 'newest') => {
     setLoadingArticles(true);
     try {
       let all: Article[] = [];
@@ -42,51 +60,73 @@ export default function LibraryPage() {
       } else {
         all = await getArticlesByLevel(level);
       }
-      setArticles(all.sort((a, b) => (b.createdAt?.seconds || 0) - (a.createdAt?.seconds || 0)));
+
+      // Sort
+      const sorted = [...all];
+      if (currentSort === 'rating') {
+        sorted.sort((a, b) => (b.averageRating || 0) - (a.averageRating || 0) || (b.createdAt?.seconds || 0) - (a.createdAt?.seconds || 0));
+      } else {
+        sorted.sort((a, b) => (b.createdAt?.seconds || 0) - (a.createdAt?.seconds || 0));
+      }
+
+      setArticles(sorted);
     } catch (err) {
       console.error(err);
     } finally {
       setLoadingArticles(false);
     }
-  }, [user]);
+  }, []);
 
   useEffect(() => {
-    if (user) loadArticles(selectedLevel);
-  }, [selectedLevel, loadArticles, user]);
+    loadArticles(selectedLevel, sortBy);
+  }, [selectedLevel, sortBy, loadArticles]);
 
   useEffect(() => {
-    if (!user) return;
-    getReadArticles(user.uid).then(setReadArticles);
+    if (user) {
+      getReadArticles(user.uid).then(setReadArticles);
+    }
   }, [user]);
 
   const handleGenerate = async () => {
-    const level = (selectedLevel === 'all' ? (profile?.level || getGuestLevel()) : selectedLevel) as CEFRLevel;
-    const lang = profile?.nativeLanguage || getGuestLang();
-    const topic = selectedTopic === 'all'
-      ? TOPICS[Math.floor(Math.random() * TOPICS.length)].id
-      : selectedTopic;
+    if (genLevels.length === 0) {
+      alert('최소 한 개의 레벨을 선택해 주세요!');
+      return;
+    }
+    if (genTopics.length === 0) {
+      alert('최소 한 개의 주제를 선택해 주세요!');
+      return;
+    }
 
-    if (!level) { router.push('/test'); return; }
+    // Randomly pick a level and topic from Checked options
+    const level = genLevels[Math.floor(Math.random() * genLevels.length)];
+    const topic = genTopics[Math.floor(Math.random() * genTopics.length)];
+    const lang = profile?.nativeLanguage || getGuestLang();
 
     setGenerating(true);
     try {
       const data = await generateArticle(level, topic, lang);
-
-      if (user) {
-        // Logged in: save to Firestore
-        const id = await saveArticle(data);
-        router.push(`/read/${id}`);
-      } else {
-        // Guest: save to sessionStorage and navigate to guest read
-        saveGuestArticle({ ...data, id: 'guest' });
-        router.push('/read/guest');
-      }
+      // Always save to Firestore persistently so all readers can see it
+      const id = await saveArticle(data);
+      setShowGenModal(false);
+      router.push(`/read/${id}`);
     } catch (err) {
       console.error(err);
       alert('텍스트 생성에 실패했습니다. 잠시 후 다시 시도해주세요.');
     } finally {
       setGenerating(false);
     }
+  };
+
+  const toggleLevelCheckbox = (lvl: CEFRLevel) => {
+    setGenLevels(prev =>
+      prev.includes(lvl) ? prev.filter(l => l !== lvl) : [...prev, lvl]
+    );
+  };
+
+  const toggleTopicCheckbox = (id: string) => {
+    setGenTopics(prev =>
+      prev.includes(id) ? prev.filter(t => t !== id) : [...prev, id]
+    );
   };
 
   const filteredArticles = articles.filter(a => {
@@ -110,10 +150,8 @@ export default function LibraryPage() {
               {isGuest && <span style={{ marginLeft: '8px', fontSize: '0.75rem', color: 'var(--text-muted)' }}>· 게스트 모드</span>}
             </p>
           </div>
-          <button id="generate-article-btn" onClick={handleGenerate} disabled={generating} className="btn btn-primary">
-            {generating ? (
-              <><div style={{ width: '16px', height: '16px', border: '2px solid rgba(255,255,255,0.3)', borderTopColor: 'white', borderRadius: '50%', animation: 'spin 0.8s linear infinite' }} />생성 중...</>
-            ) : '✨ 새 텍스트 생성'}
+          <button id="generate-article-btn" onClick={() => setShowGenModal(true)} disabled={generating} className="btn btn-primary">
+            ✨ 새 텍스트 생성
           </button>
         </div>
 
@@ -121,18 +159,59 @@ export default function LibraryPage() {
         {isGuest && (
           <div style={{ background: 'rgba(99,102,241,0.08)', border: '1px solid var(--border-medium)', borderRadius: 'var(--radius-md)', padding: '14px 20px', marginBottom: '24px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '12px' }}>
             <div style={{ fontSize: '0.875rem', color: 'var(--text-secondary)' }}>
-              🔓 게스트 모드 — 지금 바로 읽기를 시작하세요!
+              🔓 게스트 모드 — 생성된 모든 텍스트는 도서관에 평생 기록되어 함께 공부하게 됩니다!
             </div>
-            <a href="/login" className="btn btn-sm btn-primary">로그인하여 저장하기</a>
+            <a href="/login" className="btn btn-sm btn-primary">로그인하여 단어 저장하기</a>
           </div>
         )}
 
-        {/* Level Filter */}
-        <div style={{ display: 'flex', gap: '6px', marginBottom: '16px', flexWrap: 'wrap' }}>
-          <button onClick={() => setSelectedLevel('all')} className={`btn btn-sm ${selectedLevel === 'all' ? 'btn-primary' : 'btn-ghost'}`}>전체</button>
-          {LEVELS.map(lvl => (
-            <button key={lvl} onClick={() => setSelectedLevel(lvl)} className={`btn btn-sm ${selectedLevel === lvl ? 'btn-primary' : 'btn-ghost'}`}>{lvl}</button>
-          ))}
+        {/* Sort and Filter Header */}
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '24px', flexWrap: 'wrap', gap: '16px' }}>
+          {/* Level Filter */}
+          <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
+            <button onClick={() => setSelectedLevel('all')} className={`btn btn-sm ${selectedLevel === 'all' ? 'btn-primary' : 'btn-ghost'}`}>전체 레벨</button>
+            {LEVELS.map(lvl => (
+              <button key={lvl} onClick={() => setSelectedLevel(lvl)} className={`btn btn-sm ${selectedLevel === lvl ? 'btn-primary' : 'btn-ghost'}`}>{lvl}</button>
+            ))}
+          </div>
+
+          {/* Sort Selector */}
+          <div style={{ display: 'flex', background: 'var(--bg-card)', border: '1px solid var(--border-subtle)', borderRadius: '100px', padding: '3px' }}>
+            <button
+              onClick={() => setSortBy('rating')}
+              style={{
+                padding: '6px 16px',
+                borderRadius: '100px',
+                background: sortBy === 'rating' ? 'var(--accent-primary)' : 'transparent',
+                color: sortBy === 'rating' ? 'white' : 'var(--text-secondary)',
+                border: 'none',
+                cursor: 'pointer',
+                fontSize: '0.8rem',
+                fontWeight: 600,
+                transition: 'all 200ms ease',
+                fontFamily: 'inherit',
+              }}
+            >
+              ⭐ 별점순
+            </button>
+            <button
+              onClick={() => setSortBy('newest')}
+              style={{
+                padding: '6px 16px',
+                borderRadius: '100px',
+                background: sortBy === 'newest' ? 'var(--accent-primary)' : 'transparent',
+                color: sortBy === 'newest' ? 'white' : 'var(--text-secondary)',
+                border: 'none',
+                cursor: 'pointer',
+                fontSize: '0.8rem',
+                fontWeight: 600,
+                transition: 'all 200ms ease',
+                fontFamily: 'inherit',
+              }}
+            >
+              ⏱️ 최신순
+            </button>
+          </div>
         </div>
 
         {/* Topic Filter */}
@@ -145,29 +224,15 @@ export default function LibraryPage() {
           ))}
         </div>
 
-        {/* Articles / Guest CTA */}
-        {isGuest ? (
-          <div className="empty-state">
-            <div style={{ fontSize: '4rem', marginBottom: '24px' }}>✨</div>
-            <div style={{ fontSize: '1.25rem', fontWeight: 700, marginBottom: '12px' }}>
-              읽기 자료를 생성해보세요!
-            </div>
-            <div style={{ color: 'var(--text-secondary)', marginBottom: '32px', maxWidth: '400px', margin: '0 auto 32px', lineHeight: 1.7, fontSize: '0.9rem' }}>
-              위의 주제를 선택하고 <strong>"✨ 새 텍스트 생성"</strong> 버튼을 누르면<br />
-              내 레벨에 맞는 한국어 읽기 자료가 바로 만들어집니다.
-            </div>
-            <button onClick={handleGenerate} disabled={generating} className="btn btn-primary btn-lg">
-              {generating ? '생성 중...' : '🎲 랜덤 텍스트 생성'}
-            </button>
-          </div>
-        ) : loadingArticles ? (
+        {/* Articles List */}
+        {loadingArticles ? (
           <div className="loading-wrapper"><div className="loading-spinner" /><span style={{ color: 'var(--text-muted)' }}>텍스트 불러오는 중...</span></div>
         ) : filteredArticles.length === 0 ? (
           <div className="empty-state">
             <div className="empty-state-icon">📭</div>
-            <div className="empty-state-title">아직 텍스트가 없어요</div>
-            <div className="empty-state-desc">"새 텍스트 생성" 버튼으로 첫 번째 읽기 자료를 만들어보세요!</div>
-            <button onClick={handleGenerate} disabled={generating} className="btn btn-primary mt-4">✨ 지금 생성하기</button>
+            <div className="empty-state-title">해당하는 텍스트가 아직 없어요</div>
+            <div className="empty-state-desc">"✨ 새 텍스트 생성" 버튼을 눌러 첫 번째 읽기 자료를 만들어보세요!</div>
+            <button onClick={() => setShowGenModal(true)} className="btn btn-primary mt-4">✨ 지금 조건 선택해 생성하기</button>
           </div>
         ) : (
           <div className="grid-3">
@@ -186,9 +251,19 @@ export default function LibraryPage() {
                     </div>
                     <h3 style={{ fontSize: '1rem', fontWeight: 700, marginBottom: '8px', fontFamily: 'Noto Sans KR, sans-serif' }}>{article.title}</h3>
                     <p style={{ color: 'var(--text-secondary)', fontSize: '0.825rem', lineHeight: 1.6, marginBottom: '16px' }}>{article.summary}</p>
-                    <div style={{ display: 'flex', gap: '12px', fontSize: '0.75rem', color: 'var(--text-muted)' }}>
-                      <span>⏱ {article.estimatedMinutes}분</span>
-                      <span>📝 {article.keyVocabulary?.length || 0}개 핵심 단어</span>
+                    
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '0.75rem', color: 'var(--text-muted)', borderTop: '1px solid var(--border-subtle)', paddingTop: '12px', marginTop: 'auto' }}>
+                      <div style={{ display: 'flex', gap: '12px' }}>
+                        <span>⏱ {article.estimatedMinutes}분</span>
+                        <span>📝 {article.keyVocabulary?.length || 0}개 단어</span>
+                      </div>
+                      {article.averageRating ? (
+                        <span style={{ color: '#fbbf24', fontWeight: 700 }}>
+                          ★ {article.averageRating}
+                        </span>
+                      ) : (
+                        <span style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>평가 없음</span>
+                      )}
                     </div>
                   </div>
                 </a>
@@ -197,6 +272,116 @@ export default function LibraryPage() {
           </div>
         )}
       </div>
+
+      {/* Generation Custom Conditions Modal */}
+      {showGenModal && (
+        <div className="word-popup-overlay" onClick={(e) => { if (e.target === e.currentTarget) setShowGenModal(false); }}>
+          <div className="word-popup" style={{ maxWidth: '600px', width: '90%' }}>
+            <div className="word-popup-header">
+              <div className="word-popup-word" style={{ fontSize: '1.25rem' }}>✨ 내 맞춤형 읽기 생성</div>
+              <button className="word-popup-close" onClick={() => setShowGenModal(false)}>✕</button>
+            </div>
+
+            <p style={{ color: 'var(--text-secondary)', fontSize: '0.85rem', marginBottom: '24px', lineHeight: 1.5 }}>
+              체크박스로 레벨과 주제를 원하는 대로 선택하세요. 선택된 조건 내에서 무작위 조합으로 AI 맞춤 텍스트가 즉시 생성되며, 생성된 자료는 도서관에 보존됩니다.
+            </p>
+
+            <div style={{ marginBottom: '24px' }}>
+              <div style={{ fontSize: '0.875rem', fontWeight: 700, color: 'var(--text-secondary)', marginBottom: '12px' }}>
+                📶 레벨 선택 (다중 선택 가능)
+              </div>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
+                {LEVELS.map(lvl => {
+                  const checked = genLevels.includes(lvl);
+                  return (
+                    <label
+                      key={lvl}
+                      style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '10px',
+                        padding: '12px',
+                        background: checked ? 'rgba(99,102,241,0.08)' : 'var(--bg-secondary)',
+                        border: '1px solid',
+                        borderColor: checked ? 'var(--accent-primary)' : 'var(--border-subtle)',
+                        borderRadius: 'var(--radius-md)',
+                        cursor: 'pointer',
+                        fontSize: '0.875rem',
+                        fontWeight: 600,
+                        transition: 'all 150ms ease',
+                      }}
+                    >
+                      <input
+                        type="checkbox"
+                        checked={checked}
+                        onChange={() => toggleLevelCheckbox(lvl)}
+                        style={{ cursor: 'pointer', accentColor: 'var(--accent-primary)' }}
+                      />
+                      <span>{LEVEL_LABELS[lvl]}</span>
+                    </label>
+                  );
+                })}
+              </div>
+            </div>
+
+            <div style={{ marginBottom: '32px' }}>
+              <div style={{ fontSize: '0.875rem', fontWeight: 700, color: 'var(--text-secondary)', marginBottom: '12px' }}>
+                🏷️ 주제 선택 (다중 선택 가능)
+              </div>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
+                {TOPICS.map(topic => {
+                  const checked = genTopics.includes(topic.id);
+                  return (
+                    <label
+                      key={topic.id}
+                      style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '10px',
+                        padding: '12px',
+                        background: checked ? 'rgba(99,102,241,0.08)' : 'var(--bg-secondary)',
+                        border: '1px solid',
+                        borderColor: checked ? 'var(--accent-primary)' : 'var(--border-subtle)',
+                        borderRadius: 'var(--radius-md)',
+                        cursor: 'pointer',
+                        fontSize: '0.875rem',
+                        fontWeight: 600,
+                        transition: 'all 150ms ease',
+                      }}
+                    >
+                      <input
+                        type="checkbox"
+                        checked={checked}
+                        onChange={() => toggleTopicCheckbox(topic.id)}
+                        style={{ cursor: 'pointer', accentColor: 'var(--accent-primary)' }}
+                      />
+                      <span>{topic.emoji} {topic.label}</span>
+                    </label>
+                  );
+                })}
+              </div>
+            </div>
+
+            <div style={{ display: 'flex', gap: '12px' }}>
+              <button
+                onClick={() => setShowGenModal(false)}
+                className="btn btn-secondary"
+                style={{ flex: 1, justifyContent: 'center' }}
+              >
+                취소
+              </button>
+              <button
+                onClick={handleGenerate}
+                disabled={generating || genLevels.length === 0 || genTopics.length === 0}
+                className="btn btn-primary"
+                style={{ flex: 2, justifyContent: 'center' }}
+              >
+                {generating ? 'AI 텍스트 생성 중...' : '✨ 맞춤형 읽기 생성 시작'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

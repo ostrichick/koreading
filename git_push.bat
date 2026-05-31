@@ -1,6 +1,6 @@
 @echo off
 set GIT="C:\Program Files\Git\bin\git.exe"
 %GIT% add -A
-%GIT% commit -m "fix: JSON parsing reliability, early test exit on failure, rebrand to Koreading, and fix hover shift layout"
+%GIT% commit -m "feat: persistent guest articles, article rating/comment systems, rating sorting, and checkbox modal filters for generation"
 %GIT% push origin main
 echo PUSH_DONE

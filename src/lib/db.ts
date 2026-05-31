@@ -34,6 +34,17 @@ export interface Article {
   estimatedMinutes: number;
   keyVocabulary: string[];
   createdAt: Timestamp;
+  averageRating?: number;
+  ratingCount?: number;
+}
+
+export interface Review {
+  id?: string;
+  rating: number;
+  pros: string;
+  cons: string;
+  userDisplayName: string;
+  createdAt?: Timestamp;
 }
 
 export interface VocabularyEntry {
@@ -65,7 +76,12 @@ export async function getUserProfile(uid: string): Promise<UserProfile | null> {
 // Articles
 export async function saveArticle(article: Omit<Article, 'id' | 'createdAt'>) {
   const ref = collection(db, 'articles');
-  const docRef = await addDoc(ref, { ...article, createdAt: serverTimestamp() });
+  const docRef = await addDoc(ref, {
+    ...article,
+    averageRating: 0,
+    ratingCount: 0,
+    createdAt: serverTimestamp()
+  });
   return docRef.id;
 }
 
@@ -106,4 +122,33 @@ export async function getVocabulary(uid: string): Promise<VocabularyEntry[]> {
   const q = query(ref, orderBy('savedAt', 'desc'));
   const snap = await getDocs(q);
   return snap.docs.map(d => ({ id: d.id, ...d.data() } as VocabularyEntry));
+}
+
+// Reviews & Ratings
+export async function saveReview(articleId: string, review: Omit<Review, 'id' | 'createdAt'>) {
+  const reviewsRef = collection(db, 'articles', articleId, 'reviews');
+  await addDoc(reviewsRef, { ...review, createdAt: serverTimestamp() });
+
+  // Update parent article aggregate ratings
+  const articleRef = doc(db, 'articles', articleId);
+  const snap = await getDoc(articleRef);
+  if (snap.exists()) {
+    const articleData = snap.data();
+    const oldCount = articleData.ratingCount || 0;
+    const oldAverage = articleData.averageRating || 0;
+    const newCount = oldCount + 1;
+    const newAverage = (oldAverage * oldCount + review.rating) / newCount;
+    
+    await setDoc(articleRef, {
+      ratingCount: newCount,
+      averageRating: Number(newAverage.toFixed(1)),
+    }, { merge: true });
+  }
+}
+
+export async function getReviews(articleId: string): Promise<Review[]> {
+  const ref = collection(db, 'articles', articleId, 'reviews');
+  const q = query(ref, orderBy('createdAt', 'desc'));
+  const snap = await getDocs(q);
+  return snap.docs.map(d => ({ id: d.id, ...d.data() } as Review));
 }
