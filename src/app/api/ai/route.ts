@@ -95,38 +95,37 @@ export async function POST(req: NextRequest) {
 
     if (action === 'generateArticle') {
       const levelConfig: Record<CEFRLevel, string> = {
-        A1: 'Use only the most basic Korean words. Simple sentence structure (4-6 words per sentence). Simple present tense. The text must be detailed and comprehensive enough for beginner practice, having about 400-500 characters in Korean. Ensure it is written as a solid, cohesive paragraph of 4-6 sentences, not single-sentence lines.',
-        A2: 'Use basic Korean vocabulary. Simple sentences of 6-10 words. Present, past, and basic future tenses. The text must be detailed and substantial, having about 600-800 characters in Korean, structured into 2-3 coherent paragraphs.',
-        B1: 'Use intermediate vocabulary. Mix sentence structures. Include adjectives and adverbs. Detailed and substantial story or explanation, having about 900-1100 characters in Korean, structured into 3-4 coherent paragraphs.',
-        B2: 'Use upper-intermediate vocabulary. Complex sentences. Various tenses and advanced grammar patterns. Highly detailed and informative, having about 1200-1400 characters in Korean, structured into 3-4 coherent paragraphs.',
-        C1: 'Use advanced vocabulary including some idioms. Sophisticated and rich sentence structures. Very thorough and deeply informative, having about 1500-1700 characters in Korean, structured into 4-5 coherent paragraphs.',
-        C2: 'Use native-level vocabulary. Complex academic, professional or literary style. Deeply exhaustive, rich, and sophisticated, having about 1800-2000 characters in Korean, structured into 4-5 coherent paragraphs.',
+        A1: '가장 기초적인 한국어 어휘만 사용하십시오. 단순한 문장 구조 (문장당 4~6개 단어). 쉬운 현재 시제 전용. 텍스트 전체 길이는 약 400~500자 크기로 서술하십시오. 한 문장마다 끊어 쓰지 말고, 4~6개의 문장이 뭉친 하나의 탄탄한 문단으로 구성하십시오.',
+        A2: '기초 한국어 어휘를 사용하십시오. 문장당 6~10개 단어로 구성된 명료한 문장. 현재, 과거 및 기초 미래 시제 사용. 전체 길이는 약 600~800자 크기로 상세히 서술하고, 2~3개의 정돈된 문단으로 구성하십시오.',
+        B1: '중급 한국어 어휘를 사용하십시오. 다양한 연결어미와 문장 구조를 혼합하고 형용사와 부사를 다채롭게 사용하십시오. 전체 길이는 약 900~1100자 크기로 읽을거리가 많게 서술하고, 3~4개의 명확한 문단으로 구성하십시오.',
+        B2: '중상급 한국어 어휘를 사용하십시오. 복잡한 문장 구조와 다양한 문법 패턴을 자유롭게 사용하십시오. 전체 길이는 약 1200~1400자 크기로 상세하고 깊이 있는 내용을 담아 3~4개의 문단으로 구성하십시오.',
+        C1: '고급 한국어 어휘 및 일부 관용구, 숙어를 세련되게 활용하십시오. 복잡하고 품격 있는 문장 구조를 보여주십시오. 전체 길이는 약 1500~1700자 크기로 깊이 있고 포괄적인 전개를 보이며 4~5개의 문단으로 구성하십시오.',
+        C2: '원어민 수준의 고급 학술, 문학, 언론 문체를 자유롭게 활용하십시오. 지극히 정교하고 심도 있는 문장을 구사하십시오. 전체 길이는 약 1800~2000자 크기로 매끄럽고 가치가 풍부하게 서술하고 4~5개의 문단으로 구성하십시오.',
       };
 
       const topicLabel = TOPICS.find((t: { id: string; label: string }) => t.id === topic)?.label || topic;
       const langNote = nativeLang === 'es' ? 'Spanish' : 'English';
 
-      const prompt = `You are a professional Korean language teacher creating reading material.
+      const prompt = `당신은 전문 한국어 교사입니다.
+CEFR ${level} 레벨의 한국어 학습자를 위한 "${topicLabel}" 주제의 흥미롭고 유용한 한국어 읽기 본문을 작성해 주세요.
 
-Write an engaging and culturally relevant Korean reading text about "${topicLabel}" for a CEFR ${level} learner.
-
-CRITICAL HARD CONSTRAINTS (CRITICAL FOR LLAMA ACCURACY):
-1. Write the "title" and "content" fields ONLY in PURE KOREAN characters (한글). 
-2. Absolutely DO NOT include any foreign letters, English, Spanish, Russian, Japanese, Chinese characters (한자), Hindi, Vietnamese, or any other alphabets/languages in the "content" or "title" fields. Every single word in the body text must be pure Korean.
-3. 100% Pure Korean Constraint: The text must be written strictly in natural, correct, 100% pure Korean (한글) characters only. Under no circumstances should you insert translations, foreign characters, Chinese characters (한자), English, Japanese, Hindi, Vietnamese, or other alphabets to explain words. The entire text must read as a seamless, high-quality Korean article written by a native speaker, adapted only in vocabulary level.
-4. Sentences structure constraint:
+[절대 준수해야 하는 강한 제약 조건 (CRITICAL)]:
+1. "title"과 "content" 필드는 반드시 100% 순수한 한글(한국어 문자)로만 작성해야 합니다.
+2. 절대 본문("content")이나 제목("title")에 영어, 스페인어, 한자(漢字), 일본어, 터키어, 힌디어, 베트남어 등 그 어떤 외국어 문자, 알파벳, 단어(예: domestic, countries, 影響力, 需求, ülk 등)도 단 한 글자도 포함해서는 안 됩니다. 100% 완벽한 한글로만 구성해야 합니다.
+3. 100% 순수 한국어 제약: 어려운 어휘를 설명하거나 수준 높은 어휘를 제공할 때도 반드시 그에 매칭되는 적절한 한국어 어휘를 한글로 사용해야 하며, 외국어 알파벳이나 타국 문자를 괄호 등으로 섞어 쓰지 마십시오.
+4. 문장 구조 제약 조건:
 - ${levelConfig[level as CEFRLevel]}
-5. Paragraph Structure Constraint: Write the text in proper paragraphs. Each paragraph MUST contain multiple naturally connected sentences (at least 3-4 sentences per paragraph, except possibly for very short A1/A2 texts which should still be structured as a solid paragraph of 4-6 sentences, not single-sentence lines separated by newlines). Absolutely do NOT write the text as single-sentence lines or put a newline after every single sentence.
+5. 본문은 한 문장마다 줄바꿈을 하지 말고, 3~4개 이상의 문장이 자연스럽게 연결된 완성도 높은 문단(Paragraph)으로 구성해 주세요. (A1/A2 레벨의 경우에도 4~6개의 문장이 하나의 유기적인 문단으로 묶여 있어야 합니다.)
 
-Return a JSON object ONLY (no markdown):
+반드시 다음 형식의 JSON 객체만 반환해 주세요 (마크다운 기호 없이 JSON만 반환):
 {
-  "title": "텍스트 제목 (Must be 100% pure Korean)",
-  "content": "전체 텍스트 내용 (Must be 100% natural and pure Korean, structured into coherent paragraphs with multiple sentences each)",
-  "summary": "One sentence summary in ${langNote}",
+  "title": "텍스트 제목 (100% 순수 한글)",
+  "content": "전체 텍스트 내용 (한국어 원어민이 쓴 것처럼 극히 자연스럽고 유려하며, 문단 구분이 잘 된 100% 순수 한글)",
+  "summary": "${langNote}로 작성된 한 문장의 본문 요약",
   "topicCategory": "${topic}",
   "level": "${level}",
-  "estimatedMinutes": 2, // Estimate the reading time in minutes dynamically as an integer (e.g. 1, 2, 3, 4) based on the text level and length
-  "keyVocabulary": ["word1", "word2", "word3", "word4", "word5"]
+  "estimatedMinutes": 2, // 텍스트 난이도와 길이에 따라 예상 소요 시간(분)을 정수(예: 1, 2, 3, 4)로 동적 예측
+  "keyVocabulary": ["핵심단어1", "핵심단어2", "핵심단어3", "핵심단어4", "핵심단어5"]
 }`;
 
       const text = await generateWithFallback(prompt, 'application/json');
@@ -137,46 +136,46 @@ Return a JSON object ONLY (no markdown):
       const langName = nativeLang === 'es' ? 'Spanish' : 'English';
 
       if (type === 'basic') {
-        const prompt = `You are a Korean dictionary expert.
+        const prompt = `당신은 대한민국 국어사전 및 한국어 교육 전문가입니다.
 
-Look up the Korean word: "${word}"
-Context sentence: "${sentence}"
+한국어 단어: "${word}"
+문맥 속 문장: "${sentence}"
 
-CRITICAL HARD CONSTRAINTS:
-1. The "definition" field MUST be written in 100% PURE KOREAN characters (한글). Absolutely do NOT use Japanese (日本語), English, Chinese characters (漢字), or any other foreign languages in the "definition" field.
-2. The "partOfSpeech" field must be written in Korean (e.g. 명사, 동사, 형용사, 부사, 조사, 어미).
-3. The "translation" field must be in ${langName}.
+[절대 준수해야 하는 강한 제약 조건]:
+1. "definition" 필드는 반드시 100% 순수한 한국어 한글로만 작성해야 합니다. 절대 일본어, 영어, 한자(漢字), 또는 그 외의 외국어를 섞어서 작성하지 마십시오.
+2. "partOfSpeech" 필드는 한국어 품사 용어(예: 명사, 동사, 형용사, 부사, 조사, 어미 등)를 사용하여 100% 한국어로만 작성하십시오.
+3. "translation" 필드는 반드시 ${langName}로 작성해야 합니다.
 
-Return JSON ONLY (no markdown):
+반드시 다음 형식의 JSON 객체만 반환해 주세요 (마크다운 기호나 추가 설명 없이 JSON만 반환):
 {
   "word": "${word}",
-  "pronunciation": "romanization",
-  "partOfSpeech": "품사 in Korean",
-  "definition": "Korean definition (Must be 100% pure Korean)",
-  "translation": "Translation in ${langName}",
-  "level": "CEFR level (A1/A2/B1/B2/C1/C2)"
+  "pronunciation": "발음 로마자 표기",
+  "partOfSpeech": "품사 (한국어로 작성)",
+  "definition": "한국어 정의 (100% 순수 한글)",
+  "translation": "${langName} 번역",
+  "level": "CEFR 레벨 (A1/A2/B1/B2/C1/C2 중 하나)"
 }`;
 
         const text = await generateWithFallback(prompt, 'application/json');
         return NextResponse.json(JSON.parse(text));
       } else {
-        const prompt = `You are a Korean grammar and linguistics expert.
+        const prompt = `당신은 한국어 형태소 분석 및 언어학 전문가입니다.
 
-Analyze the word: "${word}"
-In the context sentence: "${sentence}"
+분석할 한국어 단어: "${word}"
+문맥 속 문장: "${sentence}"
 
-CRITICAL HARD CONSTRAINTS:
-1. The "structure" field MUST be written in 100% PURE KOREAN characters (한글). Absolutely do NOT use Japanese (日本語), English, Chinese characters (漢字), or any other foreign languages in the "structure" field.
-2. The "korean" field in the "examples" array must be in 100% PURE KOREAN.
-3. The "translation" field in the "examples" array must be in ${langName}.
+[절대 준수해야 하는 강한 제약 조건]:
+1. "structure" 필드는 반드시 100% 순수한 한국어 한글로만 작성해야 합니다. 절대 일본어(예: 食べる), 영어, 한자(漢字), 또는 그 외의 외국어 문자를 섞어서 작성하지 마십시오.
+2. "examples" 배열의 "korean" 필드는 반드시 100% 순수 한글로 된 올바른 예문으로만 작성되어야 합니다.
+3. "examples" 배열의 "translation" 필드는 반드시 ${langName} 번역이어야 합니다.
 
-Return JSON ONLY (no markdown):
+반드시 다음 형식의 JSON 객체만 반환해 주세요 (마크다운 기호나 추가 설명 없이 JSON만 반환):
 {
-  "structure": "How the word is formed/conjugated in Korean (e.g., for '다녀왔습니다', write '동사 다니다 + 오다 + -었습니다 / -습니다' showing grammatical particles, endings, auxiliary verbs, or compounds. Keep it concise, educational and clear in Korean, written strictly in pure Korean)",
+  "structure": "단어의 구조/활용 분석 (예: \'다녀왔습니다\'의 경우 \'동사 다니다 + 오다 + -었습니다 / -습니다\' 와 같이 격조사, 어미, 보조용언, 복합어 등의 구성을 교육적이고 명확한 한국어로 기술. 100% 순수 한글로만 작성)",
   "examples": [
-    {"korean": "example sentence 1 using the word in correct context", "translation": "translation in ${langName}"},
-    {"korean": "example sentence 2", "translation": "translation 2"},
-    {"korean": "example sentence 3", "translation": "translation 3"}
+    {"korean": "단어가 올바르게 사용된 한국어 예문 1", "translation": "${langName} 번역 1"},
+    {"korean": "단어가 올바르게 사용된 한국어 예문 2", "translation": "${langName} 번역 2"},
+    {"korean": "단어가 올바르게 사용된 한국어 예문 3", "translation": "${langName} 번역 3"}
   ]
 }`;
 
@@ -185,27 +184,27 @@ Return JSON ONLY (no markdown):
       }
 
     } else if (action === 'generateTest') {
-      const prompt = `Create a Korean reading placement test with texts for 5 levels.
+      const prompt = `5개 레벨의 한국어 독해 레벨 테스트 지문과 문제를 출제해 주세요.
 
-CRITICAL HARD CONSTRAINTS:
-1. The "text" field MUST be in 100% PURE KOREAN. Absolutely no Japanese or other foreign characters.
-2. Questions and options must be in English.
+[절대 준수해야 하는 강한 제약 조건]:
+1. 각 레벨의 "text" field는 반드시 100% 순수한 한국어 한글로만 작성되어야 합니다. 절대 다른 외국어 문자나 한자가 포함되어서는 안 됩니다.
+2. 질문("question")과 보기("options")는 영어로 작성해 주세요.
 
-Return JSON ONLY (no markdown, no code blocks):
+반드시 다음 형식의 JSON 객체만 반환해 주세요 (마크다운 기호 없이 JSON만 반환):
 {
   "levels": [
     {
       "level": "A1",
-      "text": "Short Korean text (50-100 chars)",
+      "text": "짧은 한국어 지문 (50~100자 내외, 100% 순수 한글)",
       "questions": [
-        {"question": "Question in English", "options": ["A","B","C","D"], "correct": 0},
-        {"question": "Second question", "options": ["A","B","C","D"], "correct": 1}
+        {"question": "영어 질문", "options": ["보기A","보기B","보기C","보기D"], "correct": 0},
+        {"question": "영어 질문 2", "options": ["보기A","보기B","보기C","보기D"], "correct": 1}
       ]
     }
   ]
 }
 
-Include levels: A1, A2, B1, B2, C1. Korean texts only in the text field.`;
+A1, A2, B1, B2, C1 레벨을 모두 포함해 주세요.`;
 
       const text = await generateWithFallback(prompt, 'application/json');
       return NextResponse.json(JSON.parse(text));
