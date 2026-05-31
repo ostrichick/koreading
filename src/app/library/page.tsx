@@ -87,10 +87,32 @@ export default function LibraryPage() {
       return;
     }
     setUserLevel(level);
-    // Initialize checked levels for generation to the user's current level
-    setGenLevels([level]);
-    // Initialize checked topics for generation to all topics
-    setGenTopics(TOPICS.map(t => t.id));
+
+    // Load saved levels & topics from localStorage, fallback to current level & empty topics if empty
+    if (typeof window !== 'undefined') {
+      const savedLevelsJson = localStorage.getItem('koreading_gen_levels');
+      const savedTopicsJson = localStorage.getItem('koreading_gen_topics');
+      
+      if (savedLevelsJson) {
+        try {
+          setGenLevels(JSON.parse(savedLevelsJson));
+        } catch {
+          setGenLevels([level]);
+        }
+      } else {
+        setGenLevels([level]);
+      }
+      
+      if (savedTopicsJson) {
+        try {
+          setGenTopics(JSON.parse(savedTopicsJson));
+        } catch {
+          setGenTopics([]);
+        }
+      } else {
+        setGenTopics([]); // Default to empty array (unselected)
+      }
+    }
   }, [profile, router]);
 
   const loadArticles = useCallback(async (level: CEFRLevel | 'all', currentSort: 'rating' | 'newest') => {
@@ -185,15 +207,23 @@ export default function LibraryPage() {
   };
 
   const toggleLevelCheckbox = (lvl: CEFRLevel) => {
-    setGenLevels(prev =>
-      prev.includes(lvl) ? prev.filter(l => l !== lvl) : [...prev, lvl]
-    );
+    setGenLevels(prev => {
+      const next = prev.includes(lvl) ? prev.filter(l => l !== lvl) : [...prev, lvl];
+      if (typeof window !== 'undefined') {
+        localStorage.setItem('koreading_gen_levels', JSON.stringify(next));
+      }
+      return next;
+    });
   };
 
   const toggleTopicCheckbox = (id: string) => {
-    setGenTopics(prev =>
-      prev.includes(id) ? prev.filter(t => t !== id) : [...prev, id]
-    );
+    setGenTopics(prev => {
+      const next = prev.includes(id) ? prev.filter(t => t !== id) : [...prev, id];
+      if (typeof window !== 'undefined') {
+        localStorage.setItem('koreading_gen_topics', JSON.stringify(next));
+      }
+      return next;
+    });
   };
 
   const filteredArticles = articles.filter(a => {
