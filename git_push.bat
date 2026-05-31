@@ -1,6 +1,6 @@
 @echo off
 set GIT="C:\Program Files\Git\bin\git.exe"
 %GIT% add -A
-%GIT% commit -m "feat: rebrand to Korider - logo, name, bilingual landing page"
+%GIT% commit -m "fix: switch model to gemini-2.5-flash to fix 404 deprecation error"
 %GIT% push origin main
 echo PUSH_DONE
