@@ -51,6 +51,35 @@ export default function LibraryPage() {
     setAlertOpen(true);
   };
 
+  // Custom API Key States
+  const [showApiKeyModal, setShowApiKeyModal] = useState(false);
+  const [tempApiKey, setTempApiKey] = useState('');
+  const [hasApiKey, setHasApiKey] = useState(false);
+
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      const key = localStorage.getItem('koreading_custom_api_key');
+      setHasApiKey(!!key);
+      if (key) setTempApiKey(key);
+    }
+  }, []);
+
+  const handleSaveApiKey = () => {
+    if (typeof window !== 'undefined') {
+      const trimmed = tempApiKey.trim();
+      if (trimmed) {
+        localStorage.setItem('koreading_custom_api_key', trimmed);
+        setHasApiKey(true);
+        triggerAlert('Gemini API Key가 성공적으로 브라우저 로컬 저장소에 등록되었습니다! 이제 일일 20회 제한 없이 무제한으로 사용하실 수 있습니다.', '등록 완료', 'success');
+      } else {
+        localStorage.removeItem('koreading_custom_api_key');
+        setHasApiKey(false);
+        triggerAlert('Gemini API Key가 삭제되었습니다. 이제 서버 공용 Key를 사용합니다.', '삭제 완료', 'info');
+      }
+      setShowApiKeyModal(false);
+    }
+  };
+
   useEffect(() => {
     const level = profile?.level || getGuestLevel();
     if (!level) {
@@ -142,7 +171,14 @@ export default function LibraryPage() {
       }
     } catch (err: any) {
       console.error(err);
-      triggerAlert(`텍스트 생성에 실패했습니다: ${err?.message || JSON.stringify(err)}`, '텍스트 생성 실패', 'error');
+      const errMsg = err?.message || JSON.stringify(err);
+      const isQuotaError = errMsg.includes('429') || errMsg.includes('Quota') || errMsg.includes('quota') || errMsg.includes('limit');
+      
+      const helpfulGuide = isQuotaError 
+        ? `🚨 [API 쿼터 제한 초과 에러]\n\n현재 서버의 무료 Gemini API 키 할당량이 전부 소진되었습니다.\n\n💡 해결 방법:\n도서관 화면 상단의 [🔑 API Key 설정] 버튼을 눌러 본인의 무료 Gemini API Key를 등록하시면, 즉시 대기 시간 없이 무제한으로 학습 자료를 평생 무료 생성하고 즐기실 수 있습니다!\n\n-----------------------------------\n\n[상세 오류 로그]:\n${errMsg}`
+        : `텍스트 생성에 실패했습니다: ${errMsg}`;
+      
+      triggerAlert(helpfulGuide, '텍스트 생성 실패', 'error');
     } finally {
       setGenerating(false);
     }
@@ -181,9 +217,27 @@ export default function LibraryPage() {
               {isGuest && <span style={{ marginLeft: '8px', fontSize: '0.75rem', color: 'var(--text-muted)' }}>· 게스트 모드</span>}
             </p>
           </div>
-          <button id="generate-article-btn" onClick={() => setShowGenModal(true)} disabled={generating} className="btn btn-primary">
-            ✨ 새 텍스트 생성
-          </button>
+          <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
+            <button
+              onClick={() => setShowApiKeyModal(true)}
+              className="btn btn-ghost"
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: '8px',
+                border: '1px solid var(--border-subtle)',
+                fontSize: '0.85rem',
+                fontWeight: 600,
+                borderRadius: '100px',
+                padding: '8px 16px',
+              }}
+            >
+              {hasApiKey ? '🔑 API Key 등록됨' : '🔑 API Key 설정'}
+            </button>
+            <button id="generate-article-btn" onClick={() => setShowGenModal(true)} disabled={generating} className="btn btn-primary">
+              ✨ 새 텍스트 생성
+            </button>
+          </div>
         </div>
 
         {/* Guest banner */}
@@ -413,6 +467,99 @@ export default function LibraryPage() {
           </div>
         </div>
       )}
+      {/* Custom API Key Configuration Modal */}
+      {showApiKeyModal && (
+        <div className="word-popup-overlay" onClick={(e) => { if (e.target === e.currentTarget) setShowApiKeyModal(false); }}>
+          <div className="word-popup" style={{ maxWidth: '500px', width: '90%', userSelect: 'text' }}>
+            <div className="word-popup-header">
+              <div className="word-popup-word" style={{ fontSize: '1.25rem' }}>🔑 내 Gemini API Key 설정</div>
+              <button className="word-popup-close" onClick={() => setShowApiKeyModal(false)}>✕</button>
+            </div>
+
+            <p style={{ color: 'var(--text-secondary)', fontSize: '0.85rem', marginBottom: '20px', lineHeight: 1.6 }}>
+              무료 쿼터 초과 에러(429)를 우회하여 대기 시간 없이 평생 무제한으로 텍스트를 생성하시려면, 본인의 개인 Gemini API Key를 등록해 주세요. 입력된 키는 본인의 브라우저 로컬 저장소(localStorage)에만 안전하게 보관됩니다.
+            </p>
+
+            <div style={{ background: 'rgba(99,102,241,0.05)', border: '1px solid rgba(99,102,241,0.15)', borderRadius: 'var(--radius-md)', padding: '12px 16px', marginBottom: '20px', fontSize: '0.8rem', color: 'var(--text-secondary)', lineHeight: 1.6 }}>
+              💡 <strong>API Key 발급 방법 (1분 소요)</strong>:<br />
+              1. <a href="https://aistudio.google.com/" target="_blank" rel="noopener noreferrer" style={{ color: 'var(--accent-primary)', fontWeight: 700, textDecoration: 'underline' }}>Google AI Studio</a>에 접속하여 로그인합니다.<br />
+              2. <strong>'Get API Key'</strong> 버튼을 클릭하여 새로운 무료 키를 발급받은 뒤 복사하여 아래에 붙여넣어 주세요!
+            </div>
+
+            <div style={{ marginBottom: '24px' }}>
+              <label style={{ display: 'block', fontSize: '0.85rem', fontWeight: 700, color: 'var(--text-secondary)', marginBottom: '8px' }}>
+                Gemini API Key
+              </label>
+              <input
+                type="password"
+                value={tempApiKey}
+                onChange={e => setTempApiKey(e.target.value)}
+                placeholder="AIzaSy..."
+                style={{
+                  width: '100%',
+                  padding: '12px 16px',
+                  borderRadius: 'var(--radius-md)',
+                  border: '1px solid var(--border-medium)',
+                  background: 'var(--bg-secondary)',
+                  color: 'var(--text-primary)',
+                  fontFamily: 'Consolas, monospace',
+                  fontSize: '0.9rem',
+                  outline: 'none',
+                }}
+                onFocus={e => (e.currentTarget.style.borderColor = 'var(--accent-primary)')}
+                onBlur={e => (e.currentTarget.style.borderColor = 'var(--border-medium)')}
+              />
+              {hasApiKey && (
+                <p style={{ color: '#10b981', fontSize: '0.75rem', marginTop: '6px', fontWeight: 600 }}>
+                  ✓ 현재 브라우저에 API Key가 안전하게 등록된 상태입니다.
+                </p>
+              )}
+            </div>
+
+            <div style={{ display: 'flex', gap: '10px' }}>
+              {hasApiKey && (
+                <button
+                  onClick={() => {
+                    setTempApiKey('');
+                    localStorage.removeItem('koreading_custom_api_key');
+                    setHasApiKey(false);
+                    triggerAlert('Gemini API Key가 안전하게 삭제되었습니다. 이제 서버 공용 Key를 사용합니다.', '삭제 완료', 'info');
+                    setShowApiKeyModal(false);
+                  }}
+                  className="btn btn-secondary"
+                  style={{
+                    flex: 1,
+                    justifyContent: 'center',
+                    background: 'rgba(239,68,68,0.1)',
+                    color: '#ef4444',
+                    border: '1px solid rgba(239,68,68,0.2)'
+                  }}
+                  onMouseEnter={e => e.currentTarget.style.background = 'rgba(239,68,68,0.15)'}
+                  onMouseLeave={e => e.currentTarget.style.background = 'rgba(239,68,68,0.1)'}
+                >
+                  🗑️ 키 삭제
+                </button>
+              )}
+              <button
+                onClick={() => setShowApiKeyModal(false)}
+                className="btn btn-secondary"
+                style={{ flex: 1, justifyContent: 'center' }}
+              >
+                취소
+              </button>
+              <button
+                onClick={handleSaveApiKey}
+                disabled={!tempApiKey.trim()}
+                className="btn btn-primary"
+                style={{ flex: 2, justifyContent: 'center' }}
+              >
+                💾 저장하기
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Custom Alert/Error Modal */}
       <AlertModal
         isOpen={alertOpen}

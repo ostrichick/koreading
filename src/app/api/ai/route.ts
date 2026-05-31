@@ -7,48 +7,55 @@ if (!process.env.GEMINI_API_KEY) {
   console.error('❌ GEMINI_API_KEY is not set!');
 }
 
-const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || '');
-const model25 = genAI.getGenerativeModel({ model: 'gemini-2.5-flash' });
-const model15 = genAI.getGenerativeModel({ model: 'gemini-1.5-flash' });
-
-/**
- * Helper to call Gemini 2.5-flash with an automatic robust fallback to Gemini 1.5-flash
- * if the 20 requests/day free tier quota limit is exceeded (429 Too Many Requests).
- */
-async function generateWithFallback(prompt: string, responseMimeType?: string) {
-  const config = responseMimeType ? { responseMimeType } : undefined;
-  
-  // Try 1: Gemini 2.5-flash (primary, daily quota: 20)
-  try {
-    const result = await model25.generateContent({
-      contents: [{ role: 'user', parts: [{ text: prompt }] }],
-      generationConfig: config
-    });
-    return result.response.text();
-  } catch (err: any) {
-    const msg = err?.message || String(err);
-    console.warn(`[Gemini 2.5-flash error, attempting fallback to 1.5-flash]: ${msg}`);
-    
-    // Try 2: Gemini 1.5-flash (fallback, daily quota: 1500)
-    try {
-      const result = await model15.generateContent({
-        contents: [{ role: 'user', parts: [{ text: prompt }] }],
-        generationConfig: config
-      });
-      return result.response.text();
-    } catch (fallbackErr: any) {
-      const fallbackMsg = fallbackErr?.message || String(fallbackErr);
-      console.error(`❌ Gemini 1.5-flash fallback also failed: ${fallbackMsg}`);
-      
-      // Throw the primary error to show detailed diagnostic quota information if both failed
-      throw err;
-    }
-  }
-}
-
 export async function POST(req: NextRequest) {
   try {
-    const { action, level, topic, nativeLang, word, sentence } = await req.json();
+    const body = await req.json();
+    const { action, level, topic, nativeLang, word, sentence, customApiKey } = body;
+
+    // Use user-provided API key if available, otherwise fallback to the server environment key
+    const activeApiKey = (customApiKey && customApiKey.trim()) || process.env.GEMINI_API_KEY || '';
+    if (!activeApiKey) {
+      return NextResponse.json(
+        { error: 'Gemini API Key가 누락되었습니다. 도서관 설정에서 개인 API Key를 등록해 주세요.' },
+        { status: 400 }
+      );
+    }
+
+    const genAI = new GoogleGenerativeAI(activeApiKey);
+    const model25 = genAI.getGenerativeModel({ model: 'gemini-2.5-flash' });
+    const model15 = genAI.getGenerativeModel({ model: 'gemini-1.5-flash' });
+
+    /**
+     * Helper to call Gemini 2.5-flash with an automatic robust fallback to Gemini 1.5-flash
+     */
+    const generateWithFallback = async (prompt: string, responseMimeType?: string) => {
+      const config = responseMimeType ? { responseMimeType } : undefined;
+      
+      // Try 1: Gemini 2.5-flash (primary, daily quota: 20 on free tier)
+      try {
+        const result = await model25.generateContent({
+          contents: [{ role: 'user', parts: [{ text: prompt }] }],
+          generationConfig: config
+        });
+        return result.response.text();
+      } catch (err: any) {
+        const msg = err?.message || String(err);
+        console.warn(`[Gemini 2.5-flash error, trying fallback to 1.5-flash]: ${msg}`);
+        
+        // Try 2: Gemini 1.5-flash (fallback, daily quota: 1500)
+        try {
+          const result = await model15.generateContent({
+            contents: [{ role: 'user', parts: [{ text: prompt }] }],
+            generationConfig: config
+          });
+          return result.response.text();
+        } catch (fallbackErr: any) {
+          const fallbackMsg = fallbackErr?.message || String(fallbackErr);
+          console.error(`❌ Gemini 1.5-flash fallback also failed: ${fallbackMsg}`);
+          throw err;
+        }
+      }
+    };
 
     if (action === 'generateArticle') {
       const levelConfig: Record<CEFRLevel, string> = {
@@ -88,7 +95,7 @@ Return a JSON object ONLY (no markdown):
       return NextResponse.json(JSON.parse(text));
 
     } else if (action === 'lookupWord') {
-      const { type } = await req.json();
+      const { type } = body;
       const langName = nativeLang === 'es' ? 'Spanish' : 'English';
 
       if (type === 'basic') {

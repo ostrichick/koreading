@@ -24,10 +24,15 @@ export const TOPICS = [
 ];
 
 async function callAI(body: object) {
+  let customApiKey = '';
+  if (typeof window !== 'undefined') {
+    customApiKey = localStorage.getItem('koreading_custom_api_key') || '';
+  }
+
   const res = await fetch('/api/ai', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(body),
+    body: JSON.stringify({ ...body, customApiKey }),
   });
   const data = await res.json();
   if (!res.ok) throw new Error(data.detail || data.error || 'AI request failed');
