@@ -4,8 +4,8 @@ import { AuthProvider } from '@/contexts/AuthContext';
 import NavBar from '@/components/NavBar';
 
 export const metadata: Metadata = {
-  title: '읽기 — 한국어 읽기 학습',
-  description: '레벨에 맞는 한국어 텍스트로 자연스럽게 한국어를 습득하세요.',
+  title: 'Korider — Korean Reading for Every Level',
+  description: 'Read Korean texts perfectly matched to your level. Click any word for instant definitions, examples, and translations.',
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
