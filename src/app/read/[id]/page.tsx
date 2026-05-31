@@ -1,5 +1,11 @@
 'use client';
 
+/**
+ * @file page.tsx (read/[id])
+ * @description 로그인 상태의 사용자가 개별 도서관 텍스트를 읽고 인터랙티브 사전을 활용하는 '본문 독해 화면'입니다. 단어 오버/클릭 시 2단계 점진적 사전 조회(Double-Stage Progressive Lookup), iOS 스타일의 마우스 오버 즉시 검색 설정 토글, 다 읽음 체크 및 독자 별점/리뷰(Pros & Cons) 제출 및 실시간 조회 기능을 담고 있습니다.
+ * @why 문맥 기반의 몰입감 넘치는 한국어 학습 경험을 제공하며, 다른 독자들과 평점/코멘트를 적극 공유하여 양질의 독서 커뮤니티 생태계를 조성하기 위해 존재합니다.
+ */
+
 import { useState, useEffect, useCallback, use, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/contexts/AuthContext';

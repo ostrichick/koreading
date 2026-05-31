@@ -1,5 +1,11 @@
 'use client';
 
+/**
+ * @file page.tsx (test)
+ * @description 신규 및 게스트 학습자의 한국어 독해 레벨을 진단하는 '인터랙티브 레벨테스트(Placement Test) 화면'입니다. 모국어를 설정한 후 단계를 밟아가며, 문제 오답률이 50%를 넘을 시 하위 레벨에서 즉각 조기 종료(Early Termination)되어 최종 추천 레벨을 진단 및 회원 프로필에 매핑합니다.
+ * @why 학습자가 자신의 실제 실력에 맞지 않는 너무 쉽거나 어려운 텍스트로 인해 흥미를 잃지 않도록, 과학적인 독해력 측정 기준을 통해 맞춤형 레벨(A1~C2)의 시작점을 최단 시간에 지능적으로 제공하기 위해 존재합니다.
+ */
+
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/contexts/AuthContext';

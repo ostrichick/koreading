@@ -1,3 +1,9 @@
+/**
+ * @file route.ts (api/ai)
+ * @description Next.js Edge-ready 서버 사이드 AI API 라우트입니다. 1순위로 Groq Llama 3.1 70B 엔진을 호출하며, 2순위 비상망으로 Gemini 2.5/1.5 Flash 폴백망을 가동하여 텍스트 생성, 레벨 테스트 출제, 정밀 문법 형태소 분석 및 예문 사전 검색을 대행 처리합니다.
+ * @why AI 서비스들의 API 키 유출을 방지하고 백엔드 서버 단에서 쿼터 초과(429) 시 지능적으로 우회 및 교차 이중화 네트워크를 완성하기 위해 안전한 단일 엔드포인트 게이트웨이로 설계되었습니다.
+ */
+
 import { NextRequest, NextResponse } from 'next/server';
 import { GoogleGenerativeAI } from '@google/generative-ai';
 import type { CEFRLevel, NativeLanguage } from '@/lib/gemini';

@@ -1,5 +1,11 @@
 'use client';
 
+/**
+ * @file AlertModal.tsx
+ * @description 코레딩(Koreading) 앱 전역에서 발생하는 에러 및 알림을 마우스 드래그 및 [📋 내용 복사] 버튼을 통해 복사 가능한 형태로 표출하는 프리미엄 모달 팝업 컴포넌트입니다.
+ * @why 브라우저 기본 alert() 창이 텍스트 드래그를 차단하여, 429 쿼터 초과 에러 등 상세 디버그 로그를 스크린샷 캡처해야만 했던 번거로움을 완전히 해결하기 위해 존재합니다.
+ */
+
 import { useState } from 'react';
 
 interface AlertModalProps {

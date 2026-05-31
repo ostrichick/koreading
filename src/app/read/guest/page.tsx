@@ -1,5 +1,11 @@
 'use client';
 
+/**
+ * @file page.tsx (read/guest)
+ * @description 비로그인 게스트 사용자가 방금 임시 생성한 맞춤형 한국어 텍스트를 읽고 인터랙티브 사전을 활용하는 '게스트 전용 본문 독해 화면'입니다. 회원이 아니어도 초광속 2단계 점진적 사전 조회(Double-Stage Progressive Lookup), iOS 스타일 마우스 오버 즉시 검색, 다 읽은 후 자동 가입 권유 모달 등을 제공합니다.
+ * @why 신규 유저가 복잡한 구글 로그인이나 가입 절차 없이도 코레딩의 초속 독해 및 사전 조회의 매끄러움을 온전히 경험하고 자연스럽게 정식 회원으로 유입되게 돕는 강력한 랜딩 버퍼로 작동하기 위해 존재합니다.
+ */
+
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/contexts/AuthContext';

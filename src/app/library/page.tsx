@@ -1,5 +1,11 @@
 'use client';
 
+/**
+ * @file page.tsx (library)
+ * @description 코레딩(Koreading) 앱의 핵심인 '도서관(Library)' 메인 화면입니다. 난이도별/주제별 학습 자료 필터링, 별점/최신순 동적 정렬, 맞춤형 텍스트 생성 모달창 호출, 그리고 공용 429 에러 해결을 위한 개인 API Key 등록 및 가이드 창을 제공합니다.
+ * @why 다양한 수준의 전 세계 한국어 학습자들이 자신에게 최적화된 자료를 주도적으로 탐색 및 생성하고 학습 의지를 극대화할 수 있는 핵심 게이트웨이 역할을 수행하기 위해 존재합니다.
+ */
+
 import { useState, useEffect, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/contexts/AuthContext';
