@@ -91,12 +91,12 @@ export async function POST(req: NextRequest) {
 
     if (action === 'generateArticle') {
       const levelConfig: Record<CEFRLevel, string> = {
-        A1: 'Use only the most basic Korean words. 3-5 word sentences. Very simple present tense only. About 150-200 characters.',
-        A2: 'Use basic Korean vocabulary. Simple sentences 5-10 words. Present and past tense. About 250-350 characters.',
-        B1: 'Use intermediate vocabulary. Mix sentence structures. Include adjectives and adverbs. About 400-600 characters.',
-        B2: 'Use upper-intermediate vocabulary. Complex sentences okay. Various tenses and grammar patterns. About 600-800 characters.',
-        C1: 'Use advanced vocabulary including some idioms. Sophisticated sentence structures. About 800-1000 characters.',
-        C2: 'Use native-level vocabulary. Complex academic or literary style. About 1000-1200 characters.',
+        A1: 'Use only the most basic Korean words. Simple sentence structure (4-6 words per sentence). Simple present tense. The text must be detailed and comprehensive enough for beginner practice, having about 400-500 characters in Korean. Ensure it is written as a solid, cohesive paragraph of 4-6 sentences, not single-sentence lines.',
+        A2: 'Use basic Korean vocabulary. Simple sentences of 6-10 words. Present, past, and basic future tenses. The text must be detailed and substantial, having about 600-800 characters in Korean, structured into 2-3 coherent paragraphs.',
+        B1: 'Use intermediate vocabulary. Mix sentence structures. Include adjectives and adverbs. Detailed and substantial story or explanation, having about 900-1100 characters in Korean, structured into 3-4 coherent paragraphs.',
+        B2: 'Use upper-intermediate vocabulary. Complex sentences. Various tenses and advanced grammar patterns. Highly detailed and informative, having about 1200-1400 characters in Korean, structured into 3-4 coherent paragraphs.',
+        C1: 'Use advanced vocabulary including some idioms. Sophisticated and rich sentence structures. Very thorough and deeply informative, having about 1500-1700 characters in Korean, structured into 4-5 coherent paragraphs.',
+        C2: 'Use native-level vocabulary. Complex academic, professional or literary style. Deeply exhaustive, rich, and sophisticated, having about 1800-2000 characters in Korean, structured into 4-5 coherent paragraphs.',
       };
 
       const topicLabel = TOPICS.find((t: { id: string; label: string }) => t.id === topic)?.label || topic;
@@ -121,7 +121,7 @@ Return a JSON object ONLY (no markdown):
   "summary": "One sentence summary in ${langNote}",
   "topicCategory": "${topic}",
   "level": "${level}",
-  "estimatedMinutes": 3,
+  "estimatedMinutes": 2, // Estimate the reading time in minutes dynamically as an integer (e.g. 1, 2, 3, 4) based on the text level and length
   "keyVocabulary": ["word1", "word2", "word3", "word4", "word5"]
 }`;
 
