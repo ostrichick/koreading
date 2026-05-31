@@ -9,7 +9,7 @@
 import { useState, useEffect, useCallback, use, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/contexts/AuthContext';
-import { getArticleById, markArticleRead, saveVocabulary, getReadArticles, Article, saveReview, getReviews, Review } from '@/lib/db';
+import { getArticleById, markArticleRead, saveVocabulary, getReadArticles, Article, saveReview, getReviews, Review, deleteArticle } from '@/lib/db';
 import { lookupWordBasic, lookupWordAdvanced, TOPICS } from '@/lib/gemini';
 import { getGuestLang } from '@/lib/storage';
 import AlertModal from '@/components/AlertModal';
@@ -189,6 +189,24 @@ export default function ReadPage({ params }: { params: Promise<{ id: string }> }
     await markArticleRead(user.uid, id);
     setIsRead(true);
     setMarkingRead(false);
+  };
+
+  const handleDeleteArticle = async () => {
+    const confirmDelete = window.confirm(
+      '🚨 [테스트 기간 전용 액션]\n\n이 텍스트의 퀄리티가 너무 낮아 도서관에서 영구 삭제하시겠습니까?\n이 작업은 되돌릴 수 없으며, 모든 독자의 목록에서 완전히 제거됩니다.'
+    );
+    if (!confirmDelete) return;
+    
+    try {
+      await deleteArticle(id);
+      triggerAlert('텍스트가 성공적으로 삭제되었습니다. 도서관으로 이동합니다.', '삭제 완료', 'success');
+      setTimeout(() => {
+        router.push('/library');
+      }, 1500);
+    } catch (err: any) {
+      console.error(err);
+      triggerAlert(`삭제 실패: ${err?.message || JSON.stringify(err)}`, '오류', 'error');
+    }
   };
 
   const handleSubmitReview = async (e: React.FormEvent) => {
@@ -588,7 +606,32 @@ export default function ReadPage({ params }: { params: Promise<{ id: string }> }
         </div>
 
         {/* Mark as read */}
-        <div style={{ display: 'flex', gap: '12px', justifyContent: 'flex-end', marginBottom: '60px', flexWrap: 'wrap' }}>
+        <div style={{ display: 'flex', gap: '12px', justifyContent: 'flex-end', marginBottom: '60px', flexWrap: 'wrap', alignItems: 'center' }}>
+          {/* [테스트 기간 전용] 텍스트 삭제 버튼 */}
+          <button
+            onClick={handleDeleteArticle}
+            style={{
+              background: 'rgba(239,68,68,0.1)',
+              color: '#ef4444',
+              border: '1px solid rgba(239,68,68,0.3)',
+              borderRadius: '100px',
+              padding: '8px 20px',
+              fontSize: '0.85rem',
+              fontWeight: 700,
+              cursor: 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '6px',
+              transition: 'all 150ms ease',
+              fontFamily: 'inherit',
+              marginRight: 'auto', // Push to the far left!
+            }}
+            onMouseEnter={e => e.currentTarget.style.background = 'rgba(239,68,68,0.15)'}
+            onMouseLeave={e => e.currentTarget.style.background = 'rgba(239,68,68,0.1)'}
+          >
+            🗑️ 텍스트 삭제 (품질 저하)
+          </button>
+
           <a href="/library" className="btn btn-ghost">← 도서관으로</a>
           {!isRead && (
             <button

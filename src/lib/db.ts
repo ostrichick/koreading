@@ -10,6 +10,7 @@ import {
   orderBy,
   serverTimestamp,
   Timestamp,
+  deleteDoc,
 } from 'firebase/firestore';
 import { db } from './firebase';
 import type { CEFRLevel, NativeLanguage } from './gemini';
@@ -152,4 +153,10 @@ export async function getReviews(articleId: string): Promise<Review[]> {
   const q = query(ref, orderBy('createdAt', 'desc'));
   const snap = await getDocs(q);
   return snap.docs.map(d => ({ id: d.id, ...d.data() } as Review));
+}
+
+// Delete Article (Test mode action)
+export async function deleteArticle(id: string): Promise<void> {
+  const ref = doc(db, 'articles', id);
+  await deleteDoc(ref);
 }
