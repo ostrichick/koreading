@@ -35,10 +35,10 @@ export async function POST(req: NextRequest) {
      * Helper to call AI with primary Groq Llama 3.1 70B and dynamic fallback to Gemini
      */
     const generateWithFallback = async (prompt: string, responseMimeType?: string) => {
-      // 1. If GROQ_API_KEY is configured in the environment, use Groq Llama 3.1 70B as the primary engine!
+      // 1. If GROQ_API_KEY is configured in the environment, use Groq Llama 3.3 70B as the primary engine!
       if (process.env.GROQ_API_KEY) {
         try {
-          console.log('⚡ Calling primary Groq API: llama-3.1-70b-versatile');
+          console.log('⚡ Calling primary Groq API: llama-3.3-70b-versatile');
           const res = await fetch('https://api.groq.com/openai/v1/chat/completions', {
             method: 'POST',
             headers: {
@@ -46,7 +46,7 @@ export async function POST(req: NextRequest) {
               'Authorization': `Bearer ${process.env.GROQ_API_KEY}`
             },
             body: JSON.stringify({
-              model: 'llama-3.1-70b-versatile',
+              model: 'llama-3.3-70b-versatile',
               messages: [{ role: 'user', content: prompt }],
               response_format: responseMimeType === 'application/json' ? { type: 'json_object' } : undefined
             })
