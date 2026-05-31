@@ -109,9 +109,9 @@ export default function LibraryPage() {
       const id = await saveArticle(data);
       setShowGenModal(false);
       router.push(`/read/${id}`);
-    } catch (err) {
+    } catch (err: any) {
       console.error(err);
-      alert('텍스트 생성에 실패했습니다. 잠시 후 다시 시도해주세요.');
+      alert(`텍스트 생성에 실패했습니다: ${err?.message || JSON.stringify(err)}`);
     } finally {
       setGenerating(false);
     }

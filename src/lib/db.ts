@@ -87,9 +87,10 @@ export async function saveArticle(article: Omit<Article, 'id' | 'createdAt'>) {
 
 export async function getArticlesByLevel(level: CEFRLevel): Promise<Article[]> {
   const ref = collection(db, 'articles');
-  const q = query(ref, where('level', '==', level), orderBy('createdAt', 'desc'));
+  const q = query(ref, where('level', '==', level));
   const snap = await getDocs(q);
-  return snap.docs.map(d => ({ id: d.id, ...d.data() } as Article));
+  const list = snap.docs.map(d => ({ id: d.id, ...d.data() } as Article));
+  return list.sort((a, b) => (b.createdAt?.seconds || 0) - (a.createdAt?.seconds || 0));
 }
 
 export async function getArticleById(id: string): Promise<Article | null> {
