@@ -56,9 +56,11 @@ Return a JSON object ONLY (no markdown):
       return NextResponse.json(JSON.parse(text));
 
     } else if (action === 'lookupWord') {
+      const { type } = await req.json();
       const langName = nativeLang === 'es' ? 'Spanish' : 'English';
 
-      const prompt = `You are a Korean dictionary expert.
+      if (type === 'basic') {
+        const prompt = `You are a Korean dictionary expert.
 
 Look up the Korean word: "${word}"
 Context sentence: "${sentence}"
@@ -68,23 +70,40 @@ Return JSON ONLY (no markdown):
   "word": "${word}",
   "pronunciation": "romanization",
   "partOfSpeech": "품사 in Korean",
-  "structure": "How the word is formed/conjugated in Korean (e.g., for '다녀왔습니다', write '동사 다니다 + 오다 + -었습니다 / -습니다' showing grammatical particles, endings, auxiliary verbs, or compounds. Keep it concise, educational and clear in Korean)",
   "definition": "Korean definition",
   "translation": "Translation in ${langName}",
-  "examples": [
-    {"korean": "example sentence 1", "translation": "translation 1"},
-    {"korean": "example sentence 2", "translation": "translation 2"},
-    {"korean": "example sentence 3", "translation": "translation 3"}
-  ],
   "level": "CEFR level (A1/A2/B1/B2/C1/C2)"
 }`;
 
-      const result = await model.generateContent({
-        contents: [{ role: 'user', parts: [{ text: prompt }] }],
-        generationConfig: { responseMimeType: 'application/json' }
-      });
-      const text = result.response.text();
-      return NextResponse.json(JSON.parse(text));
+        const result = await model.generateContent({
+          contents: [{ role: 'user', parts: [{ text: prompt }] }],
+          generationConfig: { responseMimeType: 'application/json' }
+        });
+        const text = result.response.text();
+        return NextResponse.json(JSON.parse(text));
+      } else {
+        const prompt = `You are a Korean grammar and linguistics expert.
+
+Analyze the word: "${word}"
+In the context sentence: "${sentence}"
+
+Return JSON ONLY (no markdown):
+{
+  "structure": "How the word is formed/conjugated in Korean (e.g., for '다녀왔습니다', write '동사 다니다 + 오다 + -었습니다 / -습니다' showing grammatical particles, endings, auxiliary verbs, or compounds. Keep it concise, educational and clear in Korean)",
+  "examples": [
+    {"korean": "example sentence 1 using the word in correct context", "translation": "translation in ${langName}"},
+    {"korean": "example sentence 2", "translation": "translation 2"},
+    {"korean": "example sentence 3", "translation": "translation 3"}
+  ]
+}`;
+
+        const result = await model.generateContent({
+          contents: [{ role: 'user', parts: [{ text: prompt }] }],
+          generationConfig: { responseMimeType: 'application/json' }
+        });
+        const text = result.response.text();
+        return NextResponse.json(JSON.parse(text));
+      }
 
     } else if (action === 'generateTest') {
       const prompt = `Create a Korean reading placement test with texts for 5 levels.

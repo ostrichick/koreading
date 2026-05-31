@@ -4,7 +4,7 @@ import { useState, useEffect, useCallback, use, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/contexts/AuthContext';
 import { getArticleById, markArticleRead, saveVocabulary, getReadArticles, Article, saveReview, getReviews, Review } from '@/lib/db';
-import { lookupWord, TOPICS } from '@/lib/gemini';
+import { lookupWordBasic, lookupWordAdvanced, TOPICS } from '@/lib/gemini';
 import { getGuestLang } from '@/lib/storage';
 
 interface WordData {
@@ -14,7 +14,7 @@ interface WordData {
   structure?: string;
   definition: string;
   translation: string;
-  examples: { korean: string; translation: string }[];
+  examples?: { korean: string; translation: string }[];
   level: string;
 }
 
@@ -35,6 +35,7 @@ export default function ReadPage({ params }: { params: Promise<{ id: string }> }
   const [loading, setLoading] = useState(true);
   const [wordData, setWordData] = useState<WordData | null>(null);
   const [loadingWord, setLoadingWord] = useState(false);
+  const [loadingAdvanced, setLoadingAdvanced] = useState(false);
   const [savedWords, setSavedWords] = useState<Set<string>>(new Set());
   const [savingWord, setSavingWord] = useState(false);
   const [savedToast, setSavedToast] = useState(false);
@@ -87,13 +88,22 @@ export default function ReadPage({ params }: { params: Promise<{ id: string }> }
     
     setWordData(null);
     setLoadingWord(true);
+    setLoadingAdvanced(false);
     try {
-      const data = await lookupWord(word, sentence, nativeLang);
-      setWordData(data);
+      // Step 1: Quick basic dictionary lookup (takes < 1s)
+      const basicData = await lookupWordBasic(word, sentence, nativeLang);
+      setWordData(basicData);
+      setLoadingWord(false); // Instantly open popup and display definition!
+
+      // Step 2: Background advanced lookup (loads structure & examples)
+      setLoadingAdvanced(true);
+      const advancedData = await lookupWordAdvanced(word, sentence, nativeLang);
+      setWordData(prev => prev ? { ...prev, ...advancedData } : null);
     } catch (err) {
       console.error(err);
-    } finally {
       setLoadingWord(false);
+    } finally {
+      setLoadingAdvanced(false);
     }
   }, [profile, user]);
 
@@ -117,6 +127,7 @@ export default function ReadPage({ params }: { params: Promise<{ id: string }> }
   const closePopup = () => {
     setWordData(null);
     setLoadingWord(false);
+    setLoadingAdvanced(false);
   };
 
   const handleSaveWord = async () => {
@@ -133,7 +144,7 @@ export default function ReadPage({ params }: { params: Promise<{ id: string }> }
         definition: wordData.definition,
         translation: wordData.translation,
         partOfSpeech: wordData.partOfSpeech,
-        examples: wordData.examples,
+        examples: wordData.examples || [],
         level: wordData.level,
         topic: article.topicCategory,
         articleTitle: article.title,
@@ -591,7 +602,7 @@ export default function ReadPage({ params }: { params: Promise<{ id: string }> }
                 {/* Pulsing Part of Speech */}
                 <div className="skeleton" style={{ width: '18%', height: '18px', marginBottom: '24px', borderRadius: '4px' }} />
 
-                {/* Pulsing Structure Section */}
+                {/* Pulsing Structure Section Placeholder */}
                 <div style={{ marginBottom: '20px' }}>
                   <div className="skeleton" style={{ width: '45%', height: '12px', marginBottom: '10px', borderRadius: '4px' }} />
                   <div className="skeleton" style={{ width: '88%', height: '16px', borderRadius: '4px' }} />
@@ -630,7 +641,13 @@ export default function ReadPage({ params }: { params: Promise<{ id: string }> }
 
                 <span className="word-popup-pos">{wordData.partOfSpeech}</span>
 
-                {wordData.structure && (
+                {/* Progressive Morphological Structure Box */}
+                {loadingAdvanced && !wordData.structure ? (
+                  <div style={{ marginBottom: '20px', background: 'rgba(99,102,241,0.02)', borderRadius: 'var(--radius-sm)', padding: '12px 16px', border: '1px dotted var(--border-subtle)' }}>
+                    <div className="skeleton" style={{ width: '45%', height: '12px', marginBottom: '10px', borderRadius: '4px' }} />
+                    <div className="skeleton" style={{ width: '85%', height: '16px', borderRadius: '4px' }} />
+                  </div>
+                ) : wordData.structure ? (
                   <div className="word-popup-section" style={{ background: 'rgba(99,102,241,0.05)', borderRadius: 'var(--radius-sm)', padding: '12px 16px', border: '1px solid rgba(99,102,241,0.1)', marginBottom: '20px' }}>
                     <div className="word-popup-section-title" style={{ color: 'var(--accent-primary)', display: 'flex', alignItems: 'center', gap: '6px', fontWeight: 700 }}>
                       🧱 단어 구조 분석 (Word Structure)
@@ -639,7 +656,7 @@ export default function ReadPage({ params }: { params: Promise<{ id: string }> }
                       {wordData.structure}
                     </div>
                   </div>
-                )}
+                ) : null}
 
                 <div className="word-popup-section">
                   <div className="word-popup-section-title">📖 한국어 정의</div>
@@ -653,15 +670,26 @@ export default function ReadPage({ params }: { params: Promise<{ id: string }> }
                   <div className="word-popup-translation">{wordData.translation}</div>
                 </div>
 
-                <div className="word-popup-section">
-                  <div className="word-popup-section-title">📝 예문</div>
-                  {wordData.examples?.map((ex, i) => (
-                    <div key={i} className="word-popup-example">
-                      <div className="word-popup-example-korean">{ex.korean}</div>
-                      <div className="word-popup-example-translation">{ex.translation}</div>
+                {/* Progressive Examples Section */}
+                {loadingAdvanced && !wordData.examples ? (
+                  <div style={{ marginBottom: '20px', background: 'var(--bg-secondary)', borderRadius: 'var(--radius-sm)', padding: '16px', border: '1px dotted var(--border-subtle)' }}>
+                    <div className="skeleton" style={{ width: '25%', height: '12px', marginBottom: '12px', borderRadius: '4px' }} />
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                      <div className="skeleton" style={{ width: '95%', height: '14px', borderRadius: '4px' }} />
+                      <div className="skeleton" style={{ width: '60%', height: '12px', borderRadius: '4px' }} />
                     </div>
-                  ))}
-                </div>
+                  </div>
+                ) : wordData.examples ? (
+                  <div className="word-popup-section">
+                    <div className="word-popup-section-title">📝 예문</div>
+                    {wordData.examples.map((ex, i) => (
+                      <div key={i} className="word-popup-example">
+                        <div className="word-popup-example-korean">{ex.korean}</div>
+                        <div className="word-popup-example-translation">{ex.translation}</div>
+                      </div>
+                    ))}
+                  </div>
+                ) : null}
 
                 <div style={{ display: 'flex', gap: '8px' }}>
                   <span className={`level-badge level-${wordData.level}`}>{wordData.level}</span>

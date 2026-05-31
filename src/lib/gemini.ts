@@ -38,8 +38,12 @@ export async function generateArticle(level: CEFRLevel, topic: string, nativeLan
   return callAI({ action: 'generateArticle', level, topic, nativeLang });
 }
 
-export async function lookupWord(word: string, sentence: string, nativeLang: NativeLanguage) {
-  return callAI({ action: 'lookupWord', word, sentence, nativeLang });
+export async function lookupWordBasic(word: string, sentence: string, nativeLang: NativeLanguage) {
+  return callAI({ action: 'lookupWord', type: 'basic', word, sentence, nativeLang });
+}
+
+export async function lookupWordAdvanced(word: string, sentence: string, nativeLang: NativeLanguage) {
+  return callAI({ action: 'lookupWord', type: 'advanced', word, sentence, nativeLang });
 }
 
 export async function generatePlacementTest() {
