@@ -26,12 +26,38 @@ export async function POST(req: NextRequest) {
     const model15 = genAI.getGenerativeModel({ model: 'gemini-1.5-flash' });
 
     /**
-     * Helper to call Gemini 2.5-flash with an automatic robust fallback to Gemini 1.5-flash
+     * Helper to call AI with primary Groq Llama 3.1 70B and dynamic fallback to Gemini
      */
     const generateWithFallback = async (prompt: string, responseMimeType?: string) => {
+      // 1. If GROQ_API_KEY is configured in the environment, use Groq Llama 3.1 70B as the primary engine!
+      if (process.env.GROQ_API_KEY) {
+        try {
+          console.log('⚡ Calling primary Groq API: llama-3.1-70b-versatile');
+          const res = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'Authorization': `Bearer ${process.env.GROQ_API_KEY}`
+            },
+            body: JSON.stringify({
+              model: 'llama-3.1-70b-versatile',
+              messages: [{ role: 'user', content: prompt }],
+              response_format: responseMimeType === 'application/json' ? { type: 'json_object' } : undefined
+            })
+          });
+          if (res.ok) {
+            const data = await res.json();
+            return data.choices[0].message.content;
+          }
+          const errText = await res.text();
+          console.warn(`[Groq API warning status ${res.status}]: ${errText}`);
+        } catch (groqErr) {
+          console.warn('⚠️ Groq connection failed, falling back to Gemini...', groqErr);
+        }
+      }
+
+      // 2. Fallback to Gemini 2.5-flash/1.5-flash (primary, daily quota: 20 on free tier)
       const config = responseMimeType ? { responseMimeType } : undefined;
-      
-      // Try 1: Gemini 2.5-flash (primary, daily quota: 20 on free tier)
       try {
         const result = await model25.generateContent({
           contents: [{ role: 'user', parts: [{ text: prompt }] }],
