@@ -102,20 +102,21 @@ export async function POST(req: NextRequest) {
       const topicLabel = TOPICS.find((t: { id: string; label: string }) => t.id === topic)?.label || topic;
       const langNote = nativeLang === 'es' ? 'Spanish' : 'English';
 
-      const prompt = `You are a Korean language teacher creating reading material.
+      const prompt = `You are a professional Korean language teacher creating reading material.
 
-Write a Korean reading text about "${topicLabel}" for a CEFR ${level} learner.
+Write an engaging and culturally relevant Korean reading text about "${topicLabel}" for a CEFR ${level} learner.
 
-Requirements:
+CRITICAL HARD CONSTRAINTS (CRITICAL FOR LLAMA ACCURACY):
+1. Write the "content" field ONLY in PURE KOREAN characters (한글). 
+2. Absolutely DO NOT include any foreign letters, English, Spanish, Russian, Japanese, Chinese characters (한자), or any other alphabets in the "content" or "title" fields. Every single word in the body text must be pure Korean.
+3. i+1 Principle Restriction: When challenging the learner (10% new vocabulary), use SLIGHTLY ADVANCED KOREAN WORDS (어려운 한국어 단어), NEVER foreign words or other languages. The entire text must read as natural, correct, 100% pure Korean.
+4. Sentences structure constraint:
 - ${levelConfig[level as CEFRLevel]}
-- Apply i+1 principle: 90% known vocabulary with ~10% new words to challenge learners
-- Make it engaging and culturally relevant
-- Write ONLY in Korean (no romanization)
 
 Return a JSON object ONLY (no markdown):
 {
-  "title": "텍스트 제목 (Korean title)",
-  "content": "전체 텍스트 내용 (full Korean text with newlines for paragraphs)",
+  "title": "텍스트 제목 (Must be 100% pure Korean)",
+  "content": "전체 텍스트 내용 (Must be 100% natural and pure Korean, separated by newlines for paragraphs)",
   "summary": "One sentence summary in ${langNote}",
   "topicCategory": "${topic}",
   "level": "${level}",
