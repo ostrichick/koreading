@@ -29,10 +29,15 @@ export default function NavBar() {
     setMenuOpen(false);
   };
 
-  const navLinks = user ? [
-    { href: '/library', label: '도서관' },
-    { href: '/vocabulary', label: '내 단어장' },
-  ] : [];
+  const guestLevel = typeof window !== 'undefined' ? localStorage.getItem('koreading_level') : null;
+  const navLinks = user
+    ? [
+        { href: '/library', label: '도서관' },
+        { href: '/vocabulary', label: '내 단어장' },
+      ]
+    : guestLevel
+    ? [{ href: '/library', label: '도서관' }]
+    : [];
 
   return (
     <nav className="nav">
