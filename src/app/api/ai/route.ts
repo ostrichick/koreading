@@ -27,7 +27,7 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    const systemInstruction = 'You are an expert Korean linguist and language teacher. You must strictly follow all instructions. You must NEVER output Japanese (日本語, Hiragana, Katakana, Kanji, or Japanese vocabulary like "食べる") in fields designed for Korean. All fields designated for Korean must be written strictly in 100% pure Korean (한글). When writing the Korean definition or morphological structure, write them 100% in natural and pure Korean (한글), never Japanese.';
+    const systemInstruction = 'You are an expert Korean linguist and native language teacher. You must strictly follow all instructions. In any field designed for Korean (such as "content", "title", "definition", "structure", "korean" in examples), you MUST write strictly and 100% in pure Korean characters (한글) only. Absolutely NEVER include any foreign characters, Chinese characters (한자/漢字), Japanese (日本語/かな/カナ), English, Hindi, Vietnamese, or any other languages, symbols, or alphabets. Every single word in the Korean fields must be natural, correct, 100% pure Korean as written by a native speaker. Strictly follow this rule without exception.';
     const genAI = new GoogleGenerativeAI(activeApiKey);
     const model25 = genAI.getGenerativeModel({ model: 'gemini-2.5-flash', systemInstruction });
     const model15 = genAI.getGenerativeModel({ model: 'gemini-1.5-flash', systemInstruction });
@@ -111,9 +111,9 @@ export async function POST(req: NextRequest) {
 Write an engaging and culturally relevant Korean reading text about "${topicLabel}" for a CEFR ${level} learner.
 
 CRITICAL HARD CONSTRAINTS (CRITICAL FOR LLAMA ACCURACY):
-1. Write the "content" field ONLY in PURE KOREAN characters (한글). 
-2. Absolutely DO NOT include any foreign letters, English, Spanish, Russian, Japanese, Chinese characters (한자), or any other alphabets in the "content" or "title" fields. Every single word in the body text must be pure Korean.
-3. i+1 Principle Restriction: When challenging the learner (10% new vocabulary), use SLIGHTLY ADVANCED KOREAN WORDS (어려운 한국어 단어), NEVER foreign words or other languages. The entire text must read as natural, correct, 100% pure Korean.
+1. Write the "title" and "content" fields ONLY in PURE KOREAN characters (한글). 
+2. Absolutely DO NOT include any foreign letters, English, Spanish, Russian, Japanese, Chinese characters (한자), Hindi, Vietnamese, or any other alphabets/languages in the "content" or "title" fields. Every single word in the body text must be pure Korean.
+3. 100% Pure Korean Constraint: The text must be written strictly in natural, correct, 100% pure Korean (한글) characters only. Under no circumstances should you insert translations, foreign characters, Chinese characters (한자), English, Japanese, Hindi, Vietnamese, or other alphabets to explain words. The entire text must read as a seamless, high-quality Korean article written by a native speaker, adapted only in vocabulary level.
 4. Sentences structure constraint:
 - ${levelConfig[level as CEFRLevel]}
 5. Paragraph Structure Constraint: Write the text in proper paragraphs. Each paragraph MUST contain multiple naturally connected sentences (at least 3-4 sentences per paragraph, except possibly for very short A1/A2 texts which should still be structured as a solid paragraph of 4-6 sentences, not single-sentence lines separated by newlines). Absolutely do NOT write the text as single-sentence lines or put a newline after every single sentence.
