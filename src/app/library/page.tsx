@@ -6,6 +6,7 @@ import { useAuth } from '@/contexts/AuthContext';
 import { TOPICS, CEFRLevel, generateArticle } from '@/lib/gemini';
 import { getArticlesByLevel, saveArticle, getReadArticles, Article } from '@/lib/db';
 import { getGuestLevel, getGuestLang } from '@/lib/storage';
+import AlertModal from '@/components/AlertModal';
 
 const LEVELS: CEFRLevel[] = ['A1', 'A2', 'B1', 'B2', 'C1', 'C2'];
 const LEVEL_LABELS: Record<CEFRLevel, string> = {
@@ -36,6 +37,19 @@ export default function LibraryPage() {
   const [showGenModal, setShowGenModal] = useState(false);
   const [genLevels, setGenLevels] = useState<CEFRLevel[]>([]);
   const [genTopics, setGenTopics] = useState<string[]>([]);
+
+  // Alert Modal States
+  const [alertOpen, setAlertOpen] = useState(false);
+  const [alertTitle, setAlertTitle] = useState('알림');
+  const [alertMsg, setAlertMsg] = useState('');
+  const [alertType, setAlertType] = useState<'info' | 'error' | 'warning' | 'success'>('info');
+
+  const triggerAlert = (message: string, title = '알림', type: 'info' | 'error' | 'warning' | 'success' = 'info') => {
+    setAlertTitle(title);
+    setAlertMsg(message);
+    setAlertType(type);
+    setAlertOpen(true);
+  };
 
   useEffect(() => {
     const level = profile?.level || getGuestLevel();
@@ -89,11 +103,11 @@ export default function LibraryPage() {
 
   const handleGenerate = async () => {
     if (genLevels.length === 0) {
-      alert('최소 한 개의 레벨을 선택해 주세요!');
+      triggerAlert('최소 한 개의 레벨을 선택해 주세요!', '조건 선택', 'warning');
       return;
     }
     if (genTopics.length === 0) {
-      alert('최소 한 개의 주제를 선택해 주세요!');
+      triggerAlert('최소 한 개의 주제를 선택해 주세요!', '조건 선택', 'warning');
       return;
     }
 
@@ -118,13 +132,17 @@ export default function LibraryPage() {
         setShowGenModal(false);
         
         // Show a helpful warning explaining the Firebase rule constraint and how to fix it
-        alert('ℹ️ Firebase Database 권한 설정(Missing or insufficient permissions)으로 인해 도서관에 저장되지 못했습니다.\n\n걱정 마세요! 생성된 글은 임시 페이지에 로드되므로 지금 바로 읽으실 수 있습니다.\n\n(영구 저장하여 공유하시려면 Google 로그인 후 글을 생성하시거나, Firebase 콘솔의 Firestore 규칙에서 articles 컬렉션의 write 권한을 허용 [allow read, write: if true;]해 주세요!)');
+        triggerAlert(
+          'ℹ️ Firebase Database 권한 설정(Missing or insufficient permissions)으로 인해 도서관에 저장되지 못했습니다.\n\n걱정 마세요! 생성된 글은 임시 페이지에 로드되므로 지금 바로 읽으실 수 있습니다.\n\n(영구 저장하여 공유하시려면 Google 로그인 후 글을 생성하시거나, Firebase 콘솔의 Firestore 규칙에서 articles 컬렉션의 write 권한을 허용 [allow read, write: if true;]해 주세요!)',
+          '데이터베이스 권한 오류',
+          'warning'
+        );
         
         router.push('/read/guest');
       }
     } catch (err: any) {
       console.error(err);
-      alert(`텍스트 생성에 실패했습니다: ${err?.message || JSON.stringify(err)}`);
+      triggerAlert(`텍스트 생성에 실패했습니다: ${err?.message || JSON.stringify(err)}`, '텍스트 생성 실패', 'error');
     } finally {
       setGenerating(false);
     }
@@ -395,6 +413,14 @@ export default function LibraryPage() {
           </div>
         </div>
       )}
+      {/* Custom Alert/Error Modal */}
+      <AlertModal
+        isOpen={alertOpen}
+        title={alertTitle}
+        message={alertMsg}
+        type={alertType}
+        onClose={() => setAlertOpen(false)}
+      />
     </div>
   );
 }

@@ -7,6 +7,7 @@ import { generatePlacementTest } from '@/lib/gemini';
 import { createOrUpdateUser } from '@/lib/db';
 import { setGuestLevel, setGuestLang, getGuestLang } from '@/lib/storage';
 import type { NativeLanguage } from '@/lib/gemini';
+import AlertModal from '@/components/AlertModal';
 
 type Level = 'A1' | 'A2' | 'B1' | 'B2' | 'C1' | 'C2';
 
@@ -40,6 +41,19 @@ export default function TestPage() {
   const [resultLevel, setResultLevel] = useState<Level | null>(null);
   const [saving, setSaving] = useState(false);
 
+  // Alert Modal States
+  const [alertOpen, setAlertOpen] = useState(false);
+  const [alertTitle, setAlertTitle] = useState('알림');
+  const [alertMsg, setAlertMsg] = useState('');
+  const [alertType, setAlertType] = useState<'info' | 'error' | 'warning' | 'success'>('info');
+
+  const triggerAlert = (message: string, title = '알림', type: 'info' | 'error' | 'warning' | 'success' = 'info') => {
+    setAlertTitle(title);
+    setAlertMsg(message);
+    setAlertType(type);
+    setAlertOpen(true);
+  };
+
   const loadTest = async () => {
     setGuestLang(nativeLang);
     setStep('loading');
@@ -49,7 +63,7 @@ export default function TestPage() {
       setStep('testing');
     } catch (err: any) {
       setStep('intro');
-      alert(`테스트 로딩 실패: ${err?.message || JSON.stringify(err)}`);
+      triggerAlert(`테스트 로딩 실패: ${err?.message || JSON.stringify(err)}`, '테스트 로딩 실패', 'error');
     }
   };
 
@@ -128,121 +142,157 @@ export default function TestPage() {
 
   // Step: Language selection
   if (step === 'intro') return (
-    <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '40px 24px' }}>
-      <div style={{ maxWidth: '600px', width: '100%', textAlign: 'center' }}>
-        <div style={{ fontSize: '4rem', marginBottom: '24px' }}>🌐</div>
-        <h1 style={{ fontSize: '2rem', fontWeight: 900, marginBottom: '12px' }}>모국어를 선택해주세요</h1>
-        <p style={{ color: 'var(--text-secondary)', marginBottom: '32px' }}>단어 번역에 사용됩니다</p>
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px', maxWidth: '360px', margin: '0 auto 32px' }}>
-          {[
-            { value: 'en' as NativeLanguage, label: '🇺🇸 English' },
-            { value: 'es' as NativeLanguage, label: '🇪🇸 Español' },
-          ].map(lang => (
-            <button
-              key={lang.value}
-              onClick={() => setNativeLang(lang.value)}
-              style={{
-                padding: '20px',
-                borderRadius: 'var(--radius-lg)',
-                border: '2px solid',
-                borderColor: nativeLang === lang.value ? 'var(--accent-primary)' : 'var(--border-subtle)',
-                background: nativeLang === lang.value ? 'rgba(99,102,241,0.15)' : 'var(--bg-card)',
-                cursor: 'pointer',
-                fontSize: '1.1rem',
-                fontWeight: 700,
-                color: 'var(--text-primary)',
-                transition: 'all 200ms ease',
-                fontFamily: 'inherit',
-              }}
-            >
-              {lang.label}
-            </button>
-          ))}
+    <>
+      <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '40px 24px' }}>
+        <div style={{ maxWidth: '600px', width: '100%', textAlign: 'center' }}>
+          <div style={{ fontSize: '4rem', marginBottom: '24px' }}>🌐</div>
+          <h1 style={{ fontSize: '2rem', fontWeight: 900, marginBottom: '12px' }}>모국어를 선택해주세요</h1>
+          <p style={{ color: 'var(--text-secondary)', marginBottom: '32px' }}>단어 번역에 사용됩니다</p>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px', maxWidth: '360px', margin: '0 auto 32px' }}>
+            {[
+              { value: 'en' as NativeLanguage, label: '🇺🇸 English' },
+              { value: 'es' as NativeLanguage, label: '🇪🇸 Español' },
+            ].map(lang => (
+              <button
+                key={lang.value}
+                onClick={() => setNativeLang(lang.value)}
+                style={{
+                  padding: '20px',
+                  borderRadius: 'var(--radius-lg)',
+                  border: '2px solid',
+                  borderColor: nativeLang === lang.value ? 'var(--accent-primary)' : 'var(--border-subtle)',
+                  background: nativeLang === lang.value ? 'rgba(99,102,241,0.15)' : 'var(--bg-card)',
+                  cursor: 'pointer',
+                  fontSize: '1.1rem',
+                  fontWeight: 700,
+                  color: 'var(--text-primary)',
+                  transition: 'all 200ms ease',
+                  fontFamily: 'inherit',
+                }}
+              >
+                {lang.label}
+              </button>
+            ))}
+          </div>
+          <button id="start-test-btn" onClick={loadTest} className="btn btn-primary btn-lg">
+            레벨 테스트 시작 →
+          </button>
+          <p style={{ marginTop: '16px', fontSize: '0.8rem', color: 'var(--text-muted)' }}>로그인 없이 바로 시작합니다</p>
         </div>
-        <button id="start-test-btn" onClick={loadTest} className="btn btn-primary btn-lg">
-          레벨 테스트 시작 →
-        </button>
-        <p style={{ marginTop: '16px', fontSize: '0.8rem', color: 'var(--text-muted)' }}>로그인 없이 바로 시작합니다</p>
       </div>
-    </div>
+      <AlertModal
+        isOpen={alertOpen}
+        title={alertTitle}
+        message={alertMsg}
+        type={alertType}
+        onClose={() => setAlertOpen(false)}
+      />
+    </>
   );
 
   if (step === 'loading') return (
-    <div className="loading-wrapper" style={{ minHeight: '100vh' }}>
-      <div className="loading-spinner" />
-      <p style={{ color: 'var(--text-secondary)' }}>AI가 테스트를 준비하고 있습니다...</p>
-      <p style={{ color: 'var(--text-muted)', fontSize: '0.8rem' }}>약 10~20초 소요</p>
-    </div>
+    <>
+      <div className="loading-wrapper" style={{ minHeight: '100vh' }}>
+        <div className="loading-spinner" />
+        <p style={{ color: 'var(--text-secondary)' }}>AI가 테스트를 준비하고 있습니다...</p>
+        <p style={{ color: 'var(--text-muted)', fontSize: '0.8rem' }}>약 10~20초 소요</p>
+      </div>
+      <AlertModal
+        isOpen={alertOpen}
+        title={alertTitle}
+        message={alertMsg}
+        type={alertType}
+        onClose={() => setAlertOpen(false)}
+      />
+    </>
   );
 
   if (step === 'done' && resultLevel) return (
-    <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '40px 24px' }}>
-      <div style={{ maxWidth: '500px', width: '100%', textAlign: 'center' }}>
-        <div style={{ fontSize: '5rem', marginBottom: '24px' }}>🎉</div>
-        <h1 style={{ fontSize: '2rem', fontWeight: 900, marginBottom: '16px' }}>테스트 완료!</h1>
-        <p style={{ color: 'var(--text-secondary)', marginBottom: '24px' }}>당신의 한국어 읽기 레벨은:</p>
-        <div style={{ fontSize: '5rem', fontWeight: 900, color: LEVEL_COLORS[resultLevel], marginBottom: '8px' }}>
-          {resultLevel}
+    <>
+      <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '40px 24px' }}>
+        <div style={{ maxWidth: '500px', width: '100%', textAlign: 'center' }}>
+          <div style={{ fontSize: '5rem', marginBottom: '24px' }}>🎉</div>
+          <h1 style={{ fontSize: '2rem', fontWeight: 900, marginBottom: '16px' }}>테스트 완료!</h1>
+          <p style={{ color: 'var(--text-secondary)', marginBottom: '24px' }}>당신의 한국어 읽기 레벨은:</p>
+          <div style={{ fontSize: '5rem', fontWeight: 900, color: LEVEL_COLORS[resultLevel], marginBottom: '8px' }}>
+            {resultLevel}
+          </div>
+          <div style={{ color: 'var(--text-secondary)', marginBottom: '40px', fontSize: '1.1rem' }}>
+            {{ A1: '입문', A2: '초급', B1: '중급', B2: '중상급', C1: '고급', C2: '최고급' }[resultLevel]}
+          </div>
+          <div className="card" style={{ marginBottom: '24px', textAlign: 'left', padding: '20px' }}>
+            <p style={{ color: 'var(--text-secondary)', fontSize: '0.9rem', lineHeight: 1.7 }}>
+              이 레벨에 맞는 한국어 텍스트를 추천해 드릴게요.
+              지금 바로 읽기를 시작할 수 있어요! (로그인 불필요)
+            </p>
+          </div>
+          <button id="save-level-btn" onClick={saveAndContinue} disabled={saving} className="btn btn-primary btn-lg" style={{ width: '100%', justifyContent: 'center' }}>
+            {saving ? '저장 중...' : '📚 읽기 시작하기 →'}
+          </button>
         </div>
-        <div style={{ color: 'var(--text-secondary)', marginBottom: '40px', fontSize: '1.1rem' }}>
-          {{ A1: '입문', A2: '초급', B1: '중급', B2: '중상급', C1: '고급', C2: '최고급' }[resultLevel]}
-        </div>
-        <div className="card" style={{ marginBottom: '24px', textAlign: 'left', padding: '20px' }}>
-          <p style={{ color: 'var(--text-secondary)', fontSize: '0.9rem', lineHeight: 1.7 }}>
-            이 레벨에 맞는 한국어 텍스트를 추천해 드릴게요.
-            지금 바로 읽기를 시작할 수 있어요! (로그인 불필요)
-          </p>
-        </div>
-        <button id="save-level-btn" onClick={saveAndContinue} disabled={saving} className="btn btn-primary btn-lg" style={{ width: '100%', justifyContent: 'center' }}>
-          {saving ? '저장 중...' : '📚 읽기 시작하기 →'}
-        </button>
       </div>
-    </div>
+      <AlertModal
+        isOpen={alertOpen}
+        title={alertTitle}
+        message={alertMsg}
+        type={alertType}
+        onClose={() => setAlertOpen(false)}
+      />
+    </>
   );
 
   if (!currentLevel) return null;
   const currentQ = currentLevel.questions[currentQIdx];
 
   return (
-    <div style={{ minHeight: '100vh', padding: '40px 24px' }}>
-      <div className="container" style={{ maxWidth: '700px' }}>
-        <div style={{ marginBottom: '32px' }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '8px', fontSize: '0.8rem', color: 'var(--text-muted)' }}>
-            <span>레벨 {currentLevelIdx + 1}/{totalLevels}</span>
-            <span>질문 {currentQIdx + 1}/{currentLevel.questions.length}</span>
+    <>
+      <div style={{ minHeight: '100vh', padding: '40px 24px' }}>
+        <div className="container" style={{ maxWidth: '700px' }}>
+          <div style={{ marginBottom: '32px' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '8px', fontSize: '0.8rem', color: 'var(--text-muted)' }}>
+              <span>레벨 {currentLevelIdx + 1}/{totalLevels}</span>
+              <span>질문 {currentQIdx + 1}/{currentLevel.questions.length}</span>
+            </div>
+            <div className="progress-bar"><div className="progress-fill" style={{ width: `${progress}%` }} /></div>
           </div>
-          <div className="progress-bar"><div className="progress-fill" style={{ width: `${progress}%` }} /></div>
-        </div>
 
-        <div style={{ display: 'flex', gap: '12px', marginBottom: '24px' }}>
-          <span className={`level-badge level-${currentLevel.level}`}>{currentLevel.level}</span>
-          <span style={{ color: 'var(--text-muted)', fontSize: '0.875rem' }}>읽기 텍스트</span>
-        </div>
+          <div style={{ display: 'flex', gap: '12px', marginBottom: '24px' }}>
+            <span className={`level-badge level-${currentLevel.level}`}>{currentLevel.level}</span>
+            <span style={{ color: 'var(--text-muted)', fontSize: '0.875rem' }}>읽기 텍스트</span>
+          </div>
 
-        <div className="card" style={{ marginBottom: '32px', lineHeight: 2.2, fontSize: '1.1rem' }}>
-          <p className="korean-text">{currentLevel.text}</p>
-        </div>
+          <div className="card" style={{ marginBottom: '32px', lineHeight: 2.2, fontSize: '1.1rem' }}>
+            <p className="korean-text">{currentLevel.text}</p>
+          </div>
 
-        <div>
-          <p style={{ fontSize: '1rem', fontWeight: 600, marginBottom: '16px', color: 'var(--text-secondary)' }}>
-            {currentQIdx + 1}. {currentQ.question}
-          </p>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-            {currentQ.options.map((option, idx) => {
-              let bg = 'var(--bg-card)', border = 'var(--border-subtle)', color = 'var(--text-primary)';
-              if (selectedAnswer !== null) {
-                if (idx === currentQ.correct) { bg = 'rgba(16,185,129,0.15)'; border = 'rgba(16,185,129,0.5)'; color = '#10b981'; }
-                else if (idx === selectedAnswer) { bg = 'rgba(244,63,94,0.15)'; border = 'rgba(244,63,94,0.5)'; color = '#fb7185'; }
-              }
-              return (
-                <button key={idx} onClick={() => handleAnswer(idx)} style={{ background: bg, border: `1px solid ${border}`, borderRadius: 'var(--radius-md)', padding: '14px 20px', textAlign: 'left', color, cursor: selectedAnswer !== null ? 'default' : 'pointer', transition: 'all 200ms ease', fontSize: '0.9rem', fontFamily: 'inherit' }}>
-                  {String.fromCharCode(65 + idx)}. {option}
-                </button>
-              );
-            })}
+          <div>
+            <p style={{ fontSize: '1rem', fontWeight: 600, marginBottom: '16px', color: 'var(--text-secondary)' }}>
+              {currentQIdx + 1}. {currentQ.question}
+            </p>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+              {currentQ.options.map((option, idx) => {
+                let bg = 'var(--bg-card)', border = 'var(--border-subtle)', color = 'var(--text-primary)';
+                if (selectedAnswer !== null) {
+                  if (idx === currentQ.correct) { bg = 'rgba(16,185,129,0.15)'; border = 'rgba(16,185,129,0.5)'; color = '#10b981'; }
+                  else if (idx === selectedAnswer) { bg = 'rgba(244,63,94,0.15)'; border = 'rgba(244,63,94,0.5)'; color = '#fb7185'; }
+                }
+                return (
+                  <button key={idx} onClick={() => handleAnswer(idx)} style={{ background: bg, border: `1px solid ${border}`, borderRadius: 'var(--radius-md)', padding: '14px 20px', textAlign: 'left', color, cursor: selectedAnswer !== null ? 'default' : 'pointer', transition: 'all 200ms ease', fontSize: '0.9rem', fontFamily: 'inherit' }}>
+                    {String.fromCharCode(65 + idx)}. {option}
+                  </button>
+                );
+              })}
+            </div>
           </div>
         </div>
       </div>
-    </div>
+      <AlertModal
+        isOpen={alertOpen}
+        title={alertTitle}
+        message={alertMsg}
+        type={alertType}
+        onClose={() => setAlertOpen(false)}
+      />
+    </>
   );
 }

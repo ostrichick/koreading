@@ -6,6 +6,7 @@ import { useAuth } from '@/contexts/AuthContext';
 import { getArticleById, markArticleRead, saveVocabulary, getReadArticles, Article, saveReview, getReviews, Review } from '@/lib/db';
 import { lookupWordBasic, lookupWordAdvanced, TOPICS } from '@/lib/gemini';
 import { getGuestLang } from '@/lib/storage';
+import AlertModal from '@/components/AlertModal';
 
 interface WordData {
   word: string;
@@ -54,6 +55,19 @@ export default function ReadPage({ params }: { params: Promise<{ id: string }> }
   const [cons, setCons] = useState('');
   const [submittingReview, setSubmittingReview] = useState(false);
   const [hasReviewed, setHasReviewed] = useState(false);
+
+  // Alert Modal States
+  const [alertOpen, setAlertOpen] = useState(false);
+  const [alertTitle, setAlertTitle] = useState('알림');
+  const [alertMsg, setAlertMsg] = useState('');
+  const [alertType, setAlertType] = useState<'info' | 'error' | 'warning' | 'success'>('info');
+
+  const triggerAlert = (message: string, title = '알림', type: 'info' | 'error' | 'warning' | 'success' = 'info') => {
+    setAlertTitle(title);
+    setAlertMsg(message);
+    setAlertType(type);
+    setAlertOpen(true);
+  };
 
   useEffect(() => {
     // Load hover preference from localStorage
@@ -132,7 +146,7 @@ export default function ReadPage({ params }: { params: Promise<{ id: string }> }
 
   const handleSaveWord = async () => {
     if (!user || !wordData || !article) {
-      alert('단어를 저장하려면 로그인해야 합니다.');
+      triggerAlert('단어를 저장하려면 로그인해야 합니다.', '로그인 필요', 'warning');
       router.push('/login');
       return;
     }
@@ -174,7 +188,7 @@ export default function ReadPage({ params }: { params: Promise<{ id: string }> }
   const handleSubmitReview = async (e: React.FormEvent) => {
     e.preventDefault();
     if (rating === 0) {
-      alert('별점을 선택해주세요!');
+      triggerAlert('별점을 선택해주세요!', '평가 입력', 'warning');
       return;
     }
     setSubmittingReview(true);
@@ -198,7 +212,7 @@ export default function ReadPage({ params }: { params: Promise<{ id: string }> }
       if (updatedArticle) setArticle(updatedArticle);
     } catch (err) {
       console.error(err);
-      alert('리뷰 등록에 실패했습니다. 잠시 후 다시 시도해 주세요.');
+      triggerAlert('리뷰 등록에 실패했습니다. 잠시 후 다시 시도해 주세요.', '리뷰 등록 실패', 'error');
     } finally {
       setSubmittingReview(false);
     }
@@ -714,6 +728,15 @@ export default function ReadPage({ params }: { params: Promise<{ id: string }> }
           ✓ 단어장에 저장되었습니다!
         </div>
       )}
+
+      {/* Custom Alert/Error Modal */}
+      <AlertModal
+        isOpen={alertOpen}
+        title={alertTitle}
+        message={alertMsg}
+        type={alertType}
+        onClose={() => setAlertOpen(false)}
+      />
     </div>
   );
 }
