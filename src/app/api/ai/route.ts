@@ -109,7 +109,7 @@ export async function POST(req: NextRequest) {
     };
 
     // ═══════════════════════════════════════════════════
-    // 📰 generateArticle: 스트리밍 NDJSON 응답 + 실시간 로그
+    // 📰 generateArticle: Groq 3종 + Gemini 5종 = 8중 폴백 + 로그 수집
     // ═══════════════════════════════════════════════════
     if (action === 'generateArticle') {
       const levelConfig: Record<CEFRLevel, string> = {
@@ -153,130 +153,100 @@ CEFR ${level} 레벨의 한국어 학습자를 위한 "${topicLabel}" 주제의 
   "keyVocabulary": ["핵심단어1", "핵심단어2", "핵심단어3", "핵심단어4", "핵심단어5"]
 }`;
 
-      const genConfig = {
-        temperature: 0.1,
-        responseMimeType: 'application/json' as const
-      };
+      const genConfig = { temperature: 0.1, responseMimeType: 'application/json' as const };
+      const logs: string[] = [];
+      let resultText: string | null = null;
+      let modelUsed = '';
 
-      // 스트리밍 NDJSON 응답: 클라이언트에 실시간 로그 전송
-      const stream = new ReadableStream({
-        async start(controller) {
-          const encoder = new TextEncoder();
-          const send = (type: string, payload: Record<string, unknown>) => {
-            controller.enqueue(encoder.encode(JSON.stringify({ type, ...payload }) + '\n'));
-          };
-          const log = (message: string) => send('log', { message });
-
-          let resultText: string | null = null;
-          let modelUsed = '';
-
+      // ── Groq 다중 모델 (Google과 완전히 독립된 인프라) ──
+      if (process.env.GROQ_API_KEY) {
+        const groqModels = [
+          { id: 'gemma2-9b-it', name: 'Groq Gemma 2 9B' },
+          { id: 'llama-3.3-70b-versatile', name: 'Groq Llama 3.3 70B' },
+          { id: 'llama-3.1-8b-instant', name: 'Groq Llama 3.1 8B' },
+        ];
+        for (const gm of groqModels) {
+          if (resultText) break;
+          logs.push(`⚡ ${gm.name} 모델에 연결 중...`);
           try {
-            // ── 1단계: Groq Gemma 2 9B ──
-            if (process.env.GROQ_API_KEY) {
-              log('⚡ [1단계] Groq Gemma 2 9B 모델에 연결 중...');
-              try {
-                const res = await fetch('https://api.groq.com/openai/v1/chat/completions', {
-                  method: 'POST',
-                  headers: {
-                    'Content-Type': 'application/json',
-                    'Authorization': `Bearer ${process.env.GROQ_API_KEY}`
-                  },
-                  body: JSON.stringify({
-                    model: 'gemma2-9b-it',
-                    temperature: 0.1,
-                    messages: [
-                      { role: 'system', content: systemInstruction },
-                      { role: 'user', content: prompt }
-                    ],
-                    response_format: { type: 'json_object' }
-                  })
-                });
-                if (res.ok) {
-                  const data = await res.json();
-                  resultText = data.choices[0].message.content;
-                  modelUsed = 'Gemma 2 9B (Groq LPU)';
-                  log('✅ Groq Gemma 2 9B 모델로 생성 성공!');
-                } else {
-                  const errText = await res.text();
-                  const shortErr = errText.substring(0, 120);
-                  log(`⚠️ Groq 응답 오류 (HTTP ${res.status}): ${shortErr}`);
-                }
-              } catch (groqErr: any) {
-                log(`⚠️ Groq 연결 실패: ${(groqErr?.message || '').substring(0, 100)}`);
-              }
-            }
-
-            // ── Gemini 다중 모델 폴백 체인 (각 모델 최대 2회 재시도) ──
-            const geminiChain = [
-              { model: model25, name: 'Gemini 2.5 Flash', step: 2 },
-              { model: model20, name: 'Gemini 2.0 Flash', step: 3 },
-              { model: model15, name: 'Gemini 1.5 Flash', step: 4 },
-              { model: model20lite, name: 'Gemini 2.0 Flash Lite', step: 5 },
-              { model: model15_8b, name: 'Gemini 1.5 Flash 8B', step: 6 },
-            ];
-            const totalSteps = geminiChain.length + 1; // +1 for Groq
-
-            if (!resultText) {
-              for (const { model: m, name, step } of geminiChain) {
-                if (resultText) break;
-                const MAX_RETRY = 2;
-                for (let attempt = 1; attempt <= MAX_RETRY; attempt++) {
-                  log(`🔄 [${step}/${totalSteps}단계] ${name} 모델로 생성 시도 중... (${attempt}/${MAX_RETRY})`);
-                  try {
-                    const r = await m.generateContent({
-                      contents: [{ role: 'user', parts: [{ text: prompt }] }],
-                      generationConfig: genConfig
-                    });
-                    resultText = r.response.text();
-                    modelUsed = name;
-                    log(`✅ ${name} 모델로 생성 성공!`);
-                    break;
-                  } catch (err: any) {
-                    const msg = err?.message || String(err);
-                    if (isRetryableError(msg)) {
-                      if (attempt < MAX_RETRY) {
-                        const waitSec = attempt * 3;
-                        log(`⏳ ${name} 서버 과부하 (503/429). ${waitSec}초 대기 후 재시도...`);
-                        await sleep(waitSec * 1000);
-                      } else {
-                        log(`❌ ${name} ${MAX_RETRY}회 시도 실패. 다음 모델로 전환합니다.`);
-                      }
-                    } else {
-                      log(`⚠️ ${name} 오류: ${msg.substring(0, 120)}`);
-                      break; // 재시도 불가능한 에러 → 다음 모델로
-                    }
-                  }
-                }
-              }
-            }
-
-            // ── 최종 결과 전송 ──
-            if (resultText) {
-              try {
-                const parsed = { ...JSON.parse(resultText), generatorModel: modelUsed };
-                send('result', { data: parsed });
-              } catch {
-                send('error', { message: 'AI 응답 JSON 파싱에 실패했습니다. 다시 시도해 주세요.' });
-              }
+            const res = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${process.env.GROQ_API_KEY}`
+              },
+              body: JSON.stringify({
+                model: gm.id,
+                temperature: 0.1,
+                messages: [
+                  { role: 'system', content: systemInstruction },
+                  { role: 'user', content: prompt }
+                ],
+                response_format: { type: 'json_object' }
+              })
+            });
+            if (res.ok) {
+              const data = await res.json();
+              resultText = data.choices[0].message.content;
+              modelUsed = gm.name;
+              logs.push(`✅ ${gm.name} 모델로 생성 성공!`);
             } else {
-              log('💀 모든 AI 모델(Groq + Gemini 5종) 호출이 실패했습니다.');
-              send('error', { message: '현재 모든 AI 서버가 과부하 상태입니다. 1~2분 후에 다시 시도해 주세요.\n\n💡 개인 Gemini API Key를 등록하면 개인 쿼터를 사용하므로 성공률이 크게 높아집니다!' });
+              const errText = (await res.text()).substring(0, 120);
+              logs.push(`⚠️ ${gm.name} 오류 (HTTP ${res.status}): ${errText}`);
             }
-          } catch (fatalErr: any) {
-            send('error', { message: fatalErr?.message || '알 수 없는 오류가 발생했습니다.' });
+          } catch (e: any) {
+            logs.push(`⚠️ ${gm.name} 연결 실패: ${(e?.message || '').substring(0, 100)}`);
           }
-
-          controller.close();
         }
-      });
+      }
 
-      return new Response(stream, {
-        headers: {
-          'Content-Type': 'application/x-ndjson',
-          'Cache-Control': 'no-cache',
-          'X-Content-Type-Options': 'nosniff',
+      // ── Gemini 5종 폴백 체인 ──
+      if (!resultText) {
+        const geminiChain = [
+          { model: model25, name: 'Gemini 2.5 Flash' },
+          { model: model20, name: 'Gemini 2.0 Flash' },
+          { model: model15, name: 'Gemini 1.5 Flash' },
+          { model: model20lite, name: 'Gemini 2.0 Flash Lite' },
+          { model: model15_8b, name: 'Gemini 1.5 Flash 8B' },
+        ];
+        for (const { model: m, name } of geminiChain) {
+          if (resultText) break;
+          logs.push(`🔄 ${name} 모델로 생성 시도 중...`);
+          try {
+            const r = await m.generateContent({
+              contents: [{ role: 'user', parts: [{ text: prompt }] }],
+              generationConfig: genConfig
+            });
+            resultText = r.response.text();
+            modelUsed = name;
+            logs.push(`✅ ${name} 모델로 생성 성공!`);
+          } catch (err: any) {
+            const msg = err?.message || String(err);
+            if (isRetryableError(msg)) {
+              logs.push(`⏳ ${name} 서버 과부하 (503/429). 다음 모델로 전환...`);
+              await sleep(1000);
+            } else {
+              logs.push(`⚠️ ${name} 오류: ${msg.substring(0, 120)}`);
+            }
+          }
         }
-      });
+      }
+
+      // ── 최종 결과 반환 (항상 _logs 포함) ──
+      if (resultText) {
+        try {
+          const parsed = JSON.parse(resultText);
+          return NextResponse.json({ ...parsed, generatorModel: modelUsed, _logs: logs });
+        } catch {
+          return NextResponse.json({ error: 'AI 응답 JSON 파싱 실패', _logs: logs }, { status: 500 });
+        }
+      } else {
+        logs.push('💀 모든 AI 모델(Groq 3종 + Gemini 5종) 호출이 실패했습니다.');
+        return NextResponse.json(
+          { error: '현재 모든 AI 서버가 과부하 상태입니다. 1~2분 후에 다시 시도해 주세요.\n\n💡 개인 Gemini API Key를 등록하면 개인 쿼터를 사용하므로 성공률이 크게 높아집니다!', _logs: logs },
+          { status: 503 }
+        );
+      }
 
     } else if (action === 'lookupWord') {
       const { type } = body;

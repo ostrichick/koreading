@@ -60,57 +60,22 @@ export async function generateArticle(
     body: JSON.stringify({ action: 'generateArticle', level, topic, nativeLang, customApiKey }),
   });
 
-  // 스트리밍 NDJSON 응답 파싱
-  if (!res.body) {
-    const data = await res.json();
-    throw new Error(data.detail || data.error || 'AI request failed');
-  }
+  const data = await res.json();
 
-  const reader = res.body.getReader();
-  const decoder = new TextDecoder();
-  let result: any = null;
-  let buffer = '';
-
-  while (true) {
-    const { done, value } = await reader.read();
-    if (done) break;
-    buffer += decoder.decode(value, { stream: true });
-
-    const lines = buffer.split('\n');
-    buffer = lines.pop() || ''; // 불완전한 마지막 라인은 버퍼에 보관
-
-    for (const line of lines) {
-      if (!line.trim()) continue;
-      try {
-        const event = JSON.parse(line);
-        if (event.type === 'log' && onLog) {
-          onLog(event.message);
-        } else if (event.type === 'result') {
-          result = event.data;
-        } else if (event.type === 'error') {
-          throw new Error(event.message);
-        }
-      } catch (e) {
-        if (e instanceof SyntaxError) continue; // 잘못된 JSON은 무시
-        throw e;
-      }
+  // 서버에서 수집된 로그를 콜백으로 전달
+  if (data._logs && onLog) {
+    for (const log of data._logs) {
+      onLog(log);
     }
   }
 
-  // 남은 버퍼 처리
-  if (buffer.trim()) {
-    try {
-      const event = JSON.parse(buffer);
-      if (event.type === 'log' && onLog) onLog(event.message);
-      else if (event.type === 'result') result = event.data;
-      else if (event.type === 'error') throw new Error(event.message);
-    } catch (e) {
-      if (!(e instanceof SyntaxError)) throw e;
-    }
+  if (!res.ok) {
+    const err = new Error(data.detail || data.error || 'AI request failed');
+    (err as any)._logs = data._logs || [];
+    throw err;
   }
 
-  if (!result) throw new Error('AI 응답을 받지 못했습니다. 다시 시도해 주세요.');
-  return result;
+  return data;
 }
 
 export async function lookupWordBasic(word: string, sentence: string, nativeLang: NativeLanguage) {

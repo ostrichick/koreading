@@ -206,16 +206,22 @@ export default function LibraryPage() {
     } catch (err: any) {
       console.error(err);
       const errMsg = err?.message || JSON.stringify(err);
+      const serverLogs: string[] = err?._logs || [];
       const isQuotaError = errMsg.includes('429') || errMsg.includes('Quota') || errMsg.includes('quota') || errMsg.includes('limit');
       const is503Error = errMsg.includes('503') || errMsg.includes('과부하') || errMsg.includes('high demand');
       
+      // 서버 로그를 읽기 쉬운 형태로 포맷
+      const logBlock = serverLogs.length > 0
+        ? '\n\n───── 📡 AI 엔진 시도 로그 ─────\n' + serverLogs.join('\n')
+        : '';
+
       let helpfulGuide: string;
       if (isQuotaError) {
-        helpfulGuide = `🚨 [API 쿼터 제한 초과 에러]\n\n현재 서버의 무료 Gemini API 키 할당량이 전부 소진되었습니다.\n\n💡 해결 방법:\n도서관 화면 상단의 [🔑 API Key 설정] 버튼을 눌러 본인의 무료 Gemini API Key를 등록하시면, 즉시 대기 시간 없이 무제한으로 학습 자료를 평생 무료 생성하고 즐기실 수 있습니다!\n\n-----------------------------------\n\n[상세 오류 로그]:\n${errMsg}`;
+        helpfulGuide = `🚨 [API 쿼터 제한 초과 에러]\n\n현재 서버의 무료 Gemini API 키 할당량이 전부 소진되었습니다.\n\n💡 해결 방법:\n도서관 화면 상단의 [🔑 API Key 설정] 버튼을 눌러 본인의 무료 Gemini API Key를 등록하시면, 즉시 대기 시간 없이 무제한으로 학습 자료를 평생 무료 생성하고 즐기실 수 있습니다!${logBlock}`;
       } else if (is503Error) {
-        helpfulGuide = `⏳ [서버 과부하 에러]\n\nAI 서버가 현재 전 세계적으로 높은 트래픽을 경험하고 있습니다. 자동 재시도(최대 3회)를 모두 시도했으나 여전히 서버가 응답하지 않습니다.\n\n💡 해결 방법:\n• 1~2분 후 다시 시도해 보세요 (일시적 현상)\n• 도서관 상단의 [🔑 API Key 설정]에서 본인의 Gemini API Key를 등록하면 개인 쿼터를 사용하므로 성공률이 크게 높아집니다!`;
+        helpfulGuide = `⏳ [서버 과부하 에러]\n\nAI 서버(Groq 3종 + Gemini 5종, 총 8개 모델)를 모두 시도했으나 전부 과부하 상태입니다.\n\n💡 해결 방법:\n• 1~2분 후 다시 시도해 보세요 (일시적 현상)\n• 도서관 상단의 [🔑 API Key 설정]에서 본인의 Gemini API Key를 등록하면 개인 쿼터를 사용하므로 성공률이 크게 높아집니다!${logBlock}`;
       } else {
-        helpfulGuide = `텍스트 생성에 실패했습니다: ${errMsg}`;
+        helpfulGuide = `텍스트 생성에 실패했습니다: ${errMsg}${logBlock}`;
       }
       
       triggerAlert(helpfulGuide, '텍스트 생성 실패', 'error');
@@ -495,33 +501,42 @@ export default function LibraryPage() {
               </div>
             </div>
 
-            {/* 🔄 실시간 AI 모델 상태 로그 */}
-            {generating && genLogs.length > 0 && (
+            {/* 🔄 AI 모델 상태 패널 */}
+            {generating && (
               <div style={{
                 marginBottom: '16px',
                 background: 'rgba(0,0,0,0.25)',
                 border: '1px solid rgba(99,102,241,0.2)',
                 borderRadius: 'var(--radius-md)',
                 padding: '12px 16px',
-                maxHeight: '180px',
-                overflowY: 'auto',
                 fontFamily: '"Fira Code", "Cascadia Code", "Consolas", monospace',
                 fontSize: '0.75rem',
                 lineHeight: 1.8,
               }}>
                 <div style={{ color: 'var(--text-muted)', marginBottom: '6px', fontSize: '0.7rem', fontWeight: 700, letterSpacing: '0.05em' }}>📡 AI 엔진 연결 로그</div>
-                {genLogs.map((log, i) => (
-                  <div key={i} style={{
-                    color: log.includes('✅') ? '#10b981'
-                         : log.includes('❌') || log.includes('💀') ? '#ef4444'
-                         : log.includes('⚠️') ? '#f59e0b'
-                         : log.includes('⏳') ? '#818cf8'
-                         : 'var(--text-secondary)',
-                    padding: '1px 0',
-                  }}>
-                    {log}
+                {genLogs.length > 0 ? (
+                  /* 서버 응답 후: 실제 로그 표시 */
+                  genLogs.map((log, i) => (
+                    <div key={i} style={{
+                      color: log.includes('✅') ? '#10b981'
+                           : log.includes('❌') || log.includes('💀') ? '#ef4444'
+                           : log.includes('⚠️') ? '#f59e0b'
+                           : log.includes('⏳') ? '#818cf8'
+                           : 'var(--text-secondary)',
+                      padding: '1px 0',
+                    }}>
+                      {log}
+                    </div>
+                  ))
+                ) : (
+                  /* 서버 응답 대기 중: 프로그레스 애니메이션 */
+                  <div>
+                    <div style={{ color: '#818cf8', padding: '1px 0' }}>⚡ Groq + Gemini 총 8개 AI 모델 폴백 체인 가동 중...</div>
+                    <div style={{ color: 'var(--text-secondary)', padding: '1px 0' }}>🔄 Groq Gemma 2 → Llama 3.3 → Llama 3.1</div>
+                    <div style={{ color: 'var(--text-secondary)', padding: '1px 0' }}>🔄 Gemini 2.5 → 2.0 → 1.5 → Lite → 8B</div>
+                    <div style={{ color: 'var(--text-muted)', padding: '1px 0', fontSize: '0.7rem', marginTop: '4px' }}>서버 과부하 시 자동으로 다음 모델로 전환됩니다</div>
                   </div>
-                ))}
+                )}
                 <div style={{ color: 'var(--accent-primary)', animation: 'pulse 1.5s ease-in-out infinite' }}>▍</div>
               </div>
             )}
