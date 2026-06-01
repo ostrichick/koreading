@@ -110,8 +110,13 @@ export async function POST(req: NextRequest) {
       const topicLabel = TOPICS.find((t: { id: string; label: string }) => t.id === topic)?.label || topic;
       const langNote = nativeLang === 'es' ? 'Spanish' : 'English';
 
+      let topicSpecialInstruction = '';
+      if (topic === 'fairy-tales') {
+        topicSpecialInstruction = '\n[한국 동화 주제 특별 지침]: 주제가 "한국 동화(fairy-tales)"이므로, 한국 동화에 대한 설명이나 소개글(예: "한국 동화는 흥미롭습니다. 흥부와 놀부가 있습니다...")을 절대 작성하지 마십시오. 대신, 학습자가 직접 읽고 감동이나 재미를 느낄 수 있는 "진짜 동화 이야기 자체(가상/전통 픽션 스토리)"를 창작하십시오. 교훈을 담고 있거나 아이들이 좋아할 만한 흥미진진한 동화 이야기를 처음부터 끝까지 생생한 동화 형식으로 서술해야 합니다.';
+      }
+
       const prompt = `당신은 전문 한국어 교사입니다.
-CEFR ${level} 레벨의 한국어 학습자를 위한 "${topicLabel}" 주제의 흥미롭고 유용한 한국어 읽기 본문을 작성해 주세요.
+CEFR ${level} 레벨의 한국어 학습자를 위한 "${topicLabel}" 주제의 흥미롭고 유용한 한국어 읽기 본문을 작성해 주세요.${topicSpecialInstruction}
 
 [절대 준수해야 하는 강한 제약 조건 (CRITICAL)]:
 1. "title"과 "content" 필드는 반드시 100% 순수한 한글(한국어 문자)로만 작성해야 합니다.
