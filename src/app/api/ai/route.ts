@@ -30,7 +30,10 @@ export async function POST(req: NextRequest) {
     const systemInstruction = 'You are an expert Korean linguist and native language teacher. You must strictly follow all instructions. In any field designed for Korean (such as "content", "title", "definition", "structure", "korean" in examples), you MUST write strictly and 100% in pure Korean characters (한글) only. Absolutely NEVER include any foreign characters, Chinese characters (한자/漢字), Japanese (日本語/かな/カナ), English, Hindi, Vietnamese, or any other languages, symbols, or alphabets. Every single word in the Korean fields must be natural, correct, 100% pure Korean as written by a native speaker. Strictly follow this rule without exception.';
     const genAI = new GoogleGenerativeAI(activeApiKey);
     const model25 = genAI.getGenerativeModel({ model: 'gemini-2.5-flash', systemInstruction });
+    const model20 = genAI.getGenerativeModel({ model: 'gemini-2.0-flash', systemInstruction });
     const model15 = genAI.getGenerativeModel({ model: 'gemini-1.5-flash', systemInstruction });
+    const model20lite = genAI.getGenerativeModel({ model: 'gemini-2.0-flash-lite', systemInstruction });
+    const model15_8b = genAI.getGenerativeModel({ model: 'gemini-1.5-flash-8b', systemInstruction });
 
     const sleep = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
 
@@ -73,45 +76,33 @@ export async function POST(req: NextRequest) {
         }
       }
 
-      // 2. Gemini 2.5 Flash with retry
+      // Gemini 폴백 체인: 2.5 Flash → 2.0 Flash → 1.5 Flash → 2.0 Flash Lite → 1.5 Flash 8B
       const config = {
         temperature: 0.1,
         responseMimeType: responseMimeType === 'application/json' ? 'application/json' : undefined
       };
-      for (let attempt = 1; attempt <= 2; attempt++) {
+      const geminiModels = [
+        { model: model25, name: 'Gemini 2.5 Flash' },
+        { model: model20, name: 'Gemini 2.0 Flash' },
+        { model: model15, name: 'Gemini 1.5 Flash' },
+        { model: model20lite, name: 'Gemini 2.0 Flash Lite' },
+        { model: model15_8b, name: 'Gemini 1.5 Flash 8B' },
+      ];
+      for (const { model: m, name } of geminiModels) {
         try {
-          const result = await model25.generateContent({
+          const result = await m.generateContent({
             contents: [{ role: 'user', parts: [{ text: prompt }] }],
             generationConfig: config
           });
-          return { text: result.response.text(), modelUsed: 'Gemini 2.5 Flash' };
+          return { text: result.response.text(), modelUsed: name };
         } catch (err: any) {
           const msg = err?.message || String(err);
-          if (isRetryableError(msg) && attempt < 2) {
-            await sleep(2000);
+          console.warn(`[${name} error]: ${msg}`);
+          if (isRetryableError(msg)) {
+            await sleep(1500);
             continue;
           }
-          console.warn(`[Gemini 2.5-flash error]: ${msg}`);
-          break;
-        }
-      }
-
-      // 3. Gemini 1.5 Flash with retry
-      for (let attempt = 1; attempt <= 2; attempt++) {
-        try {
-          const result = await model15.generateContent({
-            contents: [{ role: 'user', parts: [{ text: prompt }] }],
-            generationConfig: config
-          });
-          return { text: result.response.text(), modelUsed: 'Gemini 1.5 Flash' };
-        } catch (fallbackErr: any) {
-          const msg = fallbackErr?.message || String(fallbackErr);
-          if (isRetryableError(msg) && attempt < 2) {
-            await sleep(2000);
-            continue;
-          }
-          console.error(`❌ All models exhausted: ${msg}`);
-          throw fallbackErr;
+          continue;
         }
       }
       throw new Error('모든 AI 모델이 현재 사용 불가능합니다.');
@@ -215,65 +206,45 @@ CEFR ${level} 레벨의 한국어 학습자를 위한 "${topicLabel}" 주제의 
               }
             }
 
-            // ── 2단계: Gemini 2.5 Flash (최대 3회 재시도) ──
-            if (!resultText) {
-              const MAX_RETRY_25 = 3;
-              for (let attempt = 1; attempt <= MAX_RETRY_25; attempt++) {
-                log(`🔄 [2단계] Gemini 2.5 Flash 모델로 생성 시도 중... (${attempt}/${MAX_RETRY_25})`);
-                try {
-                  const r = await model25.generateContent({
-                    contents: [{ role: 'user', parts: [{ text: prompt }] }],
-                    generationConfig: genConfig
-                  });
-                  resultText = r.response.text();
-                  modelUsed = 'Gemini 2.5 Flash';
-                  log('✅ Gemini 2.5 Flash 모델로 생성 성공!');
-                  break;
-                } catch (err25: any) {
-                  const msg = err25?.message || String(err25);
-                  if (isRetryableError(msg)) {
-                    const waitSec = attempt * 2;
-                    if (attempt < MAX_RETRY_25) {
-                      log(`⏳ Gemini 2.5 Flash 서버 과부하 감지 (503/429). ${waitSec}초 대기 후 재시도합니다...`);
-                      await sleep(waitSec * 1000);
-                    } else {
-                      log(`❌ Gemini 2.5 Flash ${MAX_RETRY_25}회 시도 실패. 다음 모델로 전환합니다.`);
-                    }
-                  } else {
-                    log(`⚠️ Gemini 2.5 Flash 오류: ${msg.substring(0, 120)}`);
-                    break; // 재시도 불가능한 에러
-                  }
-                }
-              }
-            }
+            // ── Gemini 다중 모델 폴백 체인 (각 모델 최대 2회 재시도) ──
+            const geminiChain = [
+              { model: model25, name: 'Gemini 2.5 Flash', step: 2 },
+              { model: model20, name: 'Gemini 2.0 Flash', step: 3 },
+              { model: model15, name: 'Gemini 1.5 Flash', step: 4 },
+              { model: model20lite, name: 'Gemini 2.0 Flash Lite', step: 5 },
+              { model: model15_8b, name: 'Gemini 1.5 Flash 8B', step: 6 },
+            ];
+            const totalSteps = geminiChain.length + 1; // +1 for Groq
 
-            // ── 3단계: Gemini 1.5 Flash (최대 3회 재시도) ──
             if (!resultText) {
-              const MAX_RETRY_15 = 3;
-              for (let attempt = 1; attempt <= MAX_RETRY_15; attempt++) {
-                log(`🔄 [3단계] Gemini 1.5 Flash 모델로 생성 시도 중... (${attempt}/${MAX_RETRY_15})`);
-                try {
-                  const r = await model15.generateContent({
-                    contents: [{ role: 'user', parts: [{ text: prompt }] }],
-                    generationConfig: genConfig
-                  });
-                  resultText = r.response.text();
-                  modelUsed = 'Gemini 1.5 Flash';
-                  log('✅ Gemini 1.5 Flash 모델로 생성 성공!');
-                  break;
-                } catch (err15: any) {
-                  const msg = err15?.message || String(err15);
-                  if (isRetryableError(msg)) {
-                    const waitSec = attempt * 2;
-                    if (attempt < MAX_RETRY_15) {
-                      log(`⏳ Gemini 1.5 Flash 서버 과부하 감지 (503/429). ${waitSec}초 대기 후 재시도합니다...`);
-                      await sleep(waitSec * 1000);
-                    } else {
-                      log(`❌ Gemini 1.5 Flash ${MAX_RETRY_15}회 시도 실패.`);
-                    }
-                  } else {
-                    log(`⚠️ Gemini 1.5 Flash 오류: ${msg.substring(0, 120)}`);
+              for (const { model: m, name, step } of geminiChain) {
+                if (resultText) break;
+                const MAX_RETRY = 2;
+                for (let attempt = 1; attempt <= MAX_RETRY; attempt++) {
+                  log(`🔄 [${step}/${totalSteps}단계] ${name} 모델로 생성 시도 중... (${attempt}/${MAX_RETRY})`);
+                  try {
+                    const r = await m.generateContent({
+                      contents: [{ role: 'user', parts: [{ text: prompt }] }],
+                      generationConfig: genConfig
+                    });
+                    resultText = r.response.text();
+                    modelUsed = name;
+                    log(`✅ ${name} 모델로 생성 성공!`);
                     break;
+                  } catch (err: any) {
+                    const msg = err?.message || String(err);
+                    if (isRetryableError(msg)) {
+                      if (attempt < MAX_RETRY) {
+                        const waitSec = attempt * 3;
+                        log(`⏳ ${name} 서버 과부하 (503/429). ${waitSec}초 대기 후 재시도...`);
+                        await sleep(waitSec * 1000);
+                      } else {
+                        log(`❌ ${name} ${MAX_RETRY}회 시도 실패. 다음 모델로 전환합니다.`);
+                      }
+                    } else {
+                      log(`⚠️ ${name} 오류: ${msg.substring(0, 120)}`);
+                      break; // 재시도 불가능한 에러 → 다음 모델로
+                    }
                   }
                 }
               }
@@ -288,8 +259,8 @@ CEFR ${level} 레벨의 한국어 학습자를 위한 "${topicLabel}" 주제의 
                 send('error', { message: 'AI 응답 JSON 파싱에 실패했습니다. 다시 시도해 주세요.' });
               }
             } else {
-              log('💀 모든 AI 모델(Groq, Gemini 2.5, Gemini 1.5) 호출이 실패했습니다.');
-              send('error', { message: '현재 모든 AI 서버가 과부하 상태입니다. 1~2분 후에 다시 시도해 주세요.\n\n💡 개인 Gemini API Key를 등록하면 서버 쿼터의 영향을 받지 않아 성공률이 크게 높아집니다!' });
+              log('💀 모든 AI 모델(Groq + Gemini 5종) 호출이 실패했습니다.');
+              send('error', { message: '현재 모든 AI 서버가 과부하 상태입니다. 1~2분 후에 다시 시도해 주세요.\n\n💡 개인 Gemini API Key를 등록하면 개인 쿼터를 사용하므로 성공률이 크게 높아집니다!' });
             }
           } catch (fatalErr: any) {
             send('error', { message: fatalErr?.message || '알 수 없는 오류가 발생했습니다.' });
