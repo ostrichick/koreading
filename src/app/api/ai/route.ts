@@ -32,8 +32,14 @@ export async function POST(req: NextRequest) {
     const model25 = genAI.getGenerativeModel({ model: 'gemini-2.5-flash', systemInstruction });
     const model15 = genAI.getGenerativeModel({ model: 'gemini-1.5-flash', systemInstruction });
 
+    const sleep = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
+
+    /** 503/429 재시도 가능 에러인지 판별 */
+    const isRetryableError = (msg: string) =>
+      msg.includes('503') || msg.includes('429') || msg.includes('overloaded') || msg.includes('high demand') || msg.includes('Quota') || msg.includes('quota');
+
     /**
-     * Helper to call AI with primary Groq Gemma 2 9B and dynamic fallback to Gemini
+     * Helper to call AI with primary Groq Gemma 2 9B and dynamic fallback to Gemini (non-streaming, for lookupWord/generateTest)
      */
     const generateWithFallback = async (prompt: string, responseMimeType?: string): Promise<{ text: string; modelUsed: string }> => {
       // 1. If GROQ_API_KEY is configured in the environment, use Groq Gemma 2 9B as the primary engine!
@@ -48,7 +54,7 @@ export async function POST(req: NextRequest) {
             },
             body: JSON.stringify({
               model: 'gemma2-9b-it',
-              temperature: 0.1, // Set extremely low temperature to force strict instruction compliance!
+              temperature: 0.1,
               messages: [
                 { role: 'system', content: systemInstruction },
                 { role: 'user', content: prompt }
@@ -67,22 +73,31 @@ export async function POST(req: NextRequest) {
         }
       }
 
-      // 2. Fallback to Gemini 2.5-flash/1.5-flash (primary, daily quota: 20 on free tier)
+      // 2. Gemini 2.5 Flash with retry
       const config = {
-        temperature: 0.1, // Set extremely low temperature to force strict instruction compliance!
+        temperature: 0.1,
         responseMimeType: responseMimeType === 'application/json' ? 'application/json' : undefined
       };
-      try {
-        const result = await model25.generateContent({
-          contents: [{ role: 'user', parts: [{ text: prompt }] }],
-          generationConfig: config
-        });
-        return { text: result.response.text(), modelUsed: 'Gemini 2.5 Flash' };
-      } catch (err: any) {
-        const msg = err?.message || String(err);
-        console.warn(`[Gemini 2.5-flash error, trying fallback to 1.5-flash]: ${msg}`);
-        
-        // Try 2: Gemini 1.5-flash (fallback, daily quota: 1500)
+      for (let attempt = 1; attempt <= 2; attempt++) {
+        try {
+          const result = await model25.generateContent({
+            contents: [{ role: 'user', parts: [{ text: prompt }] }],
+            generationConfig: config
+          });
+          return { text: result.response.text(), modelUsed: 'Gemini 2.5 Flash' };
+        } catch (err: any) {
+          const msg = err?.message || String(err);
+          if (isRetryableError(msg) && attempt < 2) {
+            await sleep(2000);
+            continue;
+          }
+          console.warn(`[Gemini 2.5-flash error]: ${msg}`);
+          break;
+        }
+      }
+
+      // 3. Gemini 1.5 Flash with retry
+      for (let attempt = 1; attempt <= 2; attempt++) {
         try {
           const result = await model15.generateContent({
             contents: [{ role: 'user', parts: [{ text: prompt }] }],
@@ -90,13 +105,21 @@ export async function POST(req: NextRequest) {
           });
           return { text: result.response.text(), modelUsed: 'Gemini 1.5 Flash' };
         } catch (fallbackErr: any) {
-          const fallbackMsg = fallbackErr?.message || String(fallbackErr);
-          console.error(`❌ Gemini 1.5-flash fallback also failed: ${fallbackMsg}`);
-          throw err;
+          const msg = fallbackErr?.message || String(fallbackErr);
+          if (isRetryableError(msg) && attempt < 2) {
+            await sleep(2000);
+            continue;
+          }
+          console.error(`❌ All models exhausted: ${msg}`);
+          throw fallbackErr;
         }
       }
+      throw new Error('모든 AI 모델이 현재 사용 불가능합니다.');
     };
 
+    // ═══════════════════════════════════════════════════
+    // 📰 generateArticle: 스트리밍 NDJSON 응답 + 실시간 로그
+    // ═══════════════════════════════════════════════════
     if (action === 'generateArticle') {
       const levelConfig: Record<CEFRLevel, string> = {
         A1: '가장 기초적인 한국어 어휘만 사용하십시오. 단순한 문장 구조 (문장당 4~6개 단어). 쉬운 현재 시제 전용. 텍스트 전체 길이는 약 400~500자 크기로 서술하십시오. 한 문장마다 끊어 쓰지 말고, 4~6개의 문장이 뭉친 하나의 탄탄한 문단으로 구성하십시오.',
@@ -139,8 +162,150 @@ CEFR ${level} 레벨의 한국어 학습자를 위한 "${topicLabel}" 주제의 
   "keyVocabulary": ["핵심단어1", "핵심단어2", "핵심단어3", "핵심단어4", "핵심단어5"]
 }`;
 
-      const { text, modelUsed } = await generateWithFallback(prompt, 'application/json');
-      return NextResponse.json({ ...JSON.parse(text), generatorModel: modelUsed });
+      const genConfig = {
+        temperature: 0.1,
+        responseMimeType: 'application/json' as const
+      };
+
+      // 스트리밍 NDJSON 응답: 클라이언트에 실시간 로그 전송
+      const stream = new ReadableStream({
+        async start(controller) {
+          const encoder = new TextEncoder();
+          const send = (type: string, payload: Record<string, unknown>) => {
+            controller.enqueue(encoder.encode(JSON.stringify({ type, ...payload }) + '\n'));
+          };
+          const log = (message: string) => send('log', { message });
+
+          let resultText: string | null = null;
+          let modelUsed = '';
+
+          try {
+            // ── 1단계: Groq Gemma 2 9B ──
+            if (process.env.GROQ_API_KEY) {
+              log('⚡ [1단계] Groq Gemma 2 9B 모델에 연결 중...');
+              try {
+                const res = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+                  method: 'POST',
+                  headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${process.env.GROQ_API_KEY}`
+                  },
+                  body: JSON.stringify({
+                    model: 'gemma2-9b-it',
+                    temperature: 0.1,
+                    messages: [
+                      { role: 'system', content: systemInstruction },
+                      { role: 'user', content: prompt }
+                    ],
+                    response_format: { type: 'json_object' }
+                  })
+                });
+                if (res.ok) {
+                  const data = await res.json();
+                  resultText = data.choices[0].message.content;
+                  modelUsed = 'Gemma 2 9B (Groq LPU)';
+                  log('✅ Groq Gemma 2 9B 모델로 생성 성공!');
+                } else {
+                  const errText = await res.text();
+                  const shortErr = errText.substring(0, 120);
+                  log(`⚠️ Groq 응답 오류 (HTTP ${res.status}): ${shortErr}`);
+                }
+              } catch (groqErr: any) {
+                log(`⚠️ Groq 연결 실패: ${(groqErr?.message || '').substring(0, 100)}`);
+              }
+            }
+
+            // ── 2단계: Gemini 2.5 Flash (최대 3회 재시도) ──
+            if (!resultText) {
+              const MAX_RETRY_25 = 3;
+              for (let attempt = 1; attempt <= MAX_RETRY_25; attempt++) {
+                log(`🔄 [2단계] Gemini 2.5 Flash 모델로 생성 시도 중... (${attempt}/${MAX_RETRY_25})`);
+                try {
+                  const r = await model25.generateContent({
+                    contents: [{ role: 'user', parts: [{ text: prompt }] }],
+                    generationConfig: genConfig
+                  });
+                  resultText = r.response.text();
+                  modelUsed = 'Gemini 2.5 Flash';
+                  log('✅ Gemini 2.5 Flash 모델로 생성 성공!');
+                  break;
+                } catch (err25: any) {
+                  const msg = err25?.message || String(err25);
+                  if (isRetryableError(msg)) {
+                    const waitSec = attempt * 2;
+                    if (attempt < MAX_RETRY_25) {
+                      log(`⏳ Gemini 2.5 Flash 서버 과부하 감지 (503/429). ${waitSec}초 대기 후 재시도합니다...`);
+                      await sleep(waitSec * 1000);
+                    } else {
+                      log(`❌ Gemini 2.5 Flash ${MAX_RETRY_25}회 시도 실패. 다음 모델로 전환합니다.`);
+                    }
+                  } else {
+                    log(`⚠️ Gemini 2.5 Flash 오류: ${msg.substring(0, 120)}`);
+                    break; // 재시도 불가능한 에러
+                  }
+                }
+              }
+            }
+
+            // ── 3단계: Gemini 1.5 Flash (최대 3회 재시도) ──
+            if (!resultText) {
+              const MAX_RETRY_15 = 3;
+              for (let attempt = 1; attempt <= MAX_RETRY_15; attempt++) {
+                log(`🔄 [3단계] Gemini 1.5 Flash 모델로 생성 시도 중... (${attempt}/${MAX_RETRY_15})`);
+                try {
+                  const r = await model15.generateContent({
+                    contents: [{ role: 'user', parts: [{ text: prompt }] }],
+                    generationConfig: genConfig
+                  });
+                  resultText = r.response.text();
+                  modelUsed = 'Gemini 1.5 Flash';
+                  log('✅ Gemini 1.5 Flash 모델로 생성 성공!');
+                  break;
+                } catch (err15: any) {
+                  const msg = err15?.message || String(err15);
+                  if (isRetryableError(msg)) {
+                    const waitSec = attempt * 2;
+                    if (attempt < MAX_RETRY_15) {
+                      log(`⏳ Gemini 1.5 Flash 서버 과부하 감지 (503/429). ${waitSec}초 대기 후 재시도합니다...`);
+                      await sleep(waitSec * 1000);
+                    } else {
+                      log(`❌ Gemini 1.5 Flash ${MAX_RETRY_15}회 시도 실패.`);
+                    }
+                  } else {
+                    log(`⚠️ Gemini 1.5 Flash 오류: ${msg.substring(0, 120)}`);
+                    break;
+                  }
+                }
+              }
+            }
+
+            // ── 최종 결과 전송 ──
+            if (resultText) {
+              try {
+                const parsed = { ...JSON.parse(resultText), generatorModel: modelUsed };
+                send('result', { data: parsed });
+              } catch {
+                send('error', { message: 'AI 응답 JSON 파싱에 실패했습니다. 다시 시도해 주세요.' });
+              }
+            } else {
+              log('💀 모든 AI 모델(Groq, Gemini 2.5, Gemini 1.5) 호출이 실패했습니다.');
+              send('error', { message: '현재 모든 AI 서버가 과부하 상태입니다. 1~2분 후에 다시 시도해 주세요.\n\n💡 개인 Gemini API Key를 등록하면 서버 쿼터의 영향을 받지 않아 성공률이 크게 높아집니다!' });
+            }
+          } catch (fatalErr: any) {
+            send('error', { message: fatalErr?.message || '알 수 없는 오류가 발생했습니다.' });
+          }
+
+          controller.close();
+        }
+      });
+
+      return new Response(stream, {
+        headers: {
+          'Content-Type': 'application/x-ndjson',
+          'Cache-Control': 'no-cache',
+          'X-Content-Type-Options': 'nosniff',
+        }
+      });
 
     } else if (action === 'lookupWord') {
       const { type } = body;

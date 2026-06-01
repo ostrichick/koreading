@@ -34,6 +34,7 @@ export default function LibraryPage() {
   const [readArticles, setReadArticles] = useState<string[]>([]);
   const [loadingArticles, setLoadingArticles] = useState(false);
   const [generating, setGenerating] = useState(false);
+  const [genLogs, setGenLogs] = useState<string[]>([]);
   const [userLevel, setUserLevel] = useState<CEFRLevel | null>(null);
 
   // Sorting state
@@ -174,19 +175,24 @@ export default function LibraryPage() {
     const lang = profile?.nativeLanguage || getGuestLang();
 
     setGenerating(true);
+    setGenLogs([]);
     try {
-      const data = await generateArticle(level, topic, lang);
+      const data = await generateArticle(level, topic, lang, (logMsg) => {
+        setGenLogs(prev => [...prev, logMsg]);
+      });
       
       try {
         // Try saving to Firestore persistently so all readers can see it
         const id = await saveArticle(data);
         setShowGenModal(false);
+        setGenLogs([]);
         router.push(`/read/${id}`);
       } catch (dbErr: any) {
         console.warn('Firestore save failed, falling back to local guest storage:', dbErr);
         // Save locally to sessionStorage for fallback guest reading
         sessionStorage.setItem('koreading_guest_article', JSON.stringify({ ...data, id: 'guest' }));
         setShowGenModal(false);
+        setGenLogs([]);
         
         // Show a helpful warning explaining the Firebase rule constraint and how to fix it
         triggerAlert(
@@ -201,10 +207,16 @@ export default function LibraryPage() {
       console.error(err);
       const errMsg = err?.message || JSON.stringify(err);
       const isQuotaError = errMsg.includes('429') || errMsg.includes('Quota') || errMsg.includes('quota') || errMsg.includes('limit');
+      const is503Error = errMsg.includes('503') || errMsg.includes('과부하') || errMsg.includes('high demand');
       
-      const helpfulGuide = isQuotaError 
-        ? `🚨 [API 쿼터 제한 초과 에러]\n\n현재 서버의 무료 Gemini API 키 할당량이 전부 소진되었습니다.\n\n💡 해결 방법:\n도서관 화면 상단의 [🔑 API Key 설정] 버튼을 눌러 본인의 무료 Gemini API Key를 등록하시면, 즉시 대기 시간 없이 무제한으로 학습 자료를 평생 무료 생성하고 즐기실 수 있습니다!\n\n-----------------------------------\n\n[상세 오류 로그]:\n${errMsg}`
-        : `텍스트 생성에 실패했습니다: ${errMsg}`;
+      let helpfulGuide: string;
+      if (isQuotaError) {
+        helpfulGuide = `🚨 [API 쿼터 제한 초과 에러]\n\n현재 서버의 무료 Gemini API 키 할당량이 전부 소진되었습니다.\n\n💡 해결 방법:\n도서관 화면 상단의 [🔑 API Key 설정] 버튼을 눌러 본인의 무료 Gemini API Key를 등록하시면, 즉시 대기 시간 없이 무제한으로 학습 자료를 평생 무료 생성하고 즐기실 수 있습니다!\n\n-----------------------------------\n\n[상세 오류 로그]:\n${errMsg}`;
+      } else if (is503Error) {
+        helpfulGuide = `⏳ [서버 과부하 에러]\n\nAI 서버가 현재 전 세계적으로 높은 트래픽을 경험하고 있습니다. 자동 재시도(최대 3회)를 모두 시도했으나 여전히 서버가 응답하지 않습니다.\n\n💡 해결 방법:\n• 1~2분 후 다시 시도해 보세요 (일시적 현상)\n• 도서관 상단의 [🔑 API Key 설정]에서 본인의 Gemini API Key를 등록하면 개인 쿼터를 사용하므로 성공률이 크게 높아집니다!`;
+      } else {
+        helpfulGuide = `텍스트 생성에 실패했습니다: ${errMsg}`;
+      }
       
       triggerAlert(helpfulGuide, '텍스트 생성 실패', 'error');
     } finally {
@@ -483,11 +495,43 @@ export default function LibraryPage() {
               </div>
             </div>
 
+            {/* 🔄 실시간 AI 모델 상태 로그 */}
+            {generating && genLogs.length > 0 && (
+              <div style={{
+                marginBottom: '16px',
+                background: 'rgba(0,0,0,0.25)',
+                border: '1px solid rgba(99,102,241,0.2)',
+                borderRadius: 'var(--radius-md)',
+                padding: '12px 16px',
+                maxHeight: '180px',
+                overflowY: 'auto',
+                fontFamily: '"Fira Code", "Cascadia Code", "Consolas", monospace',
+                fontSize: '0.75rem',
+                lineHeight: 1.8,
+              }}>
+                <div style={{ color: 'var(--text-muted)', marginBottom: '6px', fontSize: '0.7rem', fontWeight: 700, letterSpacing: '0.05em' }}>📡 AI 엔진 연결 로그</div>
+                {genLogs.map((log, i) => (
+                  <div key={i} style={{
+                    color: log.includes('✅') ? '#10b981'
+                         : log.includes('❌') || log.includes('💀') ? '#ef4444'
+                         : log.includes('⚠️') ? '#f59e0b'
+                         : log.includes('⏳') ? '#818cf8'
+                         : 'var(--text-secondary)',
+                    padding: '1px 0',
+                  }}>
+                    {log}
+                  </div>
+                ))}
+                <div style={{ color: 'var(--accent-primary)', animation: 'pulse 1.5s ease-in-out infinite' }}>▍</div>
+              </div>
+            )}
+
             <div style={{ display: 'flex', gap: '12px' }}>
               <button
-                onClick={() => setShowGenModal(false)}
+                onClick={() => { setShowGenModal(false); setGenLogs([]); }}
                 className="btn btn-secondary"
                 style={{ flex: 1, justifyContent: 'center' }}
+                disabled={generating}
               >
                 취소
               </button>
@@ -497,7 +541,7 @@ export default function LibraryPage() {
                 className="btn btn-primary"
                 style={{ flex: 2, justifyContent: 'center' }}
               >
-                {generating ? 'AI 텍스트 생성 중...' : '✨ 맞춤형 읽기 생성 시작'}
+                {generating ? '🔄 AI 텍스트 생성 중...' : '✨ 맞춤형 읽기 생성 시작'}
               </button>
             </div>
           </div>
