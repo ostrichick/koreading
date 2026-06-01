@@ -37,6 +37,7 @@ export interface Article {
   createdAt: Timestamp;
   averageRating?: number;
   ratingCount?: number;
+  generatorModel?: string;
 }
 
 export interface Review {

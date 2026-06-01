@@ -33,9 +33,9 @@ export async function POST(req: NextRequest) {
     const model15 = genAI.getGenerativeModel({ model: 'gemini-1.5-flash', systemInstruction });
 
     /**
-     * Helper to call AI with primary Groq Llama 3.1 70B and dynamic fallback to Gemini
+     * Helper to call AI with primary Groq Gemma 2 9B and dynamic fallback to Gemini
      */
-    const generateWithFallback = async (prompt: string, responseMimeType?: string) => {
+    const generateWithFallback = async (prompt: string, responseMimeType?: string): Promise<{ text: string; modelUsed: string }> => {
       // 1. If GROQ_API_KEY is configured in the environment, use Groq Gemma 2 9B as the primary engine!
       if (process.env.GROQ_API_KEY) {
         try {
@@ -58,7 +58,7 @@ export async function POST(req: NextRequest) {
           });
           if (res.ok) {
             const data = await res.json();
-            return data.choices[0].message.content;
+            return { text: data.choices[0].message.content, modelUsed: 'Gemma 2 9B (Groq LPU)' };
           }
           const errText = await res.text();
           console.warn(`[Groq API warning status ${res.status}]: ${errText}`);
@@ -77,7 +77,7 @@ export async function POST(req: NextRequest) {
           contents: [{ role: 'user', parts: [{ text: prompt }] }],
           generationConfig: config
         });
-        return result.response.text();
+        return { text: result.response.text(), modelUsed: 'Gemini 2.5 Flash' };
       } catch (err: any) {
         const msg = err?.message || String(err);
         console.warn(`[Gemini 2.5-flash error, trying fallback to 1.5-flash]: ${msg}`);
@@ -88,7 +88,7 @@ export async function POST(req: NextRequest) {
             contents: [{ role: 'user', parts: [{ text: prompt }] }],
             generationConfig: config
           });
-          return result.response.text();
+          return { text: result.response.text(), modelUsed: 'Gemini 1.5 Flash' };
         } catch (fallbackErr: any) {
           const fallbackMsg = fallbackErr?.message || String(fallbackErr);
           console.error(`❌ Gemini 1.5-flash fallback also failed: ${fallbackMsg}`);
@@ -139,8 +139,8 @@ CEFR ${level} 레벨의 한국어 학습자를 위한 "${topicLabel}" 주제의 
   "keyVocabulary": ["핵심단어1", "핵심단어2", "핵심단어3", "핵심단어4", "핵심단어5"]
 }`;
 
-      const text = await generateWithFallback(prompt, 'application/json');
-      return NextResponse.json(JSON.parse(text));
+      const { text, modelUsed } = await generateWithFallback(prompt, 'application/json');
+      return NextResponse.json({ ...JSON.parse(text), generatorModel: modelUsed });
 
     } else if (action === 'lookupWord') {
       const { type } = body;
@@ -167,7 +167,7 @@ CEFR ${level} 레벨의 한국어 학습자를 위한 "${topicLabel}" 주제의 
   "level": "CEFR 레벨 (A1/A2/B1/B2/C1/C2 중 하나)"
 }`;
 
-        const text = await generateWithFallback(prompt, 'application/json');
+        const { text } = await generateWithFallback(prompt, 'application/json');
         return NextResponse.json(JSON.parse(text));
       } else {
         const prompt = `당신은 한국어 형태소 분석 및 언어학 전문가입니다.
@@ -190,7 +190,7 @@ CEFR ${level} 레벨의 한국어 학습자를 위한 "${topicLabel}" 주제의 
   ]
 }`;
 
-        const text = await generateWithFallback(prompt, 'application/json');
+        const { text } = await generateWithFallback(prompt, 'application/json');
         return NextResponse.json(JSON.parse(text));
       }
 
@@ -217,7 +217,7 @@ CEFR ${level} 레벨의 한국어 학습자를 위한 "${topicLabel}" 주제의 
 
 A1, A2, B1, B2, C1 레벨을 모두 포함해 주세요.`;
 
-      const text = await generateWithFallback(prompt, 'application/json');
+      const { text } = await generateWithFallback(prompt, 'application/json');
       return NextResponse.json(JSON.parse(text));
     }
 

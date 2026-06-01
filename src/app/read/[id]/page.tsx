@@ -306,6 +306,11 @@ export default function ReadPage({ params }: { params: Promise<{ id: string }> }
                 ✓ 읽음
               </span>
             )}
+            {article.generatorModel && (
+              <span style={{ fontSize: '0.75rem', background: 'rgba(99,102,241,0.1)', color: 'var(--accent-primary)', padding: '3px 10px', borderRadius: '100px', border: '1px solid rgba(99,102,241,0.3)', fontWeight: 600 }}>
+                🤖 {article.generatorModel}
+              </span>
+            )}
           </div>
 
           <h1 style={{ fontSize: '1.8rem', fontWeight: 900, fontFamily: 'Noto Sans KR, sans-serif', marginBottom: '12px', lineHeight: 1.4 }}>
