@@ -5,7 +5,7 @@
  */
 
 export type CEFRLevel = 'A1' | 'A2' | 'B1' | 'B2' | 'C1' | 'C2';
-export type NativeLanguage = 'en' | 'es';
+export type NativeLanguage = 'en' | 'es' | 'ja' | 'zh';
 
 export const LEVEL_DESCRIPTIONS: Record<CEFRLevel, string> = {
   A1: '완전 초급 (Complete Beginner)',

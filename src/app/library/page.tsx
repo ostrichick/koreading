@@ -9,9 +9,9 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/contexts/AuthContext';
-import { TOPICS, CEFRLevel, generateArticle } from '@/lib/gemini';
+import { TOPICS, CEFRLevel, NativeLanguage, generateArticle } from '@/lib/gemini';
 import { getArticlesByLevel, saveArticle, getReadArticles, Article } from '@/lib/db';
-import { getGuestLevel, getGuestLang } from '@/lib/storage';
+import { getGuestLevel, getGuestLang, setGuestLang } from '@/lib/storage';
 import AlertModal from '@/components/AlertModal';
 
 const LEVELS: CEFRLevel[] = ['A1', 'A2', 'B1', 'B2', 'C1', 'C2'];
@@ -63,11 +63,24 @@ export default function LibraryPage() {
   const [tempApiKey, setTempApiKey] = useState('');
   const [hasApiKey, setHasApiKey] = useState(false);
 
+  // Language Selector State
+  const LANG_OPTIONS: { value: NativeLanguage; label: string; flag: string }[] = [
+    { value: 'en', label: 'English', flag: '🇺🇸' },
+    { value: 'es', label: 'Español', flag: '🇪🇸' },
+    { value: 'ja', label: '日本語', flag: '🇯🇵' },
+    { value: 'zh', label: '中文', flag: '🇨🇳' },
+  ];
+  const [currentLang, setCurrentLang] = useState<NativeLanguage>('en');
+  const [showLangDropdown, setShowLangDropdown] = useState(false);
+
   useEffect(() => {
     if (typeof window !== 'undefined') {
       const key = localStorage.getItem('koreading_custom_api_key');
       setHasApiKey(!!key);
       if (key) setTempApiKey(key);
+      // Initialize language
+      const savedLang = profile?.nativeLanguage || getGuestLang();
+      setCurrentLang(savedLang);
     }
   }, []);
 
@@ -172,7 +185,7 @@ export default function LibraryPage() {
     // Randomly pick a level and topic from Checked options
     const level = genLevels[Math.floor(Math.random() * genLevels.length)];
     const topic = genTopics[Math.floor(Math.random() * genTopics.length)];
-    const lang = profile?.nativeLanguage || getGuestLang();
+    const lang = currentLang;
 
     setGenerating(true);
     setGenLogs([]);
@@ -272,6 +285,74 @@ export default function LibraryPage() {
             </p>
           </div>
           <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
+            {/* Language Selector */}
+            <div style={{ position: 'relative' }}>
+              <button
+                onClick={() => setShowLangDropdown(!showLangDropdown)}
+                className="btn btn-ghost"
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '6px',
+                  border: '1px solid var(--border-subtle)',
+                  fontSize: '0.85rem',
+                  fontWeight: 600,
+                  borderRadius: '100px',
+                  padding: '8px 14px',
+                }}
+              >
+                {LANG_OPTIONS.find(l => l.value === currentLang)?.flag} {LANG_OPTIONS.find(l => l.value === currentLang)?.label}
+                <span style={{ fontSize: '0.65rem', opacity: 0.6 }}>▼</span>
+              </button>
+              {showLangDropdown && (
+                <>
+                  <div onClick={() => setShowLangDropdown(false)} style={{ position: 'fixed', inset: 0, zIndex: 99 }} />
+                  <div style={{
+                    position: 'absolute',
+                    top: '100%',
+                    right: 0,
+                    marginTop: '6px',
+                    background: 'var(--bg-card)',
+                    border: '1px solid var(--border-medium)',
+                    borderRadius: 'var(--radius-md)',
+                    padding: '6px',
+                    zIndex: 100,
+                    minWidth: '160px',
+                    boxShadow: '0 8px 32px rgba(0,0,0,0.3)',
+                  }}>
+                    {LANG_OPTIONS.map(lang => (
+                      <button
+                        key={lang.value}
+                        onClick={() => {
+                          setCurrentLang(lang.value);
+                          setGuestLang(lang.value);
+                          setShowLangDropdown(false);
+                        }}
+                        style={{
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: '10px',
+                          width: '100%',
+                          padding: '10px 14px',
+                          border: 'none',
+                          borderRadius: 'var(--radius-sm)',
+                          background: currentLang === lang.value ? 'rgba(99,102,241,0.15)' : 'transparent',
+                          color: currentLang === lang.value ? 'var(--accent-primary)' : 'var(--text-primary)',
+                          cursor: 'pointer',
+                          fontSize: '0.9rem',
+                          fontWeight: currentLang === lang.value ? 700 : 500,
+                          transition: 'all 150ms ease',
+                        }}
+                      >
+                        <span style={{ fontSize: '1.1rem' }}>{lang.flag}</span>
+                        {lang.label}
+                        {currentLang === lang.value && <span style={{ marginLeft: 'auto', fontSize: '0.8rem' }}>✓</span>}
+                      </button>
+                    ))}
+                  </div>
+                </>
+              )}
+            </div>
             <button
               onClick={() => setShowApiKeyModal(true)}
               className="btn btn-ghost"

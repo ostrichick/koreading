@@ -90,6 +90,8 @@ export default function ProfilePage() {
             {[
               { value: 'en' as NativeLanguage, label: '🇺🇸 English', desc: '영어로 번역' },
               { value: 'es' as NativeLanguage, label: '🇪🇸 Español', desc: '스페인어로 번역' },
+              { value: 'ja' as NativeLanguage, label: '🇯🇵 日本語', desc: '일본어로 번역' },
+              { value: 'zh' as NativeLanguage, label: '🇨🇳 中文', desc: '중국어로 번역' },
             ].map(lang => (
               <button
                 key={lang.value}

@@ -158,6 +158,8 @@ export default function TestPage() {
             {[
               { value: 'en' as NativeLanguage, label: '🇺🇸 English' },
               { value: 'es' as NativeLanguage, label: '🇪🇸 Español' },
+              { value: 'ja' as NativeLanguage, label: '🇯🇵 日本語' },
+              { value: 'zh' as NativeLanguage, label: '🇨🇳 中文' },
             ].map(lang => (
               <button
                 key={lang.value}
