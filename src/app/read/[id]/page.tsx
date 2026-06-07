@@ -28,8 +28,6 @@ interface WordData {
   level: string;
 }
 
-
-
 // 다국어 번역 사전 정의
 const TRANSLATIONS = {
   ko: {
@@ -47,6 +45,13 @@ const TRANSLATIONS = {
     loginToSave: '🔑 로그인하여 단어장에 저장',
     submitReview: '별점 및 평가 등록하기',
     submittingReview: '제출 중...',
+    tutorTitle: '💬 1:1 AI 튜터',
+    tutorPlaceholder: '질문을 입력하세요...',
+    tutorIntro: '이 문단에 대해 궁금한 점을 질문해 보세요.',
+    qTranslate: '이 문단 전체 번역해 줘',
+    qGrammar: '주요 문법 표현 정리해 줘',
+    qVocab: '주요 단어와 품사를 알려줘',
+    qNuance: '이 문단의 자연스러운 뉘앙스가 뭐야?',
   },
   en: {
     deleteArticle: '🗑️ Delete Text (Low Quality)',
@@ -63,6 +68,13 @@ const TRANSLATIONS = {
     loginToSave: '🔑 Log in to Save',
     submitReview: 'Submit Rating & Review',
     submittingReview: 'Submitting...',
+    tutorTitle: '💬 1:1 AI Tutor',
+    tutorPlaceholder: 'Type your question...',
+    tutorIntro: 'Ask any questions about this paragraph.',
+    qTranslate: 'Translate this paragraph',
+    qGrammar: 'Explain key grammar points',
+    qVocab: 'Show key vocabulary & parts of speech',
+    qNuance: 'What is the natural nuance here?',
   },
   es: {
     deleteArticle: '🗑️ Eliminar texto (Baja calidad)',
@@ -79,6 +91,13 @@ const TRANSLATIONS = {
     loginToSave: '🔑 Iniciar sesión para guardar',
     submitReview: 'Enviar calificación y reseña',
     submittingReview: 'Enviando...',
+    tutorTitle: '💬 Tutor de IA 1:1',
+    tutorPlaceholder: 'Escribe tu pregunta...',
+    tutorIntro: 'Haz cualquier pregunta sobre este párrafo.',
+    qTranslate: 'Traduce este párrafo',
+    qGrammar: 'Explica los pontos gramaticales clave',
+    qVocab: 'Muestra vocabulario clave y categorías gramaticales',
+    qNuance: '¿Cuál es el matiz natural aquí?',
   },
   ja: {
     deleteArticle: '🗑️ テキスト削除 (品質低下)',
@@ -95,6 +114,13 @@ const TRANSLATIONS = {
     loginToSave: '🔑 ログインして保存',
     submitReview: '評価とレビューを登録する',
     submittingReview: '送信中...',
+    tutorTitle: '💬 1:1 AIチューター',
+    tutorPlaceholder: '質問を入力してください...',
+    tutorIntro: 'この段落について何でも質問してください。',
+    qTranslate: 'この段落を翻訳して',
+    qGrammar: '重要な文法表現を説明して',
+    qVocab: '主要な単語と品詞を教えて',
+    qNuance: 'ここでの自然なニュアンスは何ですか？',
   },
   zh: {
     deleteArticle: '🗑️ 删除文本 (质量低下)',
@@ -111,6 +137,13 @@ const TRANSLATIONS = {
     loginToSave: '🔑 登录以保存',
     submitReview: '提交评分与评价',
     submittingReview: '提交中...',
+    tutorTitle: '💬 1:1 AI导师',
+    tutorPlaceholder: '输入您的问题...',
+    tutorIntro: '请针对该段落提出任何问题。',
+    qTranslate: '翻译这个段落',
+    qGrammar: '解释关键语法点',
+    qVocab: '显示核心词汇与词性',
+    qNuance: '这里的自然语境和语气是什么？',
   }
 };
 
@@ -163,6 +196,87 @@ export default function ReadPage({ params }: { params: Promise<{ id: string }> }
   // [신규 기능] 커스텀 카테고리 상태 및 단어 저장 시 선택된 카테고리
   const [customCategories, setCustomCategories] = useState<string[]>([]);
   const [selectedSaveCategory, setSelectedSaveCategory] = useState<string>('');
+
+  // 💬 AI 튜터 코칭 사이드바 관련 상태 변수들
+  interface ChatMessage {
+    role: 'user' | 'model';
+    parts: { text: string }[];
+  }
+  const [tutorOpen, setTutorOpen] = useState(false);
+  const [tutorParaIdx, setTutorParaIdx] = useState<number | null>(null);
+  const [tutorParagraph, setTutorParagraph] = useState('');
+  const [tutorInput, setTutorInput] = useState('');
+  const [tutorLoading, setTutorLoading] = useState(false);
+  const [paraChats, setParaChats] = useState<Record<number, ChatMessage[]>>({});
+  const tutorMsgEndRef = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    if (tutorMsgEndRef.current) {
+      tutorMsgEndRef.current.scrollIntoView({ behavior: 'smooth' });
+    }
+  }, [paraChats, tutorOpen, tutorParaIdx]);
+
+  const handleOpenTutor = (pIdx: number, pText: string) => {
+    setTutorParaIdx(pIdx);
+    setTutorParagraph(pText);
+    setTutorOpen(true);
+  };
+
+  const handleSendTutorMessage = async (e?: React.FormEvent, customMsg?: string) => {
+    if (e) e.preventDefault();
+    const msgToSend = (customMsg || tutorInput).trim();
+    if (!msgToSend || tutorParaIdx === null) return;
+
+    if (!customMsg) setTutorInput('');
+
+    const currentHistory = paraChats[tutorParaIdx] || [];
+    const newUserMessage: ChatMessage = { role: 'user', parts: [{ text: msgToSend }] };
+    const updatedHistory = [...currentHistory, newUserMessage];
+
+    setParaChats(prev => ({ ...prev, [tutorParaIdx]: updatedHistory }));
+    setTutorLoading(true);
+
+    try {
+      const nativeLang = user ? (profile?.nativeLanguage || 'en') : getGuestLang();
+      const level = user ? (profile?.level || 'A1') : 'A1';
+      let customApiKey = '';
+      if (typeof window !== 'undefined') {
+        customApiKey = localStorage.getItem('koreading_custom_api_key') || '';
+      }
+
+      const res = await fetch('/api/ai', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'tutorChat',
+          level,
+          nativeLang,
+          paragraph: tutorParagraph,
+          userMessage: msgToSend,
+          chatHistory: currentHistory,
+          customApiKey
+        })
+      });
+
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Failed to connect to AI Tutor');
+
+      const modelReply: ChatMessage = { role: 'model', parts: [{ text: data.text }] };
+      setParaChats(prev => ({
+        ...prev,
+        [tutorParaIdx]: [...updatedHistory, modelReply]
+      }));
+    } catch (err: any) {
+      console.error(err);
+      const errorReply: ChatMessage = { role: 'model', parts: [{ text: `❌ 에러가 발생했습니다: ${err.message || 'AI 튜터 호출에 실패했습니다.'}` }] };
+      setParaChats(prev => ({
+        ...prev,
+        [tutorParaIdx]: [...updatedHistory, errorReply]
+      }));
+    } finally {
+      setTutorLoading(false);
+    }
+  };
 
   const triggerAlert = (message: string, title = '알림', type: 'info' | 'error' | 'warning' | 'success' = 'info') => {
     setAlertTitle(title);
@@ -632,14 +746,24 @@ export default function ReadPage({ params }: { params: Promise<{ id: string }> }
                 display: 'flex',
                 alignItems: 'flex-start',
               }}>
-                <button
-                  onClick={() => speakText(cleanText)}
-                  className="reader-para-play-btn"
-                  title="이 문단 발음 듣기"
-                  style={{ marginTop: '4px' }}
-                >
-                  🔊
-                </button>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', marginRight: '8px', marginTop: '4px' }}>
+                  <button
+                    onClick={() => speakText(cleanText)}
+                    className="reader-para-play-btn"
+                    title="이 문단 발음 듣기"
+                    style={{ margin: 0 }}
+                  >
+                    🔊
+                  </button>
+                  <button
+                    onClick={() => handleOpenTutor(pIdx, paragraph)}
+                    className="reader-para-tutor-btn"
+                    title="이 문단 1:1 AI 코칭"
+                    style={{ margin: 0 }}
+                  >
+                    💬
+                  </button>
+                </div>
                 <span style={{ flex: 1 }}>
                   {tokens.map((token, tIdx) => {
                     if (isKoreanWord(token)) {
@@ -1248,6 +1372,140 @@ export default function ReadPage({ params }: { params: Promise<{ id: string }> }
           </div>
         </div>
       )}
+
+      {/* 💬 AI 튜터 1:1 코칭 사이드바 */}
+      <div className={`reader-tutor-sidebar ${tutorOpen ? 'open' : ''}`}>
+        <div className="tutor-header">
+          <div style={{ display: 'flex', flexDirection: 'column' }}>
+            <h3 style={{ margin: 0, fontSize: '1.1rem', fontWeight: 800, color: 'var(--text-primary)' }}>
+              {t.tutorTitle}
+            </h3>
+            <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
+              {tutorParaIdx !== null ? `${tutorParaIdx + 1}번째 문단 코칭 중` : ''}
+            </span>
+          </div>
+          <button
+            onClick={() => setTutorOpen(false)}
+            style={{
+              background: 'none',
+              border: 'none',
+              color: 'var(--text-muted)',
+              cursor: 'pointer',
+              fontSize: '1.2rem',
+              fontWeight: 'bold',
+              padding: '4px'
+            }}
+          >
+            ✕
+          </button>
+        </div>
+
+        {tutorParagraph && (
+          <div className="tutor-content-para" title="질문 대상 문단">
+            {tutorParagraph}
+          </div>
+        )}
+
+        <div className="tutor-message-list">
+          {tutorParaIdx !== null && (paraChats[tutorParaIdx] || []).length === 0 && (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+              <div style={{ fontSize: '0.875rem', color: 'var(--text-secondary)', textAlign: 'center', marginBottom: '8px', lineHeight: 1.5 }}>
+                {t.tutorIntro}
+              </div>
+              <button
+                onClick={() => handleSendTutorMessage(undefined, t.qTranslate)}
+                className="tutor-quick-badge"
+              >
+                {t.qTranslate}
+              </button>
+              <button
+                onClick={() => handleSendTutorMessage(undefined, t.qGrammar)}
+                className="tutor-quick-badge"
+              >
+                {t.qGrammar}
+              </button>
+              <button
+                onClick={() => handleSendTutorMessage(undefined, t.qVocab)}
+                className="tutor-quick-badge"
+              >
+                {t.qVocab}
+              </button>
+              <button
+                onClick={() => handleSendTutorMessage(undefined, t.qNuance)}
+                className="tutor-quick-badge"
+              >
+                {t.qNuance}
+              </button>
+            </div>
+          )}
+
+          {tutorParaIdx !== null && (paraChats[tutorParaIdx] || []).map((msg, idx) => (
+            <div key={idx} className={`tutor-bubble-wrapper ${msg.role === 'user' ? 'user' : 'tutor'}`}>
+              <span className="tutor-bubble-sender">
+                {msg.role === 'user' ? 'Me' : 'AI Tutor'}
+              </span>
+              <div className={`tutor-bubble ${msg.role === 'user' ? 'user' : 'tutor'}`}>
+                {msg.role === 'user' ? (
+                  msg.parts[0].text
+                ) : (
+                  msg.parts[0].text.split('\n').map((line, lIdx) => {
+                    const parts = line.split(/(\*\*[^*]+\*\*)/g);
+                    return (
+                      <p key={lIdx} style={{ margin: line === '' ? '8px 0' : '0 0 6px 0', lineHeight: 1.5 }}>
+                        {parts.map((part, pIdx) => {
+                          if (part.startsWith('**') && part.endsWith('**')) {
+                            return <strong key={pIdx} style={{ color: 'var(--accent-primary)', fontWeight: 700 }}>{part.slice(2, -2)}</strong>;
+                          }
+                          return part;
+                        })}
+                      </p>
+                    );
+                  })
+                )}
+              </div>
+            </div>
+          ))}
+
+          {tutorLoading && (
+            <div className="tutor-bubble-wrapper tutor">
+              <span className="tutor-bubble-sender">AI Tutor</span>
+              <div className="tutor-bubble tutor" style={{ display: 'flex', alignItems: 'center' }}>
+                <div className="tutor-loading-dots">
+                  <div className="tutor-loading-dot" />
+                  <div className="tutor-loading-dot" />
+                  <div className="tutor-loading-dot" />
+                </div>
+              </div>
+            </div>
+          )}
+          <div ref={tutorMsgEndRef} />
+        </div>
+
+        <div className="tutor-input-area">
+          <form onSubmit={(e) => handleSendTutorMessage(e)} className="tutor-input-form">
+            <textarea
+              value={tutorInput}
+              onChange={(e) => setTutorInput(e.target.value)}
+              placeholder={t.tutorPlaceholder}
+              className="tutor-textarea"
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' && !e.shiftKey) {
+                  e.preventDefault();
+                  handleSendTutorMessage(e);
+                }
+              }}
+            />
+            <button
+              type="submit"
+              disabled={tutorLoading || !tutorInput.trim()}
+              className="tutor-send-btn"
+              title="질문 보내기"
+            >
+              ✈️
+            </button>
+          </form>
+        </div>
+      </div>
 
       {/* 공통 알림용 Alert Modal */}
       <AlertModal

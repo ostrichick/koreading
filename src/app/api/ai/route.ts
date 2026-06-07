@@ -26,7 +26,7 @@ export async function POST(req: NextRequest) {
   try {
     // 요청 바디에서 필요한 매개변수를 추출합니다.
     const body = await req.json();
-    const { action, level, topic, nativeLang, word, sentence, customApiKey } = body;
+    const { action, level, topic, nativeLang, word, sentence, customApiKey, paragraph, userMessage, chatHistory } = body;
 
     // 사용자가 직접 입력한 개인 API Key가 있다면 이를 최우선으로 사용하고, 없으면 서버 환경변수 키를 사용합니다.
     const activeApiKey = (customApiKey && customApiKey.trim()) || process.env.GEMINI_API_KEY || '';
@@ -395,6 +395,51 @@ A1, A2, B1, B2, C1 레벨을 모두 포함해 주세요.`;
 
       const { text } = await generateWithFallback(prompt, 'application/json');
       return NextResponse.json(JSON.parse(text));
+
+    // ═══════════════════════════════════════════════════
+    // 💬 4. 1:1 AI 튜터 문단별 코칭 대화 (tutorChat)
+    // ═══════════════════════════════════════════════════
+    } else if (action === 'tutorChat') {
+      const langMap: Record<string, string> = { en: 'English', es: 'Spanish', ja: 'Japanese', zh: 'Chinese' };
+      const langName = langMap[nativeLang] || 'English';
+
+      let historyText = '';
+      if (chatHistory && chatHistory.length > 0) {
+        historyText = chatHistory.map((msg: any) => {
+          const sender = msg.role === 'user' ? '학습자 (User)' : 'AI 튜터 (Tutor)';
+          const text = msg.parts?.[0]?.text || msg.content || '';
+          return `[${sender}]: ${text}`;
+        }).join('\n\n');
+      }
+
+      const prompt = `당신은 외국인을 위한 전문 한국어 교육자이자 1:1 친밀한 AI 튜터입니다.
+학습자가 독해 본문 중 다음 특정 단락에 대해 질문하고 있습니다.
+
+[독해 대상 문단]
+"""
+${paragraph}
+"""
+
+[대상 학습자 정보]
+- 학습자의 현재 한국어 수준: CEFR ${level}
+- 학습자의 모국어: ${langName} (이 언어로 친절하게 설명해야 합니다. 단, 학습자 레벨이 C1, C2인 경우 전적으로 한국어로만 답변해 주세요.)
+
+[이전 대화 내용]
+${historyText || "(이전 대화 없음)"}
+
+[학습자의 새로운 질문]
+"${userMessage}"
+
+[답변 가이드라인]
+1. 질문에 초점을 맞추어 명쾌하고 직관적으로 답변해 주세요.
+2. 초/중급 수준(A1~B2)의 학습자에게는 핵심 문법이나 단어를 설명할 때 사용자의 모국어(${langName})를 사용하여 알기 쉽게 풀어서 설명하세요.
+3. 고급 수준(C1~C2)의 학습자에게는 한국어 실력 향상을 위해 100% 한국어로만 답변하십시오. 절대 영어 등 모국어를 섞지 마십시오.
+4. 예시를 들 때는 실생활에서 유용하게 쓸 수 있는 자연스러운 한국어 문장 2~3개를 함께 제시해 주세요.
+5. 마크다운 형식을 활용하여 가독성 있게 구조화된 답변을 작성해 주세요. (JSON 형식이 아닌 일반 텍스트 마크다운으로 답변을 생성하세요.)`;
+
+      // tutorChat은 일반 텍스트 마크다운으로 답변하므로 responseMimeType을 지정하지 않습니다.
+      const { text, modelUsed } = await generateWithFallback(prompt);
+      return NextResponse.json({ text, generatorModel: modelUsed });
     }
 
     return NextResponse.json({ error: 'Unknown action' }, { status: 400 });
