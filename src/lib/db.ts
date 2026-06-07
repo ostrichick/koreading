@@ -138,6 +138,26 @@ export async function getReadArticles(uid: string): Promise<string[]> {
   return snap.docs.map(d => d.id);
 }
 
+export interface ReadArticleRecord {
+  articleId: string;
+  readAt: Timestamp | null;
+}
+
+/**
+ * 사용자가 지금까지 읽은 아티클의 ID 목록과 읽은 시점(readAt)을 함께 조회합니다.
+ */
+export async function getReadArticlesWithDates(uid: string): Promise<ReadArticleRecord[]> {
+  const ref = collection(db, 'users', uid, 'readArticles');
+  const snap = await getDocs(ref);
+  return snap.docs.map(d => {
+    const data = d.data();
+    return {
+      articleId: d.id,
+      readAt: data.readAt || null
+    };
+  });
+}
+
 /**
  * 사용자가 새로 저장한 단어(VocabularyEntry)를 유저 문서 하위의 'vocabulary' 서브컬렉션에 추가합니다.
  */

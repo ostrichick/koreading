@@ -612,3 +612,154 @@ h1, h2, h3, h4, h5, h6 {
 @media (max-width: 480px) {
   .word-popup { border-radius: var(--radius-lg); }
 }
+
+/* ─── 3D Flashcards ─── */
+.flashcard-container {
+  perspective: 1000px;
+  width: 100%;
+  height: 220px;
+  cursor: pointer;
+}
+.flashcard-inner {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  transition: transform 0.6s cubic-bezier(0.4, 0, 0.2, 1);
+  transform-style: preserve-3d;
+}
+.flashcard-container.is-flipped .flashcard-inner {
+  transform: rotateY(180deg);
+}
+.flashcard-front, .flashcard-back {
+  position: absolute;
+  width: 100%;
+  height: 100%;
+  backface-visibility: hidden;
+  border-radius: var(--radius-lg);
+  padding: 24px;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+  box-shadow: var(--shadow-md);
+  border: 1px solid var(--border-subtle);
+}
+.flashcard-front {
+  background: var(--bg-card);
+  color: var(--text-primary);
+}
+.flashcard-back {
+  background: rgba(99, 102, 241, 0.08);
+  color: var(--text-primary);
+  transform: rotateY(180deg);
+  border-color: rgba(99, 102, 241, 0.3);
+  overflow-y: auto;
+}
+
+/* ─── Mini Floating Tooltip ─── */
+.mini-tooltip-popup {
+  position: absolute;
+  z-index: 50;
+  background: rgba(15, 23, 42, 0.95);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-radius: var(--radius-md);
+  padding: 12px 16px;
+  box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.5), var(--shadow-glow);
+  color: var(--text-primary);
+  min-width: 220px;
+  max-width: 300px;
+  animation: tooltipFadeIn 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+}
+.mini-tooltip-popup::after {
+  content: '';
+  position: absolute;
+  bottom: -6px;
+  left: 50%;
+  transform: translateX(-50%) rotate(45deg);
+  width: 12px;
+  height: 12px;
+  background: rgba(15, 23, 42, 0.95);
+  border-right: 1px solid rgba(255, 255, 255, 0.2);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.2);
+  z-index: -1;
+}
+@keyframes tooltipFadeIn {
+  from { opacity: 0; transform: translate(-50%, 8px); }
+  to { opacity: 1; transform: translate(-50%, 0); }
+}
+
+/* ─── Reader Viewer Themes ─── */
+.reader-theme-light {
+  --bg-primary: #f8fafc;
+  --bg-secondary: #f1f5f9;
+  --bg-card: #ffffff;
+  --text-primary: #0f172a;
+  --text-secondary: #475569;
+  --text-muted: #64748b;
+  --border-subtle: #e2e8f0;
+  --border-medium: #cbd5e1;
+}
+.reader-theme-sepia {
+  --bg-primary: #f4ecd8;
+  --bg-secondary: #eae0c8;
+  --bg-card: #fdf6e3;
+  --text-primary: #5c4326;
+  --text-secondary: #856a4b;
+  --text-muted: #a0886c;
+  --border-subtle: #e4d8bc;
+  --border-medium: #d4c8a8;
+}
+.reader-settings-panel {
+  position: fixed;
+  bottom: 90px;
+  right: 24px;
+  z-index: 100;
+  background: var(--bg-card);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-lg);
+  padding: 20px;
+  width: 280px;
+  box-shadow: var(--shadow-lg);
+  animation: slideUp 200ms ease-out;
+}
+.reader-settings-btn {
+  position: fixed;
+  bottom: 24px;
+  right: 24px;
+  z-index: 99;
+  width: 50px;
+  height: 50px;
+  border-radius: 50%;
+  background: var(--accent-primary);
+  color: white;
+  border: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.5rem;
+  cursor: pointer;
+  box-shadow: 0 4px 14px rgba(99, 102, 241, 0.4);
+  transition: all 0.2s ease;
+}
+.reader-settings-btn:hover {
+  transform: scale(1.1) rotate(45deg);
+}
+.reader-para-play-btn {
+  opacity: 0.15;
+  background: none;
+  border: none;
+  cursor: pointer;
+  font-size: 0.9rem;
+  padding: 2px 6px;
+  margin-right: 6px;
+  border-radius: 4px;
+  color: var(--text-secondary);
+  transition: all 0.2s ease;
+}
+.reader-para-play-btn:hover {
+  opacity: 1;
+  background: rgba(99, 102, 241, 0.1);
+  color: var(--accent-primary);
+}

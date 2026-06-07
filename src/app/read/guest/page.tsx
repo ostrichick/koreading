@@ -42,6 +42,14 @@ export default function GuestReadPage() {
   const [readingDone, setReadingDone] = useState(false);                     // 다 읽기 완료 처리 상태
   const [signingIn, setSigningIn] = useState(false);                         // 소셜 로그인 처리 중 대기 제어
 
+  // [신규 기능] 툴팁 사전 및 독해 뷰어 커스텀 설정 상태 변수들
+  const [tooltipPosition, setTooltipPosition] = useState<{ top: number; left: number } | null>(null);
+  const [showAdvancedModal, setShowAdvancedModal] = useState<boolean>(false);
+  const [fontSize, setFontSize] = useState<string>('normal');
+  const [lineHeight, setLineHeight] = useState<number>(2.2);
+  const [readerTheme, setReaderTheme] = useState<string>('dark');
+  const [showSettings, setShowSettings] = useState<boolean>(false);
+
   // 마우스 오버 즉시 검색 옵션 관련 Ref 및 상태 값
   const [hoverLookup, setHoverLookup] = useState(false);
   const hoverTimeoutRef = useRef<NodeJS.Timeout | null>(null);
@@ -52,37 +60,76 @@ export default function GuestReadPage() {
     const savedHover = localStorage.getItem('koreading_hover_lookup') === 'true';
     setHoverLookup(savedHover);
 
+    // [신규 기능] 독서 뷰어 설정 로컬 스토리지 로드
+    const savedSize = localStorage.getItem('koreading_font_size');
+    if (savedSize) setFontSize(savedSize);
+    const savedLine = localStorage.getItem('koreading_line_height');
+    if (savedLine) setLineHeight(parseFloat(savedLine));
+    const savedTheme = localStorage.getItem('koreading_reader_theme');
+    if (savedTheme) setReaderTheme(savedTheme);
+
     // 게스트가 방금 임시 생성한 세션 상의 기사 로드
     const a = getGuestArticle();
     if (!a) { router.push('/library'); return; }
     setArticle(a);
 
+    // 외부 영역 클릭 시 미니 사전 툴팁 닫기
+    const handleGlobalClick = (e: MouseEvent) => {
+      const target = e.target as HTMLElement;
+      if (
+        !target.closest('.reading-word') && 
+        !target.closest('.mini-tooltip-popup') &&
+        !target.closest('.word-popup')
+      ) {
+        closePopup();
+      }
+    };
+    document.addEventListener('click', handleGlobalClick);
+
     // 타이머 메모리 누수 방지용 언마운트 정리
     return () => {
       if (hoverTimeoutRef.current) clearTimeout(hoverTimeoutRef.current);
+      document.removeEventListener('click', handleGlobalClick);
     };
   }, [router]);
 
-  /**
-   * 한국어 단어를 클릭하거나 마우스 오버했을 때 동작하는 사전 조회 핵심 로직입니다.
-   * [초광속 2단계 점진적 조회 기법]
-   * 1단계: 1초 미만으로 끝나는 lookupWordBasic API를 호출해 빠르게 기본 사전(품사, 뜻, 발음) 팝업 모달을 먼저 띄웁니다.
-   * 2단계: 백그라운드에서 상세 사전(단어 형태소 결합 구조, 예문 쌍) lookupWordAdvanced API를 연속 호출해 화면에 덮어씌웁니다.
-   */
-  const handleWordClick = useCallback(async (word: string, sentence: string) => {
-    if (!isKoreanWord(word)) return;
-    const nativeLang = profile?.nativeLanguage || getGuestLang() || 'en';
-    
+  // [신규 기능] 독서 뷰어 커스텀 설정 갱신 헬퍼 함수
+  const updateFontSize = (size: string) => {
+    setFontSize(size);
+    localStorage.setItem('koreading_font_size', size);
+  };
+  const updateLineHeight = (line: number) => {
+    setLineHeight(line);
+    localStorage.setItem('koreading_line_height', line.toString());
+  };
+  const updateReaderTheme = (theme: string) => {
+    setReaderTheme(theme);
+    localStorage.setItem('koreading_reader_theme', theme);
+  };
+
+  // 🔊 TTS 한국어 목소리 음성 합성 재생 헬퍼
+  const speakText = (text: string) => {
+    if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
+      window.speechSynthesis.cancel();
+      const utterance = new SpeechSynthesisUtterance(text);
+      utterance.lang = 'ko-KR';
+      window.speechSynthesis.speak(utterance);
+    }
+  };
+
+  // 백그라운드 단어 사전 조회 비동기 코어 함수
+  const fetchWordData = useCallback(async (word: string, sentence: string) => {
     setWordData(null);
     setLoadingWord(true);
     setLoadingAdvanced(false);
     try {
-      // 1단계: 즉시 단어 의미를 보여주기 위한 퀵 기본 정보 요청
+      const nativeLang = profile?.nativeLanguage || getGuestLang() || 'en';
+      if (!nativeLang) return;
+      
       const basicData = await lookupWordBasic(word, sentence, nativeLang);
       setWordData(basicData);
-      setLoadingWord(false); // 팝업창 모달 노출!
+      setLoadingWord(false);
 
-      // 2단계: 상세 형태 구조 분석 및 예문 취득을 위한 백그라운드 요청 작동
       setLoadingAdvanced(true);
       const advancedData = await lookupWordAdvanced(word, sentence, nativeLang);
       setWordData(prev => prev ? { ...prev, ...advancedData } : null);
@@ -94,17 +141,40 @@ export default function GuestReadPage() {
     }
   }, [profile]);
 
-  // 마우스 오버 즉시 검색 작동 시, 250ms 동안 마우스가 멈췄을 때에만 사전을 트리거하는 디바운싱 핸들러입니다.
-  const handleWordMouseEnter = (word: string, sentence: string) => {
-    if (!hoverLookup) return;
-    if (hoverTimeoutRef.current) clearTimeout(hoverTimeoutRef.current);
-    
-    hoverTimeoutRef.current = setTimeout(() => {
-      handleWordClick(word, sentence);
-    }, 250); // 250밀리초 딜레이 임계치 적용
+  /**
+   * 한국어 단어를 클릭하거나 마우스 오버했을 때 동작하는 사전 조회 핵심 로직입니다.
+   * 클릭한 좌표를 계산하여 해당 요소 바로 상단에 미니 플로팅 툴팁 사전을 오픈합니다.
+   */
+  const handleWordClick = (e: React.MouseEvent, word: string, sentence: string) => {
+    if (!isKoreanWord(word)) return;
+    const rect = e.currentTarget.getBoundingClientRect();
+    setTooltipPosition({
+      top: rect.top + window.scrollY - 110,
+      left: rect.left + window.scrollX + (rect.width / 2),
+    });
+    setShowAdvancedModal(false);
+    fetchWordData(word, sentence);
   };
 
-  // 마우스가 단어 영역을 빠져나갈 때 대기 중이던 호버 조회 예약을 취소합니다.
+  // 마우스 오버 즉시 검색 핸들러 (250ms 디바운스 적용)
+  const handleWordMouseEnter = (e: React.MouseEvent, word: string, sentence: string) => {
+    if (!hoverLookup) return;
+    if (!isKoreanWord(word)) return;
+    if (hoverTimeoutRef.current) clearTimeout(hoverTimeoutRef.current);
+    
+    const target = e.currentTarget;
+    hoverTimeoutRef.current = setTimeout(() => {
+      const rect = target.getBoundingClientRect();
+      setTooltipPosition({
+        top: rect.top + window.scrollY - 110,
+        left: rect.left + window.scrollX + (rect.width / 2),
+      });
+      setShowAdvancedModal(false);
+      fetchWordData(word, sentence);
+    }, 250);
+  };
+
+  // 마우스가 떠나면 대기 타이머 제거
   const handleWordMouseLeave = () => {
     if (hoverTimeoutRef.current) {
       clearTimeout(hoverTimeoutRef.current);
@@ -112,11 +182,13 @@ export default function GuestReadPage() {
     }
   };
 
-  // 단어 사전 팝업 닫기
+  // 팝업 오버레이 닫기
   const closePopup = () => {
     setWordData(null);
     setLoadingWord(false);
     setLoadingAdvanced(false);
+    setTooltipPosition(null);
+    setShowAdvancedModal(false);
   };
 
   // 단어 저장 버튼 클릭 이벤트
@@ -204,7 +276,16 @@ export default function GuestReadPage() {
   const activeNativeLang = profile?.nativeLanguage || getGuestLang() || 'en';
 
   return (
-    <div style={{ minHeight: '100vh', padding: '40px 24px' }}>
+    <div 
+      className={readerTheme === 'light' ? 'reader-theme-light' : readerTheme === 'sepia' ? 'reader-theme-sepia' : ''} 
+      style={{ 
+        minHeight: '100vh', 
+        padding: '40px 24px', 
+        background: 'var(--bg-primary)', 
+        color: 'var(--text-primary)',
+        transition: 'background-color var(--transition-base), color var(--transition-base)' 
+      }}
+    >
       {/* 펄스 애니메이션이 가미된 유려한 사전 조회 스켈레톤용 CSS 스타일 주입 */}
       <style>{`
         @keyframes skeleton-pulse {
@@ -316,8 +397,8 @@ export default function GuestReadPage() {
               {article.keyVocabulary.map((word: string, i: number) => (
                 <button
                   key={i}
-                  onClick={() => handleWordClick(word, article.content)}
-                  onMouseEnter={() => handleWordMouseEnter(word, article.content)}
+                  onClick={(e) => handleWordClick(e, word, article.content)}
+                  onMouseEnter={(e) => handleWordMouseEnter(e, word, article.content)}
                   onMouseLeave={handleWordMouseLeave}
                   style={{
                     background: savedWords.has(word) ? 'rgba(16,185,129,0.15)' : 'var(--bg-secondary)',
@@ -343,24 +424,43 @@ export default function GuestReadPage() {
         <div className="card" style={{ padding: '36px', marginBottom: '32px' }}>
           {paragraphs.map((paragraph: string, pIdx: number) => {
             const tokens = tokenizeKorean(paragraph);
+            const cleanText = paragraph.replace(/[^\w\sㄱ-ㅎㅏ-ㅣ가-힣.,!?'"~]/g, '');
             return (
-              <p key={pIdx} style={{ fontFamily: 'Noto Sans KR, sans-serif', fontSize: '1.1rem', lineHeight: 2.2, marginBottom: '20px', color: 'var(--text-primary)' }}>
-                {tokens.map((token, tIdx) =>
-                  isKoreanWord(token) ? (
-                    <span
-                      key={tIdx}
-                      className={`reading-word ${savedWords.has(token) ? 'saved' : ''}`}
-                      onClick={() => handleWordClick(token, paragraph)}
-                      onMouseEnter={() => handleWordMouseEnter(token, paragraph)}
-                      onMouseLeave={handleWordMouseLeave}
-                      title="클릭/오버하여 뜻 보기"
-                    >
-                      {token}
-                    </span>
-                  ) : (
-                    <span key={tIdx}>{token}</span>
-                  )
-                )}
+              <p key={pIdx} style={{
+                fontFamily: 'Noto Sans KR, sans-serif',
+                fontSize: fontSize === 'small' ? '0.95rem' : fontSize === 'large' ? '1.3rem' : fontSize === 'xlarge' ? '1.5rem' : '1.1rem',
+                lineHeight: lineHeight,
+                marginBottom: '20px',
+                color: 'var(--text-primary)',
+                display: 'flex',
+                alignItems: 'flex-start',
+              }}>
+                <button
+                  onClick={() => speakText(cleanText)}
+                  className="reader-para-play-btn"
+                  title="이 문단 발음 듣기"
+                  style={{ marginTop: '4px' }}
+                >
+                  🔊
+                </button>
+                <span style={{ flex: 1 }}>
+                  {tokens.map((token, tIdx) =>
+                    isKoreanWord(token) ? (
+                      <span
+                        key={tIdx}
+                        className={`reading-word ${savedWords.has(token) ? 'saved' : ''}`}
+                        onClick={(e) => handleWordClick(e, token, paragraph)}
+                        onMouseEnter={(e) => handleWordMouseEnter(e, token, paragraph)}
+                        onMouseLeave={handleWordMouseLeave}
+                        title="클릭/오버하여 뜻 보기"
+                      >
+                        {token}
+                      </span>
+                    ) : (
+                      <span key={tIdx}>{token}</span>
+                    )
+                  )}
+                </span>
               </p>
             );
           })}
@@ -402,127 +502,185 @@ export default function GuestReadPage() {
         )}
       </div>
 
-      {/* 2단계 점진적 사전 조회 스켈레톤 & 팝업 모달 */}
-      {(loadingWord || wordData) && (
+      {/* 💬 미니 플로팅 툴팁 사전 */}
+      {tooltipPosition && (loadingWord || (wordData && !showAdvancedModal)) && (
+        <div
+          className="mini-tooltip-popup"
+          style={{
+            top: `${tooltipPosition.top}px`,
+            left: `${tooltipPosition.left}px`,
+            transform: 'translateX(-50%)',
+          }}
+        >
+          {loadingWord ? (
+            <div style={{ padding: '4px' }}>
+              <div className="skeleton" style={{ width: '80px', height: '14px', marginBottom: '8px', borderRadius: '4px' }} />
+              <div className="skeleton" style={{ width: '120px', height: '12px', borderRadius: '4px' }} />
+            </div>
+          ) : wordData && (
+            <>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '8px', marginBottom: '6px' }}>
+                <span style={{ fontSize: '1rem', fontWeight: 800, color: 'var(--text-primary)' }}>
+                  {wordData.dictionaryForm || wordData.word}
+                </span>
+                <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
+                  <button
+                    onClick={() => speakText(wordData.dictionaryForm || wordData.word)}
+                    style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: '0.9rem', padding: 0 }}
+                    title="발음 듣기"
+                  >
+                    🔊
+                  </button>
+                  <button
+                    onClick={closePopup}
+                    style={{ background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', fontSize: '0.8rem', padding: 0 }}
+                  >
+                    ✕
+                  </button>
+                </div>
+              </div>
+              
+              <div style={{ fontSize: '0.75rem', color: 'var(--accent-primary)', fontWeight: 600, marginBottom: '6px' }}>
+                {wordData.partOfSpeech} | CEFR {wordData.level}
+              </div>
+              
+              <div style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', marginBottom: '8px', lineHeight: 1.4, fontFamily: 'Noto Sans KR, sans-serif' }}>
+                {wordData.translation}
+              </div>
+
+              <div style={{ display: 'flex', gap: '6px', marginTop: '10px' }}>
+                <button
+                  onClick={handleSaveWord}
+                  disabled={savedWords.has(wordData.word)}
+                  style={{
+                    flex: 1,
+                    fontSize: '0.7rem',
+                    padding: '6px 8px',
+                    borderRadius: '4px',
+                    background: savedWords.has(wordData.word) ? 'rgba(16,185,129,0.1)' : 'var(--accent-primary)',
+                    border: '1px solid',
+                    borderColor: savedWords.has(wordData.word) ? 'rgba(16,185,129,0.3)' : 'var(--accent-primary)',
+                    color: savedWords.has(wordData.word) ? '#10b981' : 'white',
+                    cursor: 'pointer',
+                    fontWeight: 700,
+                    fontFamily: 'inherit',
+                  }}
+                >
+                  {user ? (savedWords.has(wordData.word) ? '✓ 저장됨' : '📚 저장') : '🔑 로그인'}
+                </button>
+                <button
+                  onClick={() => setShowAdvancedModal(true)}
+                  style={{
+                    flex: 1,
+                    fontSize: '0.7rem',
+                    padding: '6px 8px',
+                    borderRadius: '4px',
+                    background: 'rgba(255,255,255,0.05)',
+                    border: '1px solid rgba(255,255,255,0.1)',
+                    color: 'var(--text-primary)',
+                    cursor: 'pointer',
+                    fontWeight: 700,
+                    fontFamily: 'inherit',
+                  }}
+                >
+                  🔍 자세히
+                </button>
+              </div>
+            </>
+          )}
+        </div>
+      )}
+
+      {/* 2단계 점진적 조회 스켈레톤 사전 팝업창 (상세 오버레이) */}
+      {showAdvancedModal && wordData && (
         <div className="word-popup-overlay" onClick={(e) => { if (e.target === e.currentTarget) closePopup(); }}>
           <div className="word-popup" style={{ minHeight: '380px', display: 'flex', flexDirection: 'column' }}>
-            {loadingWord ? (
-              // 1단계: basic API 호출 대기 중일 때 표시할 고급 스켈레톤 애니메이션
-              <div style={{ padding: '8px 4px' }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '24px' }}>
-                  <div style={{ width: '80%' }}>
-                    <div className="skeleton" style={{ width: '55%', height: '28px', marginBottom: '10px', borderRadius: '6px' }} />
-                    <div className="skeleton" style={{ width: '30%', height: '14px', borderRadius: '4px' }} />
+            <>
+              <div className="word-popup-header">
+                <div>
+                  <div style={{ display: 'flex', alignItems: 'baseline', gap: '8px', flexWrap: 'wrap' }}>
+                    <div className="word-popup-word">{wordData.dictionaryForm || wordData.word}</div>
+                    {wordData.dictionaryForm && wordData.dictionaryForm !== wordData.word && (
+                      <span style={{ fontSize: '0.85rem', color: 'var(--text-muted)', fontWeight: 500, fontFamily: 'Noto Sans KR, sans-serif' }}>
+                        (원문: {wordData.word})
+                      </span>
+                    )}
                   </div>
-                  <button className="word-popup-close" onClick={closePopup}>✕</button>
+                  <div style={{ display: 'flex', gap: '8px', alignItems: 'center', marginTop: '4px' }}>
+                    <div className="word-popup-pronunciation">[{wordData.pronunciation}]</div>
+                    <button
+                      onClick={() => speakText(wordData.dictionaryForm || wordData.word)}
+                      style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: '0.95rem', padding: 0 }}
+                      title="발음 듣기"
+                    >
+                      🔊
+                    </button>
+                  </div>
                 </div>
+                <button className="word-popup-close" onClick={closePopup}>✕</button>
+              </div>
 
-                <div className="skeleton" style={{ width: '18%', height: '18px', marginBottom: '24px', borderRadius: '4px' }} />
+              <span className="word-popup-pos">{wordData.partOfSpeech}</span>
 
-                <div style={{ marginBottom: '20px' }}>
+              {/* 2단계 백그라운드 Advanced 분석 호출 대기 중에는 미세 실선 박스로 안내 처리 */}
+              {loadingAdvanced && !wordData.structure ? (
+                <div style={{ marginBottom: '20px', background: 'rgba(99,102,241,0.02)', borderRadius: 'var(--radius-sm)', padding: '12px 16px', border: '1px dotted var(--border-subtle)' }}>
                   <div className="skeleton" style={{ width: '45%', height: '12px', marginBottom: '10px', borderRadius: '4px' }} />
-                  <div className="skeleton" style={{ width: '88%', height: '16px', borderRadius: '4px' }} />
-                </div>
-
-                <div style={{ marginBottom: '20px' }}>
-                  <div className="skeleton" style={{ width: '35%', height: '12px', marginBottom: '10px', borderRadius: '4px' }} />
-                  <div className="skeleton" style={{ width: '92%', height: '16px', borderRadius: '4px' }} />
-                </div>
-
-                <div style={{ marginBottom: '24px' }}>
-                  <div className="skeleton" style={{ width: '40%', height: '12px', marginBottom: '10px', borderRadius: '4px' }} />
                   <div className="skeleton" style={{ width: '85%', height: '16px', borderRadius: '4px' }} />
                 </div>
+              ) : wordData.structure ? (
+                <div className="word-popup-section" style={{ background: 'rgba(99,102,241,0.05)', borderRadius: 'var(--radius-sm)', padding: '12px 16px', border: '1px solid rgba(99,102,241,0.1)', marginBottom: '20px' }}>
+                  <div className="word-popup-section-title" style={{ color: 'var(--accent-primary)', display: 'flex', alignItems: 'center', gap: '6px', fontWeight: 700 }}>
+                    🧱 단어 구조 분석 (Word Structure)
+                  </div>
+                  <div style={{ fontSize: '0.9rem', fontWeight: 600, color: 'var(--text-primary)', fontFamily: 'Noto Sans KR, sans-serif', marginTop: '6px', lineHeight: 1.5 }}>
+                    {wordData.structure}
+                  </div>
+                </div>
+              ) : null}
 
-                <div>
+              <div className="word-popup-section">
+                <div className="word-popup-section-title">📖 한국어 정의</div>
+                <div className="word-popup-definition">{wordData.definition}</div>
+              </div>
+
+              <div className="word-popup-section">
+                <div className="word-popup-section-title">
+                  🌐 {activeNativeLang === 'es' ? '스페인어' : '영어'} 번역
+                </div>
+                <div className="word-popup-translation">{wordData.translation}</div>
+              </div>
+
+              {/* 2단계 예문 로딩 상태 및 실데이터 렌더링 */}
+              {loadingAdvanced && !wordData.examples ? (
+                <div style={{ marginBottom: '20px', background: 'var(--bg-secondary)', borderRadius: 'var(--radius-sm)', padding: '16px', border: '1px dotted var(--border-subtle)' }}>
                   <div className="skeleton" style={{ width: '25%', height: '12px', marginBottom: '12px', borderRadius: '4px' }} />
                   <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
                     <div className="skeleton" style={{ width: '95%', height: '14px', borderRadius: '4px' }} />
                     <div className="skeleton" style={{ width: '60%', height: '12px', borderRadius: '4px' }} />
                   </div>
                 </div>
+              ) : wordData.examples ? (
+                <div className="word-popup-section">
+                  <div className="word-popup-section-title">📝 예문</div>
+                  {wordData.examples.map((ex, i) => (
+                    <div key={i} className="word-popup-example">
+                      <div className="word-popup-example-korean">{ex.korean}</div>
+                      <div className="word-popup-example-translation">{ex.translation}</div>
+                    </div>
+                  ))}
+                </div>
+              ) : null}
+
+              <div style={{ display: 'flex', gap: '8px', marginBottom: '16px' }}>
+                <span className={`level-badge level-${wordData.level}`}>{wordData.level}</span>
               </div>
-            ) : wordData && (
-              // AI로부터 성공적으로 수집 완료된 단어 사전 데이터 표출
-              <>
-                 <div className="word-popup-header">
-                  <div>
-                    <div style={{ display: 'flex', alignItems: 'baseline', gap: '8px', flexWrap: 'wrap' }}>
-                      <div className="word-popup-word">{wordData.dictionaryForm || wordData.word}</div>
-                      {wordData.dictionaryForm && wordData.dictionaryForm !== wordData.word && (
-                        <span style={{ fontSize: '0.85rem', color: 'var(--text-muted)', fontWeight: 500, fontFamily: 'Noto Sans KR, sans-serif' }}>
-                          (원문: {wordData.word})
-                        </span>
-                      )}
-                    </div>
-                    <div className="word-popup-pronunciation">[{wordData.pronunciation}]</div>
-                  </div>
-                  <button className="word-popup-close" onClick={closePopup}>✕</button>
-                </div>
 
-                <span className="word-popup-pos">{wordData.partOfSpeech}</span>
-
-                {/* 2단계 백그라운드 Advanced 분석 호출 대기 중에는 미세 실선 박스로 안내 처리 */}
-                {loadingAdvanced && !wordData.structure ? (
-                  <div style={{ marginBottom: '20px', background: 'rgba(99,102,241,0.02)', borderRadius: 'var(--radius-sm)', padding: '12px 16px', border: '1px dotted var(--border-subtle)' }}>
-                    <div className="skeleton" style={{ width: '45%', height: '12px', marginBottom: '10px', borderRadius: '4px' }} />
-                    <div className="skeleton" style={{ width: '85%', height: '16px', borderRadius: '4px' }} />
-                  </div>
-                ) : wordData.structure ? (
-                  // 형태소 성분 및 파생 어미 분해 구조 표시
-                  <div className="word-popup-section" style={{ background: 'rgba(99,102,241,0.05)', borderRadius: 'var(--radius-sm)', padding: '12px 16px', border: '1px solid rgba(99,102,241,0.1)', marginBottom: '20px' }}>
-                    <div className="word-popup-section-title" style={{ color: 'var(--accent-primary)', display: 'flex', alignItems: 'center', gap: '6px', fontWeight: 700 }}>
-                      🧱 단어 구조 분석 (Word Structure)
-                    </div>
-                    <div style={{ fontSize: '0.9rem', fontWeight: 600, color: 'var(--text-primary)', fontFamily: 'Noto Sans KR, sans-serif', marginTop: '6px', lineHeight: 1.5 }}>
-                      {wordData.structure}
-                    </div>
-                  </div>
-                ) : null}
-
-                <div className="word-popup-section">
-                  <div className="word-popup-section-title">📖 한국어 정의</div>
-                  <div className="word-popup-definition">{wordData.definition}</div>
-                </div>
-
-                <div className="word-popup-section">
-                  <div className="word-popup-section-title">
-                    🌐 {activeNativeLang === 'es' ? '스페인어' : '영어'} 번역
-                  </div>
-                  <div className="word-popup-translation">{wordData.translation}</div>
-                </div>
-
-                {/* 2단계 예문 로딩 상태 및 실데이터 렌더링 */}
-                {loadingAdvanced && !wordData.examples ? (
-                  <div style={{ marginBottom: '20px', background: 'var(--bg-secondary)', borderRadius: 'var(--radius-sm)', padding: '16px', border: '1px dotted var(--border-subtle)' }}>
-                    <div className="skeleton" style={{ width: '25%', height: '12px', marginBottom: '12px', borderRadius: '4px' }} />
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-                      <div className="skeleton" style={{ width: '95%', height: '14px', borderRadius: '4px' }} />
-                      <div className="skeleton" style={{ width: '60%', height: '12px', borderRadius: '4px' }} />
-                    </div>
-                  </div>
-                ) : wordData.examples ? (
-                  <div className="word-popup-section">
-                    <div className="word-popup-section-title">📝 예문</div>
-                    {wordData.examples.map((ex, i) => (
-                      <div key={i} className="word-popup-example">
-                        <div className="word-popup-example-korean">{ex.korean}</div>
-                        <div className="word-popup-example-translation">{ex.translation}</div>
-                      </div>
-                    ))}
-                  </div>
-                ) : null}
-
-                <div style={{ display: 'flex', gap: '8px', marginBottom: '16px' }}>
-                  <span className={`level-badge level-${wordData.level}`}>{wordData.level}</span>
-                </div>
-
-                {/* 단어 저장 단추 (비로그인 상태일 때는 로그인 팝업 활성화) */}
-                <button className="word-popup-save-btn" onClick={handleSaveWord}>
-                  {user ? (savedWords.has(wordData.word) ? '✓ 단어장에 저장됨' : '📚 단어장에 저장') : '🔑 로그인하여 단어장에 저장'}
-                </button>
-              </>
-            )}
+              {/* 단어 저장 단추 */}
+              <button className="word-popup-save-btn" onClick={handleSaveWord}>
+                {user ? (savedWords.has(wordData.word) ? '✓ 단어장에 저장됨' : '📚 단어장에 저장') : '🔑 로그인하여 단어장에 저장'}
+              </button>
+            </>
           </div>
         </div>
       )}
@@ -575,6 +733,120 @@ export default function GuestReadPage() {
             >
               {readingDone ? '로그인 없이 계속 읽기' : '나중에 하기'}
             </button>
+          </div>
+        </div>
+      )}
+
+      {/* ⚙️ 독해 뷰어 커스텀 설정 컨트롤러 */}
+      <button
+        onClick={(e) => { e.stopPropagation(); setShowSettings(!showSettings); }}
+        className="reader-settings-btn"
+        title="독해 뷰어 설정"
+      >
+        ⚙️
+      </button>
+
+      {showSettings && (
+        <div className="reader-settings-panel" onClick={(e) => e.stopPropagation()}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px', borderBottom: '1px solid var(--border-subtle)', paddingBottom: '8px' }}>
+            <h4 style={{ margin: 0, fontSize: '0.95rem', fontWeight: 800 }}>⚙️ 독해 뷰어 설정</h4>
+            <button
+              onClick={() => setShowSettings(false)}
+              style={{ background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', fontSize: '0.9rem' }}
+            >
+              ✕
+            </button>
+          </div>
+
+          {/* 테마 설정 */}
+          <div style={{ marginBottom: '16px' }}>
+            <div style={{ fontSize: '0.75rem', fontWeight: 700, color: 'var(--text-muted)', marginBottom: '8px' }}>리더 배경 테마</div>
+            <div style={{ display: 'flex', gap: '8px' }}>
+              {[
+                { id: 'dark', label: 'Dark', bg: '#0a0e1a', color: '#f8fafc' },
+                { id: 'light', label: 'Light', bg: '#f8fafc', color: '#0f172a' },
+                { id: 'sepia', label: 'Sepia', bg: '#fdf6e3', color: '#5c4326' },
+              ].map(theme => (
+                <button
+                  key={theme.id}
+                  onClick={() => updateReaderTheme(theme.id)}
+                  style={{
+                    flex: 1,
+                    padding: '8px 4px',
+                    borderRadius: 'var(--radius-sm)',
+                    background: theme.bg,
+                    color: theme.color,
+                    border: readerTheme === theme.id ? '2px solid var(--accent-primary)' : '1px solid var(--border-subtle)',
+                    fontSize: '0.75rem',
+                    fontWeight: 700,
+                    cursor: 'pointer',
+                  }}
+                >
+                  {theme.label}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* 글자 크기 */}
+          <div style={{ marginBottom: '16px' }}>
+            <div style={{ fontSize: '0.75rem', fontWeight: 700, color: 'var(--text-muted)', marginBottom: '8px' }}>글자 크기</div>
+            <div style={{ display: 'flex', gap: '6px' }}>
+              {[
+                { id: 'small', label: '가-' },
+                { id: 'normal', label: '가' },
+                { id: 'large', label: '가+' },
+                { id: 'xlarge', label: '가++' },
+              ].map(size => (
+                <button
+                  key={size.id}
+                  onClick={() => updateFontSize(size.id)}
+                  style={{
+                    flex: 1,
+                    padding: '8px 4px',
+                    borderRadius: 'var(--radius-sm)',
+                    background: fontSize === size.id ? 'var(--accent-primary)' : 'var(--bg-secondary)',
+                    color: fontSize === size.id ? 'white' : 'var(--text-primary)',
+                    border: '1px solid var(--border-subtle)',
+                    fontSize: '0.75rem',
+                    fontWeight: 700,
+                    cursor: 'pointer',
+                  }}
+                >
+                  {size.label}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* 줄 간격 */}
+          <div>
+            <div style={{ fontSize: '0.75rem', fontWeight: 700, color: 'var(--text-muted)', marginBottom: '8px' }}>글 줄 간격</div>
+            <div style={{ display: 'flex', gap: '8px' }}>
+              {[
+                { value: 1.8, label: '기본' },
+                { value: 2.2, label: '넓게' },
+                { value: 2.6, label: '아주넓게' },
+              ].map(line => (
+                <button
+                  key={line.value}
+                  onClick={() => updateLineHeight(line.value)}
+                  style={{
+                    flex: 1,
+                    padding: '8px 4px',
+                    borderRadius: 'var(--radius-sm)',
+                    background: lineHeight === line.value ? 'var(--accent-primary)' : 'var(--bg-secondary)',
+                    color: lineHeight === line.value ? 'white' : 'var(--text-primary)',
+                    border: '1px solid var(--border-subtle)',
+                    fontSize: '0.75rem',
+                    fontWeight: 700,
+                    cursor: 'pointer',
+                  }}
+                >
+                  {line.label}
+                </button>
+              ))}
+            </div>
           </div>
         </div>
       )}

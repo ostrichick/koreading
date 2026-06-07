@@ -6,7 +6,7 @@ import { useAuth } from '@/contexts/AuthContext';
 import { getVocabulary, VocabularyEntry } from '@/lib/db';
 import { TOPICS } from '@/lib/gemini';
 
-// 사용자가 저장한 단어들을 리스트업하고 복습할 수 있는 단어장(VocabularyPage) 컴포넌트입니다.
+// 사용자가 저장한 단어들을 목록 조회하고, 3D 플래시카드 및 미니 퀴즈 등으로 스마트 복습이 가능한 단어장(VocabularyPage) 컴포넌트입니다.
 export default function VocabularyPage() {
   const { user } = useAuth();
   const router = useRouter();
@@ -14,7 +14,22 @@ export default function VocabularyPage() {
   const [vocab, setVocab] = useState<VocabularyEntry[]>([]); // 유저가 등록한 단어장 원본 배열
   const [loading, setLoading] = useState(true);              // 로딩 중 상태 제어
   const [selectedTopic, setSelectedTopic] = useState<string>('all'); // 필터링을 위해 클릭된 현재 카테고리 주제
-  const [selectedEntry, setSelectedEntry] = useState<VocabularyEntry | null>(null); // 팝업으로 상세히 볼 단어 객체
+  const [selectedEntry, setSelectedEntry] = useState<VocabularyEntry | null>(null); // 목록 보기 팝업용 상세 단어 객체
+
+  // [신규 기능 1] 탭 메뉴 상태 제어 ('list' | 'flashcard' | 'quiz')
+  const [activeTab, setActiveTab] = useState<string>('list');
+
+  // [신규 기능 2] 3D 플래시카드 관련 상태
+  const [cardIdx, setCardIdx] = useState<number>(0);
+  const [isFlipped, setIsFlipped] = useState<boolean>(false);
+  const [shuffledVocab, setShuffledVocab] = useState<VocabularyEntry[]>([]);
+
+  // [신규 기능 3] 미니 퀴즈 관련 상태
+  const [quizQuestion, setQuizQuestion] = useState<VocabularyEntry | null>(null);
+  const [quizOptions, setQuizOptions] = useState<string[]>([]);
+  const [selectedAnswer, setSelectedAnswer] = useState<string | null>(null);
+  const [isCorrect, setIsCorrect] = useState<boolean | null>(null);
+  const [quizScore, setQuizScore] = useState<{ correct: number; total: number }>({ correct: 0, total: 0 });
 
   // 컴포넌트 마운트 시 로그인 여부를 검증하고, 유효한 계정이라면 Firestore에서 개인 단어장 데이터를 로딩합니다.
   useEffect(() => {
@@ -30,8 +45,104 @@ export default function VocabularyPage() {
     selectedTopic === 'all' || entry.topic === selectedTopic
   );
 
+  // 플래시카드 학습을 위해 필터링된 단어 목록을 초기화합니다.
+  useEffect(() => {
+    setShuffledVocab(filteredVocab);
+    setCardIdx(0);
+    setIsFlipped(false);
+  }, [vocab, selectedTopic, activeTab]);
+
+  // 플래시카드 활성화 시 퀴즈 초기화 및 탭 전환 대응
+  useEffect(() => {
+    if (activeTab === 'quiz' && filteredVocab.length >= 4) {
+      generateQuiz();
+    }
+  }, [activeTab, selectedTopic]);
+
   // 저장되어 있는 단어들의 토픽 카테고리 ID들을 중복 없이 추출하여 필터 뱃지 리스트를 연산합니다.
   const topicsWithWords = ['all', ...Array.from(new Set(vocab.map(v => v.topic)))];
+
+  // 🔊 TTS 한국어 발음 목소리 재생 기능
+  const speakWord = (text: string) => {
+    if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
+      window.speechSynthesis.cancel();
+      const utterance = new SpeechSynthesisUtterance(text);
+      utterance.lang = 'ko-KR';
+      window.speechSynthesis.speak(utterance);
+    }
+  };
+
+  // 📥 Anki 호환용 CSV 파일 추출 및 즉시 다운로드 기능
+  const exportToAnkiCSV = () => {
+    if (vocab.length === 0) return;
+    const escapeCsv = (str: string) => `"${str.replace(/"/g, '""')}"`;
+    
+    let csvContent = '\uFEFF'; // MS Excel 등 한글 깨짐 방지용 UTF-8 BOM 주입
+    vocab.forEach(entry => {
+      const front = `${entry.word} [${entry.pronunciation}]<br><small>${entry.partOfSpeech}</small>`;
+      const examplesHtml = entry.examples && entry.examples.length > 0 
+        ? `<hr>${entry.examples.map(ex => `• ${ex.korean} : ${ex.translation}`).join('<br>')}`
+        : '';
+      const back = `${entry.definition}<br><em style="color: #6366f1; font-weight: 600;">${entry.translation}</em>${examplesHtml}`;
+      csvContent += `${escapeCsv(front)},${escapeCsv(back)}\r\n`;
+    });
+
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.setAttribute('href', url);
+    link.setAttribute('download', `koreading_anki_${new Date().toLocaleDateString('sv')}.csv`);
+    link.style.visibility = 'hidden';
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
+  // 🎴 플래시카드 무작위 셔플 기능
+  const handleShuffleCards = () => {
+    const shuffled = [...shuffledVocab].sort(() => Math.random() - 0.5);
+    setShuffledVocab(shuffled);
+    setCardIdx(0);
+    setIsFlipped(false);
+  };
+
+  // 🧩 미니 퀴즈 문제 자동 생성기 (4지선다)
+  const generateQuiz = () => {
+    if (filteredVocab.length < 4) return;
+    
+    // 현재 필터링된 단어 중 정답 단어를 무작위 지정
+    const answer = filteredVocab[Math.floor(Math.random() * filteredVocab.length)];
+    
+    // 오답용 풀 구성 (정답을 제외한 전체 단어 목록)
+    const others = vocab.filter(v => v.id !== answer.id);
+    const shuffledOthers = [...others].sort(() => Math.random() - 0.5);
+    
+    const options = [answer.translation];
+    for (let i = 0; i < Math.min(3, shuffledOthers.length); i++) {
+      options.push(shuffledOthers[i].translation);
+    }
+
+    // 4개 선택지 무작위 셔플
+    const shuffledOptions = options.sort(() => Math.random() - 0.5);
+
+    setQuizQuestion(answer);
+    setQuizOptions(shuffledOptions);
+    setSelectedAnswer(null);
+    setIsCorrect(null);
+  };
+
+  // 🧩 퀴즈 정답 제출 이벤트 핸들러
+  const handleSelectAnswer = (option: string) => {
+    if (selectedAnswer !== null || !quizQuestion) return;
+    setSelectedAnswer(option);
+    
+    const correct = option === quizQuestion.translation;
+    setIsCorrect(correct);
+    setQuizScore(prev => ({
+      correct: prev.correct + (correct ? 1 : 0),
+      total: prev.total + 1,
+    }));
+  };
 
   // 단어 목록 다운로드 완료 대기 화면
   if (loading) return (
@@ -43,12 +154,59 @@ export default function VocabularyPage() {
   return (
     <div style={{ minHeight: '100vh', padding: '40px 24px' }}>
       <div className="container">
-        {/* 상단 제목 헤더 및 저장 개수 요약 */}
-        <div style={{ marginBottom: '32px' }}>
-          <h1 style={{ fontSize: '2rem', fontWeight: 900, marginBottom: '8px' }}>📝 내 단어장</h1>
-          <p style={{ color: 'var(--text-secondary)', fontSize: '0.9rem' }}>
-            저장된 단어: <strong style={{ color: 'var(--text-primary)' }}>{vocab.length}개</strong>
-          </p>
+        {/* 상단 제목 헤더 및 안키 CSV 내보내기 버튼 */}
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '16px', marginBottom: '24px' }}>
+          <div>
+            <h1 style={{ fontSize: '2rem', fontWeight: 900, marginBottom: '8px' }}>📝 내 단어장</h1>
+            <p style={{ color: 'var(--text-secondary)', fontSize: '0.9rem' }}>
+              저장된 단어: <strong style={{ color: 'var(--text-primary)' }}>{vocab.length}개</strong>
+            </p>
+          </div>
+          {vocab.length > 0 && (
+            <button
+              onClick={exportToAnkiCSV}
+              className="btn btn-secondary"
+              style={{
+                fontSize: '0.85rem',
+                padding: '10px 18px',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '8px',
+                borderRadius: 'var(--radius-md)',
+              }}
+            >
+              📥 Anki용 CSV 내보내기
+            </button>
+          )}
+        </div>
+
+        {/* [복습 모드 활성화를 위한 신규 탭 메뉴 바] */}
+        <div style={{ display: 'flex', gap: '8px', borderBottom: '1px solid var(--border-subtle)', marginBottom: '32px', overflowX: 'auto', paddingBottom: '2px' }}>
+          {[
+            { id: 'list', label: '📖 단어 목록' },
+            { id: 'flashcard', label: '🎴 플래시카드' },
+            { id: 'quiz', label: '🧩 미니 퀴즈' }
+          ].map(tab => (
+            <button
+              key={tab.id}
+              onClick={() => setActiveTab(tab.id)}
+              style={{
+                background: 'none',
+                border: 'none',
+                borderBottom: activeTab === tab.id ? '2.5px solid var(--accent-primary)' : '2.5px solid transparent',
+                color: activeTab === tab.id ? 'var(--text-primary)' : 'var(--text-muted)',
+                padding: '12px 20px',
+                fontSize: '0.95rem',
+                fontWeight: 700,
+                cursor: 'pointer',
+                transition: 'all 200ms ease',
+                fontFamily: 'inherit',
+                whiteSpace: 'nowrap',
+              }}
+            >
+              {tab.label}
+            </button>
+          ))}
         </div>
 
         {/* 토픽 분류 뱃지 필터 바 */}
@@ -91,71 +249,278 @@ export default function VocabularyPage() {
           })}
         </div>
 
-        {/* 저장된 단어가 전무할 경우 노출할 안내 화면(Empty State) */}
-        {filteredVocab.length === 0 ? (
-          <div className="empty-state">
-            <div className="empty-state-icon">📚</div>
-            <div className="empty-state-title">단어장이 비어 있어요</div>
-            <div className="empty-state-desc">텍스트를 읽으면서 모르는 단어를 저장해보세요!</div>
-            <a href="/library" className="btn btn-primary mt-4">도서관으로 가기</a>
-          </div>
-        ) : (
-          // 저장된 단어들을 4열(반응형 변환) 그리드 형태 카드로 출력
-          <div className="grid-4" style={{ '--grid-cols': '4' } as React.CSSProperties}>
-            {filteredVocab.map(entry => {
-              const topicInfo = TOPICS.find(t => t.id === entry.topic);
-              return (
-                <div
-                  key={entry.id}
-                  className="card"
-                  style={{ cursor: 'pointer' }}
-                  onClick={() => setSelectedEntry(entry)} // 클릭 시 상세 모달 오픈
-                >
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '8px' }}>
-                    <span className={`level-badge level-${entry.level}`}>{entry.level}</span>
-                    {topicInfo && (
-                      <span style={{ fontSize: '1rem' }}>{topicInfo.emoji}</span>
+        {/* ─── 탭 1: 단어 목록 뷰 ─── */}
+        {activeTab === 'list' && (
+          filteredVocab.length === 0 ? (
+            <div className="empty-state">
+              <div className="empty-state-icon">📚</div>
+              <div className="empty-state-title">단어장이 비어 있어요</div>
+              <div className="empty-state-desc">텍스트를 읽으면서 모르는 단어를 저장해보세요!</div>
+              <a href="/library" className="btn btn-primary mt-4">도서관으로 가기</a>
+            </div>
+          ) : (
+            <div className="grid-4" style={{ '--grid-cols': '4' } as React.CSSProperties}>
+              {filteredVocab.map(entry => {
+                const topicInfo = TOPICS.find(t => t.id === entry.topic);
+                return (
+                  <div
+                    key={entry.id}
+                    className="card"
+                    style={{ cursor: 'pointer' }}
+                    onClick={() => setSelectedEntry(entry)} // 클릭 시 상세 모달 오픈
+                  >
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '8px' }}>
+                      <span className={`level-badge level-${entry.level}`}>{entry.level}</span>
+                      {topicInfo && (
+                        <span style={{ fontSize: '1rem' }}>{topicInfo.emoji}</span>
+                      )}
+                    </div>
+
+                    <div style={{
+                      fontSize: '1.4rem',
+                      fontWeight: 900,
+                      fontFamily: 'Noto Sans KR, sans-serif',
+                      marginBottom: '6px',
+                      color: 'var(--text-primary)',
+                    }}>
+                      {entry.word}
+                    </div>
+
+                    <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)', marginBottom: '8px' }}>
+                      [{entry.pronunciation}]
+                    </div>
+
+                    <div style={{
+                      fontSize: '0.8rem',
+                      color: 'var(--accent-primary)',
+                      fontStyle: 'italic',
+                      marginBottom: '8px',
+                    }}>
+                      {entry.translation}
+                    </div>
+
+                    <div style={{
+                      fontSize: '0.75rem',
+                      color: 'var(--text-muted)',
+                      display: '-webkit-box',
+                      WebkitLineClamp: 2,
+                      WebkitBoxOrient: 'vertical',
+                      overflow: 'hidden',
+                      fontFamily: 'Noto Sans KR, sans-serif',
+                    }}>
+                      {entry.definition}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )
+        )}
+
+        {/* ─── 탭 2: 3D 플래시카드 학습 ─── */}
+        {activeTab === 'flashcard' && (
+          shuffledVocab.length === 0 ? (
+            <div className="empty-state">
+              <div className="empty-state-icon">🎴</div>
+              <div className="empty-state-title">학습할 단어가 없습니다</div>
+              <div className="empty-state-desc">단어장 단어가 비어 있거나, 필터링에 부합하는 단어가 없습니다.</div>
+            </div>
+          ) : (
+            <div style={{ maxWidth: '480px', margin: '0 auto', display: 'flex', flexDirection: 'column', gap: '24px' }}>
+              {/* 3D 회전 카드 메인 컴포넌트 */}
+              <div 
+                className={`flashcard-container ${isFlipped ? 'is-flipped' : ''}`}
+                onClick={() => setIsFlipped(!isFlipped)}
+              >
+                <div className="flashcard-inner">
+                  {/* 카드 앞면 (단어 + 로마자 발음 표기 + TTS 버튼) */}
+                  <div className="flashcard-front">
+                    <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)', position: 'absolute', top: '20px' }}>
+                      CEFR {shuffledVocab[cardIdx].level}
+                    </div>
+                    <h2 style={{ fontSize: '2.5rem', fontWeight: 900, fontFamily: 'Noto Sans KR, sans-serif', marginBottom: '8px', color: 'var(--text-primary)' }}>
+                      {shuffledVocab[cardIdx].word}
+                    </h2>
+                    <p style={{ color: 'var(--text-muted)', fontSize: '0.9rem', marginBottom: '20px' }}>
+                      [{shuffledVocab[cardIdx].pronunciation}]
+                    </p>
+                    <button
+                      onClick={(e) => { e.stopPropagation(); speakWord(shuffledVocab[cardIdx].word); }}
+                      style={{
+                        background: 'rgba(99,102,241,0.1)', border: 'none', color: 'var(--accent-primary)',
+                        width: '44px', height: '44px', borderRadius: '50%', display: 'flex',
+                        alignItems: 'center', justifyContent: 'center', cursor: 'pointer', fontSize: '1.2rem'
+                      }}
+                      title="발음 듣기"
+                    >
+                      🔊
+                    </button>
+                    <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', position: 'absolute', bottom: '20px' }}>
+                      클릭하여 뒤집기 🔄
+                    </div>
+                  </div>
+
+                  {/* 카드 뒷면 (품사 + 뜻 + 번역 + 예제 문장) */}
+                  <div className="flashcard-back">
+                    <span className="word-popup-pos" style={{ marginBottom: '10px' }}>{shuffledVocab[cardIdx].partOfSpeech}</span>
+                    <h3 style={{ fontSize: '1.2rem', fontWeight: 700, color: 'var(--accent-primary)', marginBottom: '8px', textAlign: 'center' }}>
+                      {shuffledVocab[cardIdx].translation}
+                    </h3>
+                    <p style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', textAlign: 'center', marginBottom: '16px', fontFamily: 'Noto Sans KR, sans-serif', lineHeight: 1.5 }}>
+                      {shuffledVocab[cardIdx].definition}
+                    </p>
+                    {shuffledVocab[cardIdx].examples && shuffledVocab[cardIdx].examples.length > 0 && (
+                      <div style={{ borderTop: '1px solid var(--border-subtle)', paddingTop: '10px', width: '100%', textAlign: 'left' }}>
+                        <div style={{ fontSize: '0.75rem', fontWeight: 700, color: 'var(--text-muted)', marginBottom: '4px' }}>예문:</div>
+                        <div style={{ fontSize: '0.8rem', color: 'var(--text-primary)', fontFamily: 'Noto Sans KR, sans-serif', fontWeight: 600 }}>
+                          {shuffledVocab[cardIdx].examples[0].korean}
+                        </div>
+                        <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', fontStyle: 'italic' }}>
+                          {shuffledVocab[cardIdx].examples[0].translation}
+                        </div>
+                      </div>
                     )}
                   </div>
-
-                  <div style={{
-                    fontSize: '1.4rem',
-                    fontWeight: 900,
-                    fontFamily: 'Noto Sans KR, sans-serif',
-                    marginBottom: '6px',
-                    color: 'var(--text-primary)',
-                  }}>
-                    {entry.word}
-                  </div>
-
-                  <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)', marginBottom: '8px' }}>
-                    [{entry.pronunciation}]
-                  </div>
-
-                  <div style={{
-                    fontSize: '0.8rem',
-                    color: 'var(--accent-primary)',
-                    fontStyle: 'italic',
-                    marginBottom: '8px',
-                  }}>
-                    {entry.translation}
-                  </div>
-
-                  <div style={{
-                    fontSize: '0.75rem',
-                    color: 'var(--text-muted)',
-                    display: '-webkit-box',
-                    WebkitLineClamp: 2,
-                    WebkitBoxOrient: 'vertical',
-                    overflow: 'hidden',
-                    fontFamily: 'Noto Sans KR, sans-serif',
-                  }}>
-                    {entry.definition}
-                  </div>
                 </div>
-              );
-            })}
-          </div>
+              </div>
+
+              {/* 하단 카드 네비게이터 */}
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                <button
+                  className="btn btn-secondary"
+                  disabled={cardIdx === 0}
+                  onClick={() => { setCardIdx(prev => prev - 1); setIsFlipped(false); }}
+                  style={{ padding: '10px 16px' }}
+                >
+                  ◀ 이전
+                </button>
+                <div style={{ fontSize: '0.9rem', color: 'var(--text-secondary)' }}>
+                  <strong>{cardIdx + 1}</strong> / {shuffledVocab.length}
+                </div>
+                <button
+                  className="btn btn-secondary"
+                  disabled={cardIdx === shuffledVocab.length - 1}
+                  onClick={() => { setCardIdx(prev => prev + 1); setIsFlipped(false); }}
+                  style={{ padding: '10px 16px' }}
+                >
+                  다음 ▶
+                </button>
+              </div>
+
+              {/* 무작위 카드 셔플 섞기 단추 */}
+              <button 
+                className="btn btn-secondary"
+                onClick={handleShuffleCards}
+                style={{ width: '100%', justifyContent: 'center' }}
+              >
+                🔀 카드 순서 섞기
+              </button>
+            </div>
+          )
+        )}
+
+        {/* ─── 탭 3: 미니 퀴즈 복습 뷰 ─── */}
+        {activeTab === 'quiz' && (
+          filteredVocab.length < 4 ? (
+            <div className="empty-state">
+              <div className="empty-state-icon">🧩</div>
+              <div className="empty-state-title">단어가 부족해요</div>
+              <div className="empty-state-desc">
+                4지선다 퀴즈를 출제하기 위해서는 최소 **4개 이상의 단어**가 단어장에 저장되어야 합니다.
+                (현재 저장 개수: {filteredVocab.length}개)
+              </div>
+              <a href="/library" className="btn btn-primary mt-4">도서관으로 가기</a>
+            </div>
+          ) : (
+            quizQuestion && (
+              <div style={{ maxWidth: '500px', margin: '0 auto', display: 'flex', flexDirection: 'column', gap: '24px' }}>
+                {/* 퀴즈 헤더: 스코어 정보 */}
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <span style={{ fontSize: '0.9rem', color: 'var(--text-muted)' }}>🎯 미니 퀴즈 맞추기</span>
+                  <span style={{ fontSize: '0.9rem', color: 'var(--accent-primary)', fontWeight: 700 }}>
+                    맞춘 문제: {quizScore.correct} / {quizScore.total}
+                  </span>
+                </div>
+
+                {/* 퀴즈 문제 카드 */}
+                <div className="card text-center" style={{ padding: '40px 24px', position: 'relative' }}>
+                  <span className={`level-badge level-${quizQuestion.level}`} style={{ position: 'absolute', top: '20px', left: '20px' }}>
+                    {quizQuestion.level}
+                  </span>
+                  <h2 style={{ fontSize: '2.5rem', fontWeight: 900, fontFamily: 'Noto Sans KR, sans-serif', color: 'var(--text-primary)', marginBottom: '8px' }}>
+                    {quizQuestion.word}
+                  </h2>
+                  <p style={{ color: 'var(--text-muted)', fontSize: '0.85rem' }}>
+                    의 뜻은 무엇일까요?
+                  </p>
+                </div>
+
+                {/* 4지선다형 옵션 버튼 그룹 */}
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                  {quizOptions.map((option, i) => {
+                    const isSelected = selectedAnswer === option;
+                    const isAnswerCorrect = option === quizQuestion.translation;
+                    
+                    let btnBorder = '1px solid var(--border-subtle)';
+                    let btnBg = 'var(--bg-card)';
+                    let btnColor = 'var(--text-primary)';
+
+                    if (selectedAnswer !== null) {
+                      if (isAnswerCorrect) {
+                        btnBg = 'rgba(16,185,129,0.15)'; // 맞은 옵션은 녹색 배경
+                        btnBorder = '1.5px solid #10b981';
+                        btnColor = '#10b981';
+                      } else if (isSelected) {
+                        btnBg = 'rgba(239,68,68,0.15)';   // 고른 오답은 붉은색 배경
+                        btnBorder = '1.5px solid #ef4444';
+                        btnColor = '#ef4444';
+                      }
+                    }
+
+                    return (
+                      <button
+                        key={i}
+                        onClick={() => handleSelectAnswer(option)}
+                        disabled={selectedAnswer !== null}
+                        style={{
+                          width: '100%',
+                          padding: '16px 20px',
+                          borderRadius: 'var(--radius-md)',
+                          background: btnBg,
+                          border: btnBorder,
+                          color: btnColor,
+                          textAlign: 'left',
+                          fontSize: '0.95rem',
+                          fontWeight: 600,
+                          cursor: selectedAnswer === null ? 'pointer' : 'default',
+                          transition: 'all 150ms ease',
+                          fontFamily: 'inherit',
+                          display: 'flex',
+                          justifyContent: 'space-between',
+                          alignItems: 'center',
+                        }}
+                      >
+                        <span>{option}</span>
+                        {selectedAnswer !== null && isAnswerCorrect && <span>✓ 정답</span>}
+                        {selectedAnswer !== null && isSelected && !isAnswerCorrect && <span>✗ 오답</span>}
+                      </button>
+                    );
+                  })}
+                </div>
+
+                {/* 다음 문제 단추 */}
+                {selectedAnswer !== null && (
+                  <button
+                    className="btn btn-primary"
+                    onClick={generateQuiz}
+                    style={{ width: '100%', justifyContent: 'center', padding: '16px' }}
+                  >
+                    다음 문제 풀기 ➔
+                  </button>
+                )}
+              </div>
+            )
+          )
         )}
       </div>
 
@@ -168,7 +533,29 @@ export default function VocabularyPage() {
           <div className="word-popup">
             <div className="word-popup-header">
               <div>
-                <div className="word-popup-word">{selectedEntry.word}</div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <div className="word-popup-word">{selectedEntry.word}</div>
+                  <button
+                    onClick={() => speakWord(selectedEntry.word)}
+                    style={{
+                      background: 'rgba(99,102,241,0.1)',
+                      border: 'none',
+                      color: 'var(--accent-primary)',
+                      borderRadius: '50%',
+                      width: '32px',
+                      height: '32px',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      cursor: 'pointer',
+                      fontSize: '1rem',
+                      transition: 'all 0.2s ease',
+                    }}
+                    title="발음 듣기"
+                  >
+                    🔊
+                  </button>
+                </div>
                 <div className="word-popup-pronunciation">[{selectedEntry.pronunciation}]</div>
               </div>
               <button className="word-popup-close" onClick={() => setSelectedEntry(null)}>✕</button>
@@ -212,4 +599,3 @@ export default function VocabularyPage() {
     </div>
   );
 }
-
