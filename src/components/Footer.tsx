@@ -1,7 +1,10 @@
+'use client';
+
 /**
  * @file Footer.tsx
  * @description 사이트 전체 하단에 공통으로 표시되는 푸터 컴포넌트입니다.
  * Privacy Policy, Terms of Service, About 링크를 제공하여 Google AdSense 심사 기준을 충족합니다.
+ * onMouseEnter/onMouseLeave 이벤트 핸들러를 사용하므로 클라이언트 컴포넌트로 선언합니다.
  */
 
 import Link from 'next/link';
