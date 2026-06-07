@@ -27,6 +27,100 @@ const LEVEL_LABELS: Record<CEFRLevel, string> = {
   C2: '최고급 (C2)',
 };
 
+// 다국어 번역 사전 정의
+const TRANSLATIONS = {
+  ko: {
+    newText: '✨ 새 텍스트 생성',
+    cancel: '취소',
+    startGen: '✨ 맞춤형 읽기 생성 시작',
+    generating: '🔄 AI 텍스트 생성 중...',
+    save: '💾 저장하기',
+    apiKeySettings: '🔑 API Key 설정',
+    apiKeyRegistered: '🔑 API Key 등록됨',
+    deleteKey: '🗑️ 키 삭제',
+    loginToSave: '로그인하여 단어 저장하기',
+    allLevels: '전체 레벨',
+    allTopics: '전체 주제',
+    sortByRating: '⭐ 별점순',
+    sortByNewest: '⏱️ 최신순',
+    createCustomReading: '✨ 내 맞춤형 읽기 생성',
+    setApiKeyTitle: '🔑 내 Gemini API Key 설정',
+    generateNow: '✨ 지금 조건 선택해 생성하기',
+  },
+  en: {
+    newText: '✨ Create New Text',
+    cancel: 'Cancel',
+    startGen: '✨ Start Generating Custom Reading',
+    generating: '🔄 Generating AI Text...',
+    save: '💾 Save',
+    apiKeySettings: '🔑 API Key Settings',
+    apiKeyRegistered: '🔑 API Key Registered',
+    deleteKey: '🗑️ Delete Key',
+    loginToSave: 'Log in to save vocabulary',
+    allLevels: 'All Levels',
+    allTopics: 'All Topics',
+    sortByRating: '⭐ By Rating',
+    sortByNewest: '⏱️ By Newest',
+    createCustomReading: '✨ Create Custom Reading',
+    setApiKeyTitle: '🔑 Set Gemini API Key',
+    generateNow: '✨ Create custom text now',
+  },
+  es: {
+    newText: '✨ Crear nuevo texto',
+    cancel: 'Cancelar',
+    startGen: '✨ Empezar a generar lectura personalizada',
+    generating: '🔄 Generando texto de IA...',
+    save: '💾 Guardar',
+    apiKeySettings: '🔑 Configurar clave API',
+    apiKeyRegistered: '🔑 Clave API registrada',
+    deleteKey: '🗑️ Eliminar clave',
+    loginToSave: 'Iniciar sesión para guardar vocabulario',
+    allLevels: 'Todos los niveles',
+    allTopics: 'Todos los temas',
+    sortByRating: '⭐ Por calificación',
+    sortByNewest: '⏱️ Más reciente',
+    createCustomReading: '✨ Crear lectura personalizada',
+    setApiKeyTitle: '🔑 Configurar clave API de Gemini',
+    generateNow: '✨ Crear texto personalizado ahora',
+  },
+  ja: {
+    newText: '✨ 新規テキスト作成',
+    cancel: 'キャンセル',
+    startGen: '✨ カスタム読解の作成を開始',
+    generating: '🔄 AIテキスト生成中...',
+    save: '💾 保存する',
+    apiKeySettings: '🔑 APIキー設定',
+    apiKeyRegistered: '🔑 APIキー登録済み',
+    deleteKey: '🗑️ キー削除',
+    loginToSave: 'ログインして単語を保存',
+    allLevels: '全レベル',
+    allTopics: '全トピック',
+    sortByRating: '⭐ 評価順',
+    sortByNewest: '⏱️ 最新順',
+    createCustomReading: '✨ カスタם読解作成',
+    setApiKeyTitle: '🔑 Gemini APIキー設定',
+    generateNow: '✨ 条件を選択して今すぐ作成',
+  },
+  zh: {
+    newText: '✨ 创建新文本',
+    cancel: '取消',
+    startGen: '✨ 开始生成自定义阅读',
+    generating: '🔄 AI文本生成中...',
+    save: '💾 保存',
+    apiKeySettings: '🔑 设置 API Key',
+    apiKeyRegistered: '🔑 API Key 已注册',
+    deleteKey: '🗑️ 删除 Key',
+    loginToSave: '登录以保存单词',
+    allLevels: '所有级别',
+    allTopics: '所有主题',
+    sortByRating: '⭐ 按评分',
+    sortByNewest: '⏱️ 按最新',
+    createCustomReading: '✨ 创建自定义阅读',
+    setApiKeyTitle: '🔑 设置 Gemini API Key',
+    generateNow: '✨ 立即选择条件生成',
+  }
+};
+
 export default function LibraryPage() {
   const { user, profile } = useAuth();
   const router = useRouter();
@@ -285,6 +379,18 @@ export default function LibraryPage() {
 
   const isGuest = !user;
 
+  // 사용자의 로그인 여부 및 레벨에 따른 UI 언어 선택
+  const getUiLang = (): 'en' | 'es' | 'ja' | 'zh' | 'ko' => {
+    if (!user) return currentLang; // 비로그인은 모국어 설정에 맞게
+    if (userLevel && ['C1', 'C2'].includes(userLevel)) {
+      return 'ko'; // C1, C2 레벨은 한국어로
+    }
+    return currentLang; // A1, A2, B1, B2 레벨은 설정한 언어로
+  };
+
+  const uiLang = getUiLang();
+  const t = TRANSLATIONS[uiLang];
+
   return (
     <div style={{ minHeight: '100vh', padding: '40px 24px' }}>
       <div className="container">
@@ -385,12 +491,12 @@ export default function LibraryPage() {
                 padding: '8px 16px',
               }}
             >
-              {hasApiKey ? '🔑 API Key 등록됨' : '🔑 API Key 설정'}
+              {hasApiKey ? t.apiKeyRegistered : t.apiKeySettings}
             </button>
 
             {/* 새 텍스트 임시 생성 단추 (테스트 E2E용 generate-article-btn ID 바인딩) */}
             <button id="generate-article-btn" onClick={() => setShowGenModal(true)} disabled={generating} className="btn btn-primary">
-              ✨ 새 텍스트 생성
+              {t.newText}
             </button>
           </div>
         </div>
@@ -401,7 +507,7 @@ export default function LibraryPage() {
             <div style={{ fontSize: '0.875rem', color: 'var(--text-secondary)' }}>
               🔓 게스트 모드 — 생성된 모든 텍스트는 도서관에 평생 기록되어 함께 공부하게 됩니다!
             </div>
-            <a href="/login" className="btn btn-sm btn-primary">로그인하여 단어 저장하기</a>
+            <a href="/login" className="btn btn-sm btn-primary">{t.loginToSave}</a>
           </div>
         )}
 
@@ -409,7 +515,7 @@ export default function LibraryPage() {
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '24px', flexWrap: 'wrap', gap: '16px' }}>
           {/* 난이도 필터 버튼 그룹 */}
           <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
-            <button onClick={() => setSelectedLevel('all')} className={`btn btn-sm ${selectedLevel === 'all' ? 'btn-primary' : 'btn-ghost'}`}>전체 레벨</button>
+            <button onClick={() => setSelectedLevel('all')} className={`btn btn-sm ${selectedLevel === 'all' ? 'btn-primary' : 'btn-ghost'}`}>{t.allLevels}</button>
             {LEVELS.map(lvl => (
               <button key={lvl} onClick={() => setSelectedLevel(lvl)} className={`btn btn-sm ${selectedLevel === lvl ? 'btn-primary' : 'btn-ghost'}`}>{lvl}</button>
             ))}
@@ -432,7 +538,7 @@ export default function LibraryPage() {
                 fontFamily: 'inherit',
               }}
             >
-              ⭐ 별점순
+              {t.sortByRating}
             </button>
             <button
               onClick={() => setSortBy('newest')}
@@ -449,14 +555,14 @@ export default function LibraryPage() {
                 fontFamily: 'inherit',
               }}
             >
-              ⏱️ 최신순
+              {t.sortByNewest}
             </button>
           </div>
         </div>
 
         {/* 8대 주제 선택 필터 뱃지 */}
         <div style={{ display: 'flex', gap: '8px', marginBottom: '32px', flexWrap: 'wrap' }}>
-          <button onClick={() => setSelectedTopic('all')} style={{ padding: '8px 16px', borderRadius: '100px', background: selectedTopic === 'all' ? 'var(--accent-primary)' : 'var(--bg-card)', border: '1px solid', borderColor: selectedTopic === 'all' ? 'var(--accent-primary)' : 'var(--border-subtle)', color: selectedTopic === 'all' ? 'white' : 'var(--text-secondary)', cursor: 'pointer', fontSize: '0.8rem', fontWeight: 600, transition: 'all 200ms ease', fontFamily: 'inherit' }}>전체 주제</button>
+          <button onClick={() => setSelectedTopic('all')} style={{ padding: '8px 16px', borderRadius: '100px', background: selectedTopic === 'all' ? 'var(--accent-primary)' : 'var(--bg-card)', border: '1px solid', borderColor: selectedTopic === 'all' ? 'var(--accent-primary)' : 'var(--border-subtle)', color: selectedTopic === 'all' ? 'white' : 'var(--text-secondary)', cursor: 'pointer', fontSize: '0.8rem', fontWeight: 600, transition: 'all 200ms ease', fontFamily: 'inherit' }}>{t.allTopics}</button>
           {TOPICS.map(topic => (
             <button key={topic.id} onClick={() => setSelectedTopic(topic.id)} style={{ padding: '8px 16px', borderRadius: '100px', background: selectedTopic === topic.id ? 'var(--accent-primary)' : 'var(--bg-card)', border: '1px solid', borderColor: selectedTopic === topic.id ? 'var(--accent-primary)' : 'var(--border-subtle)', color: selectedTopic === topic.id ? 'white' : 'var(--text-secondary)', cursor: 'pointer', fontSize: '0.8rem', fontWeight: 600, transition: 'all 200ms ease', fontFamily: 'inherit' }}>
               {topic.emoji} {topic.label}
@@ -471,8 +577,8 @@ export default function LibraryPage() {
           <div className="empty-state">
             <div className="empty-state-icon">📭</div>
             <div className="empty-state-title">해당하는 텍스트가 아직 없어요</div>
-            <div className="empty-state-desc">"✨ 새 텍스트 생성" 버튼을 눌러 첫 번째 읽기 자료를 만들어보세요!</div>
-            <button onClick={() => setShowGenModal(true)} className="btn btn-primary mt-4">✨ 지금 조건 선택해 생성하기</button>
+            <div className="empty-state-desc">"{t.newText}" 버튼을 눌러 첫 번째 읽기 자료를 만들어보세요!</div>
+            <button onClick={() => setShowGenModal(true)} className="btn btn-primary mt-4">{t.generateNow}</button>
           </div>
         ) : (
           <div className="grid-3">
@@ -518,7 +624,7 @@ export default function LibraryPage() {
         <div className="word-popup-overlay" onClick={(e) => { if (e.target === e.currentTarget) setShowGenModal(false); }}>
           <div className="word-popup" style={{ maxWidth: '600px', width: '90%' }}>
             <div className="word-popup-header">
-              <div className="word-popup-word" style={{ fontSize: '1.25rem' }}>✨ 내 맞춤형 읽기 생성</div>
+              <div className="word-popup-word" style={{ fontSize: '1.25rem' }}>{t.createCustomReading}</div>
               <button className="word-popup-close" onClick={() => setShowGenModal(false)}>✕</button>
             </div>
 
@@ -651,7 +757,7 @@ export default function LibraryPage() {
                 style={{ flex: 1, justifyContent: 'center' }}
                 disabled={generating}
               >
-                취소
+                {t.cancel}
               </button>
               <button
                 onClick={handleGenerate}
@@ -659,7 +765,7 @@ export default function LibraryPage() {
                 className="btn btn-primary"
                 style={{ flex: 2, justifyContent: 'center' }}
               >
-                {generating ? '🔄 AI 텍스트 생성 중...' : '✨ 맞춤형 읽기 생성 시작'}
+                {generating ? t.generating : t.startGen}
               </button>
             </div>
           </div>
@@ -671,7 +777,7 @@ export default function LibraryPage() {
         <div className="word-popup-overlay" onClick={(e) => { if (e.target === e.currentTarget) setShowApiKeyModal(false); }}>
           <div className="word-popup" style={{ maxWidth: '500px', width: '90%', userSelect: 'text' }}>
             <div className="word-popup-header">
-              <div className="word-popup-word" style={{ fontSize: '1.25rem' }}>🔑 내 Gemini API Key 설정</div>
+              <div className="word-popup-word" style={{ fontSize: '1.25rem' }}>{t.setApiKeyTitle}</div>
               <button className="word-popup-close" onClick={() => setShowApiKeyModal(false)}>✕</button>
             </div>
 
@@ -736,7 +842,7 @@ export default function LibraryPage() {
                   onMouseEnter={e => e.currentTarget.style.background = 'rgba(239,68,68,0.15)'}
                   onMouseLeave={e => e.currentTarget.style.background = 'rgba(239,68,68,0.1)'}
                 >
-                  🗑️ 키 삭제
+                  {t.deleteKey}
                 </button>
               )}
               <button
@@ -744,7 +850,7 @@ export default function LibraryPage() {
                 className="btn btn-secondary"
                 style={{ flex: 1, justifyContent: 'center' }}
               >
-                취소
+                {t.cancel}
               </button>
               <button
                 onClick={handleSaveApiKey}
@@ -752,7 +858,7 @@ export default function LibraryPage() {
                 className="btn btn-primary"
                 style={{ flex: 2, justifyContent: 'center' }}
               >
-                💾 저장하기
+                {t.save}
               </button>
             </div>
           </div>

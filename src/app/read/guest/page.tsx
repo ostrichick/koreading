@@ -10,7 +10,7 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/contexts/AuthContext';
 import { lookupWordBasic, lookupWordAdvanced, TOPICS } from '@/lib/gemini';
-import { getGuestArticle, getGuestLang, incrementGuestReadCount } from '@/lib/storage';
+import { getGuestArticle, getGuestLang, getGuestLevel, incrementGuestReadCount } from '@/lib/storage';
 import { saveVocabulary, deleteArticle } from '@/lib/db';
 import { tokenizeKorean, isKoreanWord } from '@/lib/utils';
 
@@ -28,6 +28,60 @@ interface WordData {
 }
 
 
+
+// 다국어 번역 사전 정의
+const TRANSLATIONS = {
+  ko: {
+    deleteArticle: '🗑️ 텍스트 삭제 (품질 저하)',
+    toLibrary: '← 도서관으로',
+    doneReading: '✅ 다 읽었어요!',
+    save: '📚 저장',
+    login: '🔑 로그인',
+    details: '🔍 자세히',
+    saveToVocab: '📚 단어장에 저장',
+    loginToVocab: '🔑 로그인하여 단어장에 저장',
+  },
+  en: {
+    deleteArticle: '🗑️ Delete Text (Low Quality)',
+    toLibrary: '← To Library',
+    doneReading: '✅ Done Reading!',
+    save: '📚 Save',
+    login: '🔑 Log In',
+    details: '🔍 Details',
+    saveToVocab: '📚 Save to Vocabulary',
+    loginToVocab: '🔑 Log In to Save',
+  },
+  es: {
+    deleteArticle: '🗑️ Eliminar texto (Baja calidad)',
+    toLibrary: '← A la biblioteca',
+    doneReading: '✅ ¡Terminé de leer!',
+    save: '📚 Guardar',
+    login: '🔑 Iniciar sesión',
+    details: '🔍 Detalles',
+    saveToVocab: '📚 Guardar en vocabulario',
+    loginToVocab: '🔑 Iniciar sesión para guardar',
+  },
+  ja: {
+    deleteArticle: '🗑️ テキスト削除 (品質低下)',
+    toLibrary: '← 図書館へ',
+    doneReading: '✅ 読み終えました！',
+    save: '📚 保存',
+    login: '🔑 ログイン',
+    details: '🔍 詳細',
+    saveToVocab: '📚 単語帳に保存',
+    loginToVocab: '🔑 ログインして保存',
+  },
+  zh: {
+    deleteArticle: '🗑️ 删除文本 (质量低下)',
+    toLibrary: '← 返回图书馆',
+    doneReading: '✅ 我读完了！',
+    save: '📚 保存',
+    login: '🔑 登录',
+    details: '🔍 详情',
+    saveToVocab: '📚 保存到单词本',
+    loginToVocab: '🔑 登录以保存',
+  }
+};
 
 export default function GuestReadPage() {
   const { user, profile, signInWithGoogle } = useAuth();
@@ -275,6 +329,22 @@ export default function GuestReadPage() {
   const paragraphs = article.content?.split('\n').filter((p: string) => p.trim()) || [];
   const activeNativeLang = profile?.nativeLanguage || getGuestLang() || 'en';
 
+  // 사용자의 로그인 여부 및 레벨에 따른 UI 언어 선택
+  const getUiLang = (): 'en' | 'es' | 'ja' | 'zh' | 'ko' => {
+    const level = profile?.level || getGuestLevel();
+    if (!user) {
+      if (level && ['C1', 'C2'].includes(level)) return 'ko';
+      return activeNativeLang;
+    }
+    if (level && ['C1', 'C2'].includes(level)) {
+      return 'ko'; // C1, C2 레벨은 한국어로
+    }
+    return activeNativeLang; // A1, A2, B1, B2 레벨은 설정한 언어로
+  };
+
+  const uiLang = getUiLang();
+  const t = TRANSLATIONS[uiLang];
+
   return (
     <div 
       className={readerTheme === 'light' ? 'reader-theme-light' : readerTheme === 'sepia' ? 'reader-theme-sepia' : ''} 
@@ -491,12 +561,12 @@ export default function GuestReadPage() {
               onMouseEnter={e => e.currentTarget.style.background = 'rgba(239,68,68,0.15)'}
               onMouseLeave={e => e.currentTarget.style.background = 'rgba(239,68,68,0.1)'}
             >
-              🗑️ 텍스트 삭제 (품질 저하)
+              {t.deleteArticle}
             </button>
 
-            <a href="/library" className="btn btn-ghost">← 도서관으로</a>
+            <a href="/library" className="btn btn-ghost">{t.toLibrary}</a>
             <button id="mark-done-btn" onClick={handleDoneReading} className="btn btn-primary">
-              ✅ 다 읽었어요!
+              {t.doneReading}
             </button>
           </div>
         )}
@@ -566,7 +636,7 @@ export default function GuestReadPage() {
                     fontFamily: 'inherit',
                   }}
                 >
-                  {user ? (savedWords.has(wordData.word) ? '✓ 저장됨' : '📚 저장') : '🔑 로그인'}
+                  {user ? (savedWords.has(wordData.word) ? '✓ 저장됨' : t.save) : t.login}
                 </button>
                 <button
                   onClick={() => setShowAdvancedModal(true)}
@@ -583,7 +653,7 @@ export default function GuestReadPage() {
                     fontFamily: 'inherit',
                   }}
                 >
-                  🔍 자세히
+                  {t.details}
                 </button>
               </div>
             </>
@@ -678,7 +748,7 @@ export default function GuestReadPage() {
 
               {/* 단어 저장 단추 */}
               <button className="word-popup-save-btn" onClick={handleSaveWord}>
-                {user ? (savedWords.has(wordData.word) ? '✓ 단어장에 저장됨' : '📚 단어장에 저장') : '🔑 로그인하여 단어장에 저장'}
+                {user ? (savedWords.has(wordData.word) ? '✓ 단어장에 저장됨' : t.saveToVocab) : t.loginToVocab}
               </button>
             </>
           </div>

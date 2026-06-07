@@ -30,6 +30,90 @@ interface WordData {
 
 
 
+// 다국어 번역 사전 정의
+const TRANSLATIONS = {
+  ko: {
+    deleteArticle: '🗑️ 텍스트 삭제 (품질 저하)',
+    toLibrary: '← 도서관으로',
+    markRead: '✅ 읽음으로 표시',
+    markingRead: '저장 중...',
+    save: '📚 저장',
+    saving: '저장...',
+    saved: '✓ 저장됨',
+    details: '🔍 자세히',
+    saveToVocab: '📚 단어장에 저장',
+    savingToVocab: '저장 중...',
+    savedToVocab: '✓ 단어장에 저장됨',
+    loginToSave: '🔑 로그인하여 단어장에 저장',
+    submitReview: '별점 및 평가 등록하기',
+    submittingReview: '제출 중...',
+  },
+  en: {
+    deleteArticle: '🗑️ Delete Text (Low Quality)',
+    toLibrary: '← To Library',
+    markRead: '✅ Mark as Read',
+    markingRead: 'Saving...',
+    save: '📚 Save',
+    saving: 'Saving...',
+    saved: '✓ Saved',
+    details: '🔍 Details',
+    saveToVocab: '📚 Save to Vocabulary',
+    savingToVocab: 'Saving...',
+    savedToVocab: '✓ Saved to Vocabulary',
+    loginToSave: '🔑 Log in to Save',
+    submitReview: 'Submit Rating & Review',
+    submittingReview: 'Submitting...',
+  },
+  es: {
+    deleteArticle: '🗑️ Eliminar texto (Baja calidad)',
+    toLibrary: '← A la biblioteca',
+    markRead: '✅ Marcar como leído',
+    markingRead: 'Guardando...',
+    save: '📚 Guardar',
+    saving: 'Guardando...',
+    saved: '✓ Guardado',
+    details: '🔍 Detalles',
+    saveToVocab: '📚 Guardar en vocabulario',
+    savingToVocab: 'Guardando...',
+    savedToVocab: '✓ Guardado en vocabulario',
+    loginToSave: '🔑 Iniciar sesión para guardar',
+    submitReview: 'Enviar calificación y reseña',
+    submittingReview: 'Enviando...',
+  },
+  ja: {
+    deleteArticle: '🗑️ テキスト削除 (品質低下)',
+    toLibrary: '← 図書館へ',
+    markRead: '✅ 既読にする',
+    markingRead: '保存中...',
+    save: '📚 保存',
+    saving: '保存중...',
+    saved: '✓ 保存済み',
+    details: '🔍 詳細',
+    saveToVocab: '📚 単語帳に保存',
+    savingToVocab: '保存中...',
+    savedToVocab: '✓ 単語帳に保存済み',
+    loginToSave: '🔑 ログインして保存',
+    submitReview: '評価とレビューを登録する',
+    submittingReview: '送信中...',
+  },
+  zh: {
+    deleteArticle: '🗑️ 删除文本 (质量低下)',
+    toLibrary: '← 返回图书馆',
+    markRead: '✅ 标记为已读',
+    markingRead: '保存中...',
+    save: '📚 保存',
+    saving: '保存中...',
+    saved: '✓ 已保存',
+    details: '🔍 详情',
+    saveToVocab: '📚 保存到单词本',
+    savingToVocab: '保存中...',
+    savedToVocab: '✓ 已保存到单词本',
+    loginToSave: '🔑 登录以保存',
+    submitReview: '提交评分与评价',
+    submittingReview: '提交中...',
+  }
+};
+
 export default function ReadPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params);                 // Next.js 동적 라우팅 파라미터 [id] 언팩
   const { user, profile } = useAuth();        // AuthContext 세션 정보 조회
@@ -352,6 +436,19 @@ export default function ReadPage({ params }: { params: Promise<{ id: string }> }
   const paragraphs = article.content.split('\n').filter(p => p.trim());
   const activeNativeLang = user ? (profile?.nativeLanguage || 'en') : getGuestLang();
 
+  // 사용자의 로그인 여부 및 레벨에 따른 UI 언어 선택
+  const getUiLang = (): 'en' | 'es' | 'ja' | 'zh' | 'ko' => {
+    const level = profile?.level;
+    if (!user) return activeNativeLang; // 비로그인은 모국어 설정에 맞게
+    if (level && ['C1', 'C2'].includes(level)) {
+      return 'ko'; // C1, C2 레벨은 한국어로
+    }
+    return activeNativeLang; // A1, A2, B1, B2 레벨은 설정한 언어로
+  };
+
+  const uiLang = getUiLang();
+  const t = TRANSLATIONS[uiLang];
+
   return (
     <div 
       className={readerTheme === 'light' ? 'reader-theme-light' : readerTheme === 'sepia' ? 'reader-theme-sepia' : ''} 
@@ -671,7 +768,7 @@ export default function ReadPage({ params }: { params: Promise<{ id: string }> }
                 className="btn btn-primary"
                 style={{ width: '100%', justifyContent: 'center' }}
               >
-                {submittingReview ? '제출 중...' : '별점 및 평가 등록하기'}
+                {submittingReview ? t.submittingReview : t.submitReview}
               </button>
             </form>
           )}
@@ -753,10 +850,10 @@ export default function ReadPage({ params }: { params: Promise<{ id: string }> }
             onMouseEnter={e => e.currentTarget.style.background = 'rgba(239,68,68,0.15)'}
             onMouseLeave={e => e.currentTarget.style.background = 'rgba(239,68,68,0.1)'}
           >
-            🗑️ 텍스트 삭제 (품질 저하)
+            {t.deleteArticle}
           </button>
 
-          <a href="/library" className="btn btn-ghost">← 도서관으로</a>
+          <a href="/library" className="btn btn-ghost">{t.toLibrary}</a>
           {!isRead && (
             <button
               id="mark-read-btn"
@@ -764,7 +861,7 @@ export default function ReadPage({ params }: { params: Promise<{ id: string }> }
               disabled={markingRead}
               className="btn btn-primary"
             >
-              {markingRead ? '저장 중...' : '✅ 읽음으로 표시'}
+              {markingRead ? t.markingRead : t.markRead}
             </button>
           )}
         </div>
@@ -834,7 +931,7 @@ export default function ReadPage({ params }: { params: Promise<{ id: string }> }
                     fontFamily: 'inherit',
                   }}
                 >
-                  {savingWord ? '저장...' : savedWords.has(wordData.word) ? '✓ 저장됨' : '📚 저장'}
+                  {savingWord ? t.saving : savedWords.has(wordData.word) ? t.saved : t.save}
                 </button>
                 <button
                   onClick={() => setShowAdvancedModal(true)}
@@ -851,7 +948,7 @@ export default function ReadPage({ params }: { params: Promise<{ id: string }> }
                     fontFamily: 'inherit',
                   }}
                 >
-                  🔍 자세히
+                  {t.details}
                 </button>
               </div>
             </>
@@ -951,7 +1048,7 @@ export default function ReadPage({ params }: { params: Promise<{ id: string }> }
                 onClick={handleSaveWord}
                 disabled={savingWord || savedWords.has(wordData.word)}
               >
-                {savingWord ? '저장 중...' : savedWords.has(wordData.word) ? '✓ 단어장에 저장됨' : '📚 단어장에 저장'}
+                {savingWord ? t.savingToVocab : savedWords.has(wordData.word) ? t.savedToVocab : t.saveToVocab}
               </button>
             </>
           </div>

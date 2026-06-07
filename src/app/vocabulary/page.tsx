@@ -5,11 +5,195 @@ import { useRouter } from 'next/navigation';
 import { useAuth } from '@/contexts/AuthContext';
 import { getVocabulary, VocabularyEntry } from '@/lib/db';
 import { TOPICS } from '@/lib/gemini';
+import { getGuestLang, getGuestLevel } from '@/lib/storage';
+
+// 다국어 번역 사전 정의
+const TRANSLATIONS = {
+  ko: {
+    title: '📝 내 단어장',
+    savedWords: '저장된 단어: ',
+    wordUnit: '개',
+    exportAnki: '📥 Anki용 CSV 내보내기',
+    tabList: '📖 단어 목록',
+    tabFlashcard: '🎴 플래시카드',
+    tabQuiz: '🧩 미니 퀴즈',
+    allTopics: '전체',
+    emptyTitle: '단어장이 비어 있어요',
+    emptyDesc: '텍스트를 읽으면서 모르는 단어를 저장해보세요!',
+    toLibrary: '도서관으로 가기',
+    noFlashcardTitle: '학습할 단어가 없습니다',
+    noFlashcardDesc: '단어장 단어가 비어 있거나, 필터링에 부합하는 단어가 없습니다.',
+    listen: '발음 듣기',
+    flipCard: '클릭하여 뒤집기 🔄',
+    examplesTitle: '예문:',
+    prev: '◀ 이전',
+    next: '다음 ▶',
+    shuffle: '🔀 카드 순서 섞기',
+    quizNotEnoughTitle: '단어가 부족해요',
+    quizNotEnoughDesc: '4지선다 퀴즈를 출제하기 위해서는 최소 4개 이상의 단어가 단어장에 저장되어야 합니다. (현재 저장 개수: {count}개)',
+    quizTitle: '🎯 미니 퀴즈 맞추기',
+    quizScore: '맞춘 문제: ',
+    quizQuestionDesc: '의 뜻은 무엇일까요?',
+    quizCorrect: '✓ 정답',
+    quizIncorrect: '✗ 오답',
+    quizNext: '다음 문제 풀기 ➔',
+    definitionTitle: '📖 한국어 정의',
+    translationTitle: '🌐 번역',
+    examplesSectionTitle: '📝 예문',
+    origin: '출처: ',
+  },
+  en: {
+    title: '📝 My Vocabulary',
+    savedWords: 'Saved Words: ',
+    wordUnit: '',
+    exportAnki: '📥 Export CSV for Anki',
+    tabList: '📖 Word List',
+    tabFlashcard: '🎴 Flashcards',
+    tabQuiz: '🧩 Mini Quiz',
+    allTopics: 'All',
+    emptyTitle: 'Vocabulary is empty',
+    emptyDesc: 'Save words you don\'t know while reading texts!',
+    toLibrary: 'Go to Library',
+    noFlashcardTitle: 'No words to study',
+    noFlashcardDesc: 'No words in vocabulary or matches the filter.',
+    listen: 'Listen',
+    flipCard: 'Click to Flip 🔄',
+    examplesTitle: 'Examples:',
+    prev: '◀ Prev',
+    next: 'Next ▶',
+    shuffle: '🔀 Shuffle Cards',
+    quizNotEnoughTitle: 'Not enough words',
+    quizNotEnoughDesc: 'At least 4 words must be saved in the vocabulary to take a 4-choice quiz. (Current count: {count})',
+    quizTitle: '🎯 Mini Quiz',
+    quizScore: 'Score: ',
+    quizQuestionDesc: 'What is the meaning of this word?',
+    quizCorrect: '✓ Correct',
+    quizIncorrect: '✗ Incorrect',
+    quizNext: 'Next Question ➔',
+    definitionTitle: '📖 Korean Definition',
+    translationTitle: '🌐 Translation',
+    examplesSectionTitle: '📝 Examples',
+    origin: 'Source: ',
+  },
+  es: {
+    title: '📝 Mi Vocabulario',
+    savedWords: 'Palabras guardadas: ',
+    wordUnit: '',
+    exportAnki: '📥 Exportar CSV para Anki',
+    tabList: '📖 Lista de palabras',
+    tabFlashcard: '🎴 Tarjetas',
+    tabQuiz: '🧩 Mini cuestionario',
+    allTopics: 'Todo',
+    emptyTitle: 'El vocabulario está vacío',
+    emptyDesc: '¡Guarda las palabras que no sepas mientras lees!',
+    toLibrary: 'Ir a la biblioteca',
+    noFlashcardTitle: 'No hay palabras para estudiar',
+    noFlashcardDesc: 'No hay palabras en el vocabulario o que coincidan con el filtro.',
+    listen: 'Escuchar',
+    flipCard: 'Haz clic para voltear 🔄',
+    examplesTitle: 'Ejemplos:',
+    prev: '◀ Anterior',
+    next: 'Siguiente ▶',
+    shuffle: '🔀 Mezclar tarjetas',
+    quizNotEnoughTitle: 'No hay suficientes palabras',
+    quizNotEnoughDesc: 'Se deben guardar al menos 4 palabras en el vocabulario para realizar un cuestionario de 4 opciones. (Recuento actual: {count})',
+    quizTitle: '🎯 Mini cuestionario',
+    quizScore: 'Puntuación: ',
+    quizQuestionDesc: '¿Cuál es el significado de esta palabra?',
+    quizCorrect: '✓ Correcto',
+    quizIncorrect: '✗ Incorrecto',
+    quizNext: 'Siguiente pregunta ➔',
+    definitionTitle: '📖 Definición en coreano',
+    translationTitle: '🌐 Traducción',
+    examplesSectionTitle: '📝 Ejemplos',
+    origin: 'Origen: ',
+  },
+  ja: {
+    title: '📝 マイ単語帳',
+    savedWords: '保存された単語: ',
+    wordUnit: '個',
+    exportAnki: '📥 Anki用CSV書き出し',
+    tabList: '📖 単語一覧',
+    tabFlashcard: '🎴 フラッシュカード',
+    tabQuiz: '🧩 ミニクイズ',
+    allTopics: 'すべて',
+    emptyTitle: '単語帳が空です',
+    emptyDesc: 'テキストを読みながら知らない単語を保存しましょう！',
+    toLibrary: '図書館へ行く',
+    noFlashcardTitle: '学習する単語がありません',
+    noFlashcardDesc: '単語帳に単語がないか、フィルターに一致する単語がありません。',
+    listen: '発音を聞く',
+    flipCard: 'クリックして裏返す 🔄',
+    examplesTitle: '例文:',
+    prev: '◀ 前へ',
+    next: '次へ ▶',
+    shuffle: '🔀 カードをシャッフル',
+    quizNotEnoughTitle: '単語が不足しています',
+    quizNotEnoughDesc: '4択クイズを出題するには、単語帳に少なくとも4つ以上の単語が保存されている必要があります。（現在の保存数：{count}個）',
+    quizTitle: '🎯 ミニクイズ',
+    quizScore: 'スコア: ',
+    quizQuestionDesc: 'の意味は何でしょうか？',
+    quizCorrect: '✓ 正解',
+    quizIncorrect: '✗ 不正解',
+    quizNext: '次の問題へ ➔',
+    definitionTitle: '📖 韓国語의 정의',
+    translationTitle: '🌐 翻訳',
+    examplesSectionTitle: '📝 例文',
+    origin: '出典: ',
+  },
+  zh: {
+    title: '📝 我的单词本',
+    savedWords: '已保存单词: ',
+    wordUnit: '个',
+    exportAnki: '📥 导出 Anki CSV',
+    tabList: '📖 单词列表',
+    tabFlashcard: '🎴 闪卡',
+    tabQuiz: '🧩 迷你测试',
+    allTopics: '全部',
+    emptyTitle: '单词本为空',
+    emptyDesc: '阅读文章时保存你不认识的单词吧！',
+    toLibrary: '前往图书馆',
+    noFlashcardTitle: '没有可学习的单词',
+    noFlashcardDesc: '单词本中没有单词，或者没有符合筛选条件的单词。',
+    listen: '听发音',
+    flipCard: '点击翻转 🔄',
+    examplesTitle: '例句:',
+    prev: '◀ 上一步',
+    next: '下一步 ▶',
+    shuffle: '🔀 打乱卡片顺序',
+    quizNotEnoughTitle: '单词量不足',
+    quizNotEnoughDesc: '要进行四选一测试，单词本中至少需要保存4个以上的单词。（当前数量：{count}个）',
+    quizTitle: '🎯 迷你测试',
+    quizScore: '得分: ',
+    quizQuestionDesc: '的意思是什么？',
+    quizCorrect: '✓ 正确',
+    quizIncorrect: '✗ 错误',
+    quizNext: '下一题 ➔',
+    definitionTitle: '📖 韩语定义',
+    translationTitle: '🌐 翻译',
+    examplesSectionTitle: '📝 例句',
+    origin: '来源: ',
+  }
+};
 
 // 사용자가 저장한 단어들을 목록 조회하고, 3D 플래시카드 및 미니 퀴즈 등으로 스마트 복습이 가능한 단어장(VocabularyPage) 컴포넌트입니다.
 export default function VocabularyPage() {
-  const { user } = useAuth();
+  const { user, profile } = useAuth();
   const router = useRouter();
+
+  // 사용자의 로그인 여부 및 레벨에 따른 UI 언어 선택
+  const activeNativeLang = profile?.nativeLanguage || getGuestLang() || 'en';
+  const getUiLang = (): 'en' | 'es' | 'ja' | 'zh' | 'ko' => {
+    const level = profile?.level || getGuestLevel();
+    if (!user) return activeNativeLang;
+    if (level && ['C1', 'C2'].includes(level)) {
+      return 'ko'; // C1, C2 레벨은 한국어로
+    }
+    return activeNativeLang; // A1, A2, B1, B2 레벨은 설정한 언어로
+  };
+
+  const uiLang = getUiLang();
+  const t = TRANSLATIONS[uiLang];
 
   const [vocab, setVocab] = useState<VocabularyEntry[]>([]); // 유저가 등록한 단어장 원본 배열
   const [loading, setLoading] = useState(true);              // 로딩 중 상태 제어
@@ -157,9 +341,9 @@ export default function VocabularyPage() {
         {/* 상단 제목 헤더 및 안키 CSV 내보내기 버튼 */}
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '16px', marginBottom: '24px' }}>
           <div>
-            <h1 style={{ fontSize: '2rem', fontWeight: 900, marginBottom: '8px' }}>📝 내 단어장</h1>
+            <h1 style={{ fontSize: '2rem', fontWeight: 900, marginBottom: '8px' }}>{t.title}</h1>
             <p style={{ color: 'var(--text-secondary)', fontSize: '0.9rem' }}>
-              저장된 단어: <strong style={{ color: 'var(--text-primary)' }}>{vocab.length}개</strong>
+              {t.savedWords}<strong style={{ color: 'var(--text-primary)' }}>{vocab.length}{t.wordUnit}</strong>
             </p>
           </div>
           {vocab.length > 0 && (
@@ -175,7 +359,7 @@ export default function VocabularyPage() {
                 borderRadius: 'var(--radius-md)',
               }}
             >
-              📥 Anki용 CSV 내보내기
+              {t.exportAnki}
             </button>
           )}
         </div>
@@ -183,9 +367,9 @@ export default function VocabularyPage() {
         {/* [복습 모드 활성화를 위한 신규 탭 메뉴 바] */}
         <div style={{ display: 'flex', gap: '8px', borderBottom: '1px solid var(--border-subtle)', marginBottom: '32px', overflowX: 'auto', paddingBottom: '2px' }}>
           {[
-            { id: 'list', label: '📖 단어 목록' },
-            { id: 'flashcard', label: '🎴 플래시카드' },
-            { id: 'quiz', label: '🧩 미니 퀴즈' }
+            { id: 'list', label: t.tabList },
+            { id: 'flashcard', label: t.tabFlashcard },
+            { id: 'quiz', label: t.tabQuiz }
           ].map(tab => (
             <button
               key={tab.id}
@@ -235,7 +419,7 @@ export default function VocabularyPage() {
                   gap: '6px',
                 }}
               >
-                {topicInfo ? `${topicInfo.emoji} ${topicInfo.label}` : '전체'}
+                {topicInfo ? `${topicInfo.emoji} ${topicInfo.label}` : t.allTopics}
                 <span style={{
                   background: selectedTopic === topic ? 'rgba(255,255,255,0.2)' : 'var(--border-subtle)',
                   borderRadius: '100px',
@@ -254,9 +438,9 @@ export default function VocabularyPage() {
           filteredVocab.length === 0 ? (
             <div className="empty-state">
               <div className="empty-state-icon">📚</div>
-              <div className="empty-state-title">단어장이 비어 있어요</div>
-              <div className="empty-state-desc">텍스트를 읽으면서 모르는 단어를 저장해보세요!</div>
-              <a href="/library" className="btn btn-primary mt-4">도서관으로 가기</a>
+              <div className="empty-state-title">{t.emptyTitle}</div>
+              <div className="empty-state-desc">{t.emptyDesc}</div>
+              <a href="/library" className="btn btn-primary mt-4">{t.toLibrary}</a>
             </div>
           ) : (
             <div className="grid-4" style={{ '--grid-cols': '4' } as React.CSSProperties}>
@@ -322,8 +506,8 @@ export default function VocabularyPage() {
           shuffledVocab.length === 0 ? (
             <div className="empty-state">
               <div className="empty-state-icon">🎴</div>
-              <div className="empty-state-title">학습할 단어가 없습니다</div>
-              <div className="empty-state-desc">단어장 단어가 비어 있거나, 필터링에 부합하는 단어가 없습니다.</div>
+              <div className="empty-state-title">{t.noFlashcardTitle}</div>
+              <div className="empty-state-desc">{t.noFlashcardDesc}</div>
             </div>
           ) : (
             <div style={{ maxWidth: '480px', margin: '0 auto', display: 'flex', flexDirection: 'column', gap: '24px' }}>
@@ -351,12 +535,12 @@ export default function VocabularyPage() {
                         width: '44px', height: '44px', borderRadius: '50%', display: 'flex',
                         alignItems: 'center', justifyContent: 'center', cursor: 'pointer', fontSize: '1.2rem'
                       }}
-                      title="발음 듣기"
+                      title={t.listen}
                     >
                       🔊
                     </button>
                     <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', position: 'absolute', bottom: '20px' }}>
-                      클릭하여 뒤집기 🔄
+                      {t.flipCard}
                     </div>
                   </div>
 
@@ -371,7 +555,7 @@ export default function VocabularyPage() {
                     </p>
                     {shuffledVocab[cardIdx].examples && shuffledVocab[cardIdx].examples.length > 0 && (
                       <div style={{ borderTop: '1px solid var(--border-subtle)', paddingTop: '10px', width: '100%', textAlign: 'left' }}>
-                        <div style={{ fontSize: '0.75rem', fontWeight: 700, color: 'var(--text-muted)', marginBottom: '4px' }}>예문:</div>
+                        <div style={{ fontSize: '0.75rem', fontWeight: 700, color: 'var(--text-muted)', marginBottom: '4px' }}>{t.examplesTitle}</div>
                         <div style={{ fontSize: '0.8rem', color: 'var(--text-primary)', fontFamily: 'Noto Sans KR, sans-serif', fontWeight: 600 }}>
                           {shuffledVocab[cardIdx].examples[0].korean}
                         </div>
@@ -392,7 +576,7 @@ export default function VocabularyPage() {
                   onClick={() => { setCardIdx(prev => prev - 1); setIsFlipped(false); }}
                   style={{ padding: '10px 16px' }}
                 >
-                  ◀ 이전
+                  {t.prev}
                 </button>
                 <div style={{ fontSize: '0.9rem', color: 'var(--text-secondary)' }}>
                   <strong>{cardIdx + 1}</strong> / {shuffledVocab.length}
@@ -403,7 +587,7 @@ export default function VocabularyPage() {
                   onClick={() => { setCardIdx(prev => prev + 1); setIsFlipped(false); }}
                   style={{ padding: '10px 16px' }}
                 >
-                  다음 ▶
+                  {t.next}
                 </button>
               </div>
 
@@ -413,7 +597,7 @@ export default function VocabularyPage() {
                 onClick={handleShuffleCards}
                 style={{ width: '100%', justifyContent: 'center' }}
               >
-                🔀 카드 순서 섞기
+                {t.shuffle}
               </button>
             </div>
           )
@@ -424,21 +608,20 @@ export default function VocabularyPage() {
           filteredVocab.length < 4 ? (
             <div className="empty-state">
               <div className="empty-state-icon">🧩</div>
-              <div className="empty-state-title">단어가 부족해요</div>
+              <div className="empty-state-title">{t.quizNotEnoughTitle}</div>
               <div className="empty-state-desc">
-                4지선다 퀴즈를 출제하기 위해서는 최소 **4개 이상의 단어**가 단어장에 저장되어야 합니다.
-                (현재 저장 개수: {filteredVocab.length}개)
+                {t.quizNotEnoughDesc.replace('{count}', filteredVocab.length.toString())}
               </div>
-              <a href="/library" className="btn btn-primary mt-4">도서관으로 가기</a>
+              <a href="/library" className="btn btn-primary mt-4">{t.toLibrary}</a>
             </div>
           ) : (
             quizQuestion && (
               <div style={{ maxWidth: '500px', margin: '0 auto', display: 'flex', flexDirection: 'column', gap: '24px' }}>
                 {/* 퀴즈 헤더: 스코어 정보 */}
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                  <span style={{ fontSize: '0.9rem', color: 'var(--text-muted)' }}>🎯 미니 퀴즈 맞추기</span>
+                  <span style={{ fontSize: '0.9rem', color: 'var(--text-muted)' }}>{t.quizTitle}</span>
                   <span style={{ fontSize: '0.9rem', color: 'var(--accent-primary)', fontWeight: 700 }}>
-                    맞춘 문제: {quizScore.correct} / {quizScore.total}
+                    {t.quizScore}{quizScore.correct} / {quizScore.total}
                   </span>
                 </div>
 
@@ -451,7 +634,7 @@ export default function VocabularyPage() {
                     {quizQuestion.word}
                   </h2>
                   <p style={{ color: 'var(--text-muted)', fontSize: '0.85rem' }}>
-                    의 뜻은 무엇일까요?
+                    {t.quizQuestionDesc}
                   </p>
                 </div>
 
@@ -501,8 +684,8 @@ export default function VocabularyPage() {
                         }}
                       >
                         <span>{option}</span>
-                        {selectedAnswer !== null && isAnswerCorrect && <span>✓ 정답</span>}
-                        {selectedAnswer !== null && isSelected && !isAnswerCorrect && <span>✗ 오답</span>}
+                        {selectedAnswer !== null && isAnswerCorrect && <span>{t.quizCorrect}</span>}
+                        {selectedAnswer !== null && isSelected && !isAnswerCorrect && <span>{t.quizIncorrect}</span>}
                       </button>
                     );
                   })}
@@ -515,7 +698,7 @@ export default function VocabularyPage() {
                     onClick={generateQuiz}
                     style={{ width: '100%', justifyContent: 'center', padding: '16px' }}
                   >
-                    다음 문제 풀기 ➔
+                    {t.quizNext}
                   </button>
                 )}
               </div>
@@ -551,7 +734,7 @@ export default function VocabularyPage() {
                       fontSize: '1rem',
                       transition: 'all 0.2s ease',
                     }}
-                    title="발음 듣기"
+                    title={t.listen}
                   >
                     🔊
                   </button>
@@ -565,19 +748,19 @@ export default function VocabularyPage() {
 
             {/* 한국어 정의 */}
             <div className="word-popup-section">
-              <div className="word-popup-section-title">📖 한국어 정의</div>
+              <div className="word-popup-section-title">{t.definitionTitle}</div>
               <div className="word-popup-definition">{selectedEntry.definition}</div>
             </div>
 
             {/* 번역 결과 */}
             <div className="word-popup-section">
-              <div className="word-popup-section-title">🌐 번역</div>
+              <div className="word-popup-section-title">{t.translationTitle}</div>
               <div className="word-popup-translation">{selectedEntry.translation}</div>
             </div>
 
             {/* 예문 및 번역 */}
             <div className="word-popup-section">
-              <div className="word-popup-section-title">📝 예문</div>
+              <div className="word-popup-section-title">{t.examplesSectionTitle}</div>
               {selectedEntry.examples?.map((ex, i) => (
                 <div key={i} className="word-popup-example">
                   <div className="word-popup-example-korean">{ex.korean}</div>
@@ -590,7 +773,7 @@ export default function VocabularyPage() {
             <div style={{ display: 'flex', gap: '8px', alignItems: 'center', marginTop: '4px', flexWrap: 'wrap' }}>
               <span className={`level-badge level-${selectedEntry.level}`}>{selectedEntry.level}</span>
               <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
-                출처: {selectedEntry.articleTitle}
+                {t.origin}{selectedEntry.articleTitle}
               </span>
             </div>
           </div>
