@@ -12,7 +12,9 @@ import { useAuth } from '@/contexts/AuthContext';
 import { lookupWordBasic, lookupWordAdvanced, TOPICS } from '@/lib/gemini';
 import { getGuestArticle, getGuestLang, incrementGuestReadCount } from '@/lib/storage';
 import { saveVocabulary, deleteArticle } from '@/lib/db';
+import { tokenizeKorean, isKoreanWord } from '@/lib/utils';
 
+// 단어 상세 사전 데이터를 보관할 인터페이스 정의
 interface WordData {
   word: string;
   pronunciation: string;
@@ -24,45 +26,48 @@ interface WordData {
   level: string;
 }
 
-function isKoreanWord(token: string): boolean {
-  return /[\uAC00-\uD7AF\u1100-\u11FF\u3130-\u318F]/.test(token);
-}
 
-function tokenize(text: string): string[] {
-  return text.split(/(\s+|[.!?,。、\n])/g).filter(t => t.length > 0);
-}
 
 export default function GuestReadPage() {
   const { user, profile, signInWithGoogle } = useAuth();
   const router = useRouter();
 
-  const [article, setArticle] = useState<any>(null);
-  const [wordData, setWordData] = useState<WordData | null>(null);
-  const [loadingWord, setLoadingWord] = useState(false);
-  const [loadingAdvanced, setLoadingAdvanced] = useState(false);
-  const [savedWords, setSavedWords] = useState<Set<string>>(new Set());
-  const [showLoginModal, setShowLoginModal] = useState(false);
-  const [readingDone, setReadingDone] = useState(false);
-  const [signingIn, setSigningIn] = useState(false);
+  const [article, setArticle] = useState<any>(null);                        // 읽고 있는 임시 아티클 객체
+  const [wordData, setWordData] = useState<WordData | null>(null);          // 현재 조회 중인 사전 데이터
+  const [loadingWord, setLoadingWord] = useState(false);                     // 기본 사전 조회 중 로딩 상태
+  const [loadingAdvanced, setLoadingAdvanced] = useState(false);             // 상세 정보(예문/구조) 백그라운드 로딩 상태
+  const [savedWords, setSavedWords] = useState<Set<string>>(new Set());      // 단어장 저장이 완료된 단어들 목록
+  const [showLoginModal, setShowLoginModal] = useState(false);               // 구글 로그인 유도 모달 노출 제어
+  const [readingDone, setReadingDone] = useState(false);                     // 다 읽기 완료 처리 상태
+  const [signingIn, setSigningIn] = useState(false);                         // 소셜 로그인 처리 중 대기 제어
 
-  // Hover lookup state
+  // 마우스 오버 즉시 검색 옵션 관련 Ref 및 상태 값
   const [hoverLookup, setHoverLookup] = useState(false);
   const hoverTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
+  // 컴포넌트 마운트 시 브라우저 설정 로드 및 세션 기사 읽어오기
   useEffect(() => {
-    // Load hover preference from localStorage
+    // 로컬 스토리지에 저장된 마우스 오버 사전 검색 활성화 선호도 설정 로드
     const savedHover = localStorage.getItem('koreading_hover_lookup') === 'true';
     setHoverLookup(savedHover);
 
+    // 게스트가 방금 임시 생성한 세션 상의 기사 로드
     const a = getGuestArticle();
     if (!a) { router.push('/library'); return; }
     setArticle(a);
 
+    // 타이머 메모리 누수 방지용 언마운트 정리
     return () => {
       if (hoverTimeoutRef.current) clearTimeout(hoverTimeoutRef.current);
     };
   }, [router]);
 
+  /**
+   * 한국어 단어를 클릭하거나 마우스 오버했을 때 동작하는 사전 조회 핵심 로직입니다.
+   * [초광속 2단계 점진적 조회 기법]
+   * 1단계: 1초 미만으로 끝나는 lookupWordBasic API를 호출해 빠르게 기본 사전(품사, 뜻, 발음) 팝업 모달을 먼저 띄웁니다.
+   * 2단계: 백그라운드에서 상세 사전(단어 형태소 결합 구조, 예문 쌍) lookupWordAdvanced API를 연속 호출해 화면에 덮어씌웁니다.
+   */
   const handleWordClick = useCallback(async (word: string, sentence: string) => {
     if (!isKoreanWord(word)) return;
     const nativeLang = profile?.nativeLanguage || getGuestLang() || 'en';
@@ -71,12 +76,12 @@ export default function GuestReadPage() {
     setLoadingWord(true);
     setLoadingAdvanced(false);
     try {
-      // Step 1: Quick basic dictionary lookup (takes < 1s)
+      // 1단계: 즉시 단어 의미를 보여주기 위한 퀵 기본 정보 요청
       const basicData = await lookupWordBasic(word, sentence, nativeLang);
       setWordData(basicData);
-      setLoadingWord(false); // Instantly open popup and display definition!
+      setLoadingWord(false); // 팝업창 모달 노출!
 
-      // Step 2: Background advanced lookup (loads structure & examples)
+      // 2단계: 상세 형태 구조 분석 및 예문 취득을 위한 백그라운드 요청 작동
       setLoadingAdvanced(true);
       const advancedData = await lookupWordAdvanced(word, sentence, nativeLang);
       setWordData(prev => prev ? { ...prev, ...advancedData } : null);
@@ -88,16 +93,17 @@ export default function GuestReadPage() {
     }
   }, [profile]);
 
-  // Debounced Hover Handler
+  // 마우스 오버 즉시 검색 작동 시, 250ms 동안 마우스가 멈췄을 때에만 사전을 트리거하는 디바운싱 핸들러입니다.
   const handleWordMouseEnter = (word: string, sentence: string) => {
     if (!hoverLookup) return;
     if (hoverTimeoutRef.current) clearTimeout(hoverTimeoutRef.current);
     
     hoverTimeoutRef.current = setTimeout(() => {
       handleWordClick(word, sentence);
-    }, 250); // REST threshold delay to trigger dictionary
+    }, 250); // 250밀리초 딜레이 임계치 적용
   };
 
+  // 마우스가 단어 영역을 빠져나갈 때 대기 중이던 호버 조회 예약을 취소합니다.
   const handleWordMouseLeave = () => {
     if (hoverTimeoutRef.current) {
       clearTimeout(hoverTimeoutRef.current);
@@ -105,20 +111,24 @@ export default function GuestReadPage() {
     }
   };
 
+  // 단어 사전 팝업 닫기
   const closePopup = () => {
     setWordData(null);
     setLoadingWord(false);
     setLoadingAdvanced(false);
   };
 
+  // 단어 저장 버튼 클릭 이벤트
   const handleSaveWord = async () => {
     if (!wordData) return;
+    // 비로그인 상태이므로 단어를 저장할 수 없음을 안내하고 가입 모달 노출
     if (!user) {
       setWordData(null);
       setShowLoginModal(true);
       return;
     }
     try {
+      // 로그인되어 있을 시 Firestore에 단어 저장
       await saveVocabulary(user.uid, {
         word: wordData.word,
         pronunciation: wordData.pronunciation,
@@ -135,6 +145,7 @@ export default function GuestReadPage() {
     } catch (e) { console.error(e); }
   };
 
+  // 테스트 모드 및 기사 품질 저하 시 텍스트 영구 삭제 기능 실행 핸들러
   const handleDeleteArticle = async () => {
     const confirmDelete = window.confirm(
       '🚨 [테스트 기간 전용 액션]\n\n이 텍스트의 퀄리티가 너무 낮아 영구 삭제하시겠습니까?\n도서관 데이터베이스 혹은 임시 스토리지에서 완전히 제거됩니다.'
@@ -143,8 +154,10 @@ export default function GuestReadPage() {
 
     try {
       if (article?.id && article.id !== 'guest') {
+        // Firestore에 아티클 레코드가 있는 경우 삭제
         await deleteArticle(article.id);
       }
+      // 로컬 세션스토리지에 적재된 아티클도 함께 비우기
       sessionStorage.removeItem('koreading_guest_article');
       alert('텍스트가 성공적으로 삭제되었습니다. 도서관으로 이동합니다.');
       router.push('/library');
@@ -154,18 +167,20 @@ export default function GuestReadPage() {
     }
   };
 
+  // '다 읽었어요' 클릭 시 게스트의 읽은 횟수를 1 증가시키고 로그인 유도 모달 토글
   const handleDoneReading = () => {
     incrementGuestReadCount();
     setReadingDone(true);
     setShowLoginModal(true);
   };
 
+  // 가입 유도 모달 내 구글 로그인 연동 처리
   const handleGoogleLogin = async () => {
     setSigningIn(true);
     try {
       await signInWithGoogle();
       setShowLoginModal(false);
-      router.push('/library');
+      router.push('/library'); // 로그인 완료 시 정식 라이브러리로 이동
     } catch { setSigningIn(false); }
   };
 
@@ -181,7 +196,7 @@ export default function GuestReadPage() {
 
   return (
     <div style={{ minHeight: '100vh', padding: '40px 24px' }}>
-      {/* Styles inject */}
+      {/* 펄스 애니메이션이 가미된 유려한 사전 조회 스켈레톤용 CSS 스타일 주입 */}
       <style>{`
         @keyframes skeleton-pulse {
           0% {
@@ -203,14 +218,14 @@ export default function GuestReadPage() {
       `}</style>
 
       <div className="container" style={{ maxWidth: '760px' }}>
-        {/* Breadcrumb */}
+        {/* 상단 빵부스러기(Breadcrumb) 경로 표시 */}
         <div style={{ display: 'flex', gap: '8px', alignItems: 'center', marginBottom: '24px', fontSize: '0.8rem', color: 'var(--text-muted)' }}>
           <a href="/library" style={{ color: 'var(--text-muted)', textDecoration: 'none' }}>📚 도서관</a>
           <span>›</span>
           <span style={{ color: 'var(--text-secondary)' }}>{article.title}</span>
         </div>
 
-        {/* Header */}
+        {/* 아티클 메타 정보 영역 (레벨 배지, 토픽, 예측 독해시간, 생성 모델명) */}
         <div style={{ marginBottom: '32px' }}>
           <div style={{ display: 'flex', gap: '8px', alignItems: 'center', marginBottom: '16px', flexWrap: 'wrap' }}>
             <span className={`level-badge level-${article.level}`}>{article.level}</span>
@@ -232,7 +247,7 @@ export default function GuestReadPage() {
           <p style={{ color: 'var(--text-secondary)', fontSize: '0.875rem', fontStyle: 'italic' }}>{article.summary}</p>
         </div>
 
-        {/* Settings Toggle Bar */}
+        {/* 유저 인터랙션 제어 바 (마우스 호버 검색 On/Off 토글 지원) */}
         <div style={{
           display: 'flex',
           justifyContent: 'space-between',
@@ -284,7 +299,7 @@ export default function GuestReadPage() {
           </div>
         </div>
 
-        {/* Key vocabulary */}
+        {/* AI가 선별한 아티클 핵심 중요 어휘 키 리스트 */}
         {article.keyVocabulary?.length > 0 && (
           <div className="card" style={{ marginBottom: '32px' }}>
             <div style={{ fontSize: '0.75rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.1em', color: 'var(--text-muted)', marginBottom: '12px' }}>핵심 어휘</div>
@@ -315,10 +330,10 @@ export default function GuestReadPage() {
           </div>
         )}
 
-        {/* Article content */}
+        {/* 독해 지문 본문 카드 (각 한국어 어휘에 인터랙티브 클릭 이벤트 및 바인딩 완료) */}
         <div className="card" style={{ padding: '36px', marginBottom: '32px' }}>
           {paragraphs.map((paragraph: string, pIdx: number) => {
-            const tokens = tokenize(paragraph);
+            const tokens = tokenizeKorean(paragraph);
             return (
               <p key={pIdx} style={{ fontFamily: 'Noto Sans KR, sans-serif', fontSize: '1.1rem', lineHeight: 2.2, marginBottom: '20px', color: 'var(--text-primary)' }}>
                 {tokens.map((token, tIdx) =>
@@ -342,10 +357,10 @@ export default function GuestReadPage() {
           })}
         </div>
 
-        {/* Done button */}
+        {/* 독해 완료 유도 버튼 툴바 영역 */}
         {!readingDone && (
           <div style={{ display: 'flex', gap: '12px', justifyContent: 'flex-end', marginBottom: '60px', flexWrap: 'wrap', alignItems: 'center' }}>
-            {/* [테스트 기간 전용] 텍스트 삭제 버튼 */}
+            {/* [품질 저하 테스트 전용 영구 삭제 버튼] 레이아웃이 꼬이지 않도록 왼쪽 정렬(marginRight: auto) 적용 */}
             <button
               onClick={handleDeleteArticle}
               style={{
@@ -362,7 +377,7 @@ export default function GuestReadPage() {
                 gap: '6px',
                 transition: 'all 150ms ease',
                 fontFamily: 'inherit',
-                marginRight: 'auto', // Push to the far left!
+                marginRight: 'auto',
               }}
               onMouseEnter={e => e.currentTarget.style.background = 'rgba(239,68,68,0.15)'}
               onMouseLeave={e => e.currentTarget.style.background = 'rgba(239,68,68,0.1)'}
@@ -378,44 +393,38 @@ export default function GuestReadPage() {
         )}
       </div>
 
-      {/* Word Lookup Popup with Glimmering Skeletons */}
+      {/* 2단계 점진적 사전 조회 스켈레톤 & 팝업 모달 */}
       {(loadingWord || wordData) && (
         <div className="word-popup-overlay" onClick={(e) => { if (e.target === e.currentTarget) closePopup(); }}>
           <div className="word-popup" style={{ minHeight: '380px', display: 'flex', flexDirection: 'column' }}>
             {loadingWord ? (
+              // 1단계: basic API 호출 대기 중일 때 표시할 고급 스켈레톤 애니메이션
               <div style={{ padding: '8px 4px' }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '24px' }}>
                   <div style={{ width: '80%' }}>
-                    {/* Pulsing Word Title */}
                     <div className="skeleton" style={{ width: '55%', height: '28px', marginBottom: '10px', borderRadius: '6px' }} />
-                    {/* Pulsing Subtitle */}
                     <div className="skeleton" style={{ width: '30%', height: '14px', borderRadius: '4px' }} />
                   </div>
                   <button className="word-popup-close" onClick={closePopup}>✕</button>
                 </div>
 
-                {/* Pulsing Part of Speech */}
                 <div className="skeleton" style={{ width: '18%', height: '18px', marginBottom: '24px', borderRadius: '4px' }} />
 
-                {/* Pulsing Structure Section Placeholder */}
                 <div style={{ marginBottom: '20px' }}>
                   <div className="skeleton" style={{ width: '45%', height: '12px', marginBottom: '10px', borderRadius: '4px' }} />
                   <div className="skeleton" style={{ width: '88%', height: '16px', borderRadius: '4px' }} />
                 </div>
 
-                {/* Pulsing Definition Section */}
                 <div style={{ marginBottom: '20px' }}>
                   <div className="skeleton" style={{ width: '35%', height: '12px', marginBottom: '10px', borderRadius: '4px' }} />
                   <div className="skeleton" style={{ width: '92%', height: '16px', borderRadius: '4px' }} />
                 </div>
 
-                {/* Pulsing Translation Section */}
                 <div style={{ marginBottom: '24px' }}>
                   <div className="skeleton" style={{ width: '40%', height: '12px', marginBottom: '10px', borderRadius: '4px' }} />
                   <div className="skeleton" style={{ width: '85%', height: '16px', borderRadius: '4px' }} />
                 </div>
 
-                {/* Pulsing Examples Section */}
                 <div>
                   <div className="skeleton" style={{ width: '25%', height: '12px', marginBottom: '12px', borderRadius: '4px' }} />
                   <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
@@ -425,6 +434,7 @@ export default function GuestReadPage() {
                 </div>
               </div>
             ) : wordData && (
+              // AI로부터 성공적으로 수집 완료된 단어 사전 데이터 표출
               <>
                 <div className="word-popup-header">
                   <div>
@@ -436,13 +446,14 @@ export default function GuestReadPage() {
 
                 <span className="word-popup-pos">{wordData.partOfSpeech}</span>
 
-                {/* Progressive Morphological Structure Box */}
+                {/* 2단계 백그라운드 Advanced 분석 호출 대기 중에는 미세 실선 박스로 안내 처리 */}
                 {loadingAdvanced && !wordData.structure ? (
                   <div style={{ marginBottom: '20px', background: 'rgba(99,102,241,0.02)', borderRadius: 'var(--radius-sm)', padding: '12px 16px', border: '1px dotted var(--border-subtle)' }}>
                     <div className="skeleton" style={{ width: '45%', height: '12px', marginBottom: '10px', borderRadius: '4px' }} />
                     <div className="skeleton" style={{ width: '85%', height: '16px', borderRadius: '4px' }} />
                   </div>
                 ) : wordData.structure ? (
+                  // 형태소 성분 및 파생 어미 분해 구조 표시
                   <div className="word-popup-section" style={{ background: 'rgba(99,102,241,0.05)', borderRadius: 'var(--radius-sm)', padding: '12px 16px', border: '1px solid rgba(99,102,241,0.1)', marginBottom: '20px' }}>
                     <div className="word-popup-section-title" style={{ color: 'var(--accent-primary)', display: 'flex', alignItems: 'center', gap: '6px', fontWeight: 700 }}>
                       🧱 단어 구조 분석 (Word Structure)
@@ -465,7 +476,7 @@ export default function GuestReadPage() {
                   <div className="word-popup-translation">{wordData.translation}</div>
                 </div>
 
-                {/* Progressive Examples Section */}
+                {/* 2단계 예문 로딩 상태 및 실데이터 렌더링 */}
                 {loadingAdvanced && !wordData.examples ? (
                   <div style={{ marginBottom: '20px', background: 'var(--bg-secondary)', borderRadius: 'var(--radius-sm)', padding: '16px', border: '1px dotted var(--border-subtle)' }}>
                     <div className="skeleton" style={{ width: '25%', height: '12px', marginBottom: '12px', borderRadius: '4px' }} />
@@ -490,6 +501,7 @@ export default function GuestReadPage() {
                   <span className={`level-badge level-${wordData.level}`}>{wordData.level}</span>
                 </div>
 
+                {/* 단어 저장 단추 (비로그인 상태일 때는 로그인 팝업 활성화) */}
                 <button className="word-popup-save-btn" onClick={handleSaveWord}>
                   {user ? (savedWords.has(wordData.word) ? '✓ 단어장에 저장됨' : '📚 단어장에 저장') : '🔑 로그인하여 단어장에 저장'}
                 </button>
@@ -499,7 +511,7 @@ export default function GuestReadPage() {
         </div>
       )}
 
-      {/* Login prompt modal */}
+      {/* 비회원용 구글 계정 로그인 유도 모달 */}
       {showLoginModal && (
         <div className="word-popup-overlay" onClick={e => { if (e.target === e.currentTarget && !readingDone) setShowLoginModal(false); }}>
           <div className="word-popup" style={{ maxWidth: '460px', textAlign: 'center' }}>
@@ -523,6 +535,7 @@ export default function GuestReadPage() {
               </>
             )}
 
+            {/* 로그인 실행 버튼 (E2E 테스트 구동용 login-from-reading-btn ID 탑재) */}
             <button
               id="login-from-reading-btn"
               onClick={handleGoogleLogin}
@@ -552,3 +565,4 @@ export default function GuestReadPage() {
     </div>
   );
 }
+

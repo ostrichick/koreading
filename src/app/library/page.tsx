@@ -10,11 +10,14 @@ import { useState, useEffect, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/contexts/AuthContext';
 import { TOPICS, CEFRLevel, NativeLanguage, generateArticle } from '@/lib/gemini';
-import { getArticlesByLevel, saveArticle, getReadArticles, Article } from '@/lib/db';
+import { getArticlesByLevel, getAllArticles, saveArticle, getReadArticles, Article } from '@/lib/db';
 import { getGuestLevel, getGuestLang, setGuestLang } from '@/lib/storage';
 import AlertModal from '@/components/AlertModal';
 
+// CEFR 기반 레벨 필터 목록
 const LEVELS: CEFRLevel[] = ['A1', 'A2', 'B1', 'B2', 'C1', 'C2'];
+
+// 각 레벨에 대한 라벨 정보 매핑
 const LEVEL_LABELS: Record<CEFRLevel, string> = {
   A1: '입문 (A1)',
   A2: '초급 (A2)',
@@ -28,24 +31,25 @@ export default function LibraryPage() {
   const { user, profile } = useAuth();
   const router = useRouter();
 
-  const [selectedLevel, setSelectedLevel] = useState<CEFRLevel | 'all'>('all');
-  const [selectedTopic, setSelectedTopic] = useState<string>('all');
-  const [articles, setArticles] = useState<Article[]>([]);
-  const [readArticles, setReadArticles] = useState<string[]>([]);
-  const [loadingArticles, setLoadingArticles] = useState(false);
-  const [generating, setGenerating] = useState(false);
-  const [genLogs, setGenLogs] = useState<string[]>([]);
-  const [userLevel, setUserLevel] = useState<CEFRLevel | null>(null);
+  // 도서관 필터링용 상태들
+  const [selectedLevel, setSelectedLevel] = useState<CEFRLevel | 'all'>('all'); // 현재 조회 선택된 레벨
+  const [selectedTopic, setSelectedTopic] = useState<string>('all');           // 현재 조회 선택된 토픽
+  const [articles, setArticles] = useState<Article[]>([]);                      // 도서관 기사 리스트
+  const [readArticles, setReadArticles] = useState<string[]>([]);              // 유저가 다 읽은 기사 ID 배열
+  const [loadingArticles, setLoadingArticles] = useState(false);               // 기사 목록 로딩 토글
+  const [generating, setGenerating] = useState(false);                         // AI 기사 생성 대기 토글
+  const [genLogs, setGenLogs] = useState<string[]>([]);                        // AI 생성 중 로그 출력 내용
+  const [userLevel, setUserLevel] = useState<CEFRLevel | null>(null);          // 로그인 유저의 레벨 정보
 
-  // Sorting state
+  // 정렬 순서 상태값 ('rating': 별점 높은 순, 'newest': 최신순)
   const [sortBy, setSortBy] = useState<'rating' | 'newest'>('rating');
 
-  // Generation Modal States
+  // "새 텍스트 생성" 모달 내의 체크박스 상태들
   const [showGenModal, setShowGenModal] = useState(false);
   const [genLevels, setGenLevels] = useState<CEFRLevel[]>([]);
   const [genTopics, setGenTopics] = useState<string[]>([]);
 
-  // Alert Modal States
+  // 알림 모달 제어 상태들
   const [alertOpen, setAlertOpen] = useState(false);
   const [alertTitle, setAlertTitle] = useState('알림');
   const [alertMsg, setAlertMsg] = useState('');
@@ -58,12 +62,12 @@ export default function LibraryPage() {
     setAlertOpen(true);
   };
 
-  // Custom API Key States
+  // 개인 API Key 설정용 상태들
   const [showApiKeyModal, setShowApiKeyModal] = useState(false);
   const [tempApiKey, setTempApiKey] = useState('');
   const [hasApiKey, setHasApiKey] = useState(false);
 
-  // Language Selector State
+  // 모국어 번역 설정 (게스트용)
   const LANG_OPTIONS: { value: NativeLanguage; label: string; flag: string }[] = [
     { value: 'en', label: 'English', flag: '🇺🇸' },
     { value: 'es', label: 'Español', flag: '🇪🇸' },
@@ -73,17 +77,19 @@ export default function LibraryPage() {
   const [currentLang, setCurrentLang] = useState<NativeLanguage>('en');
   const [showLangDropdown, setShowLangDropdown] = useState(false);
 
+  // 컴포넌트 마운트 시, 브라우저 로컬 저장소로부터 개인 API Key 유무 판별 및 모국어 정보 동기화
   useEffect(() => {
     if (typeof window !== 'undefined') {
       const key = localStorage.getItem('koreading_custom_api_key');
       setHasApiKey(!!key);
       if (key) setTempApiKey(key);
-      // Initialize language
+      
       const savedLang = profile?.nativeLanguage || getGuestLang();
       setCurrentLang(savedLang);
     }
-  }, []);
+  }, [profile]);
 
+  // 사용자가 개인 API Key를 설정하고 저장할 때 실행되는 핸들러
   const handleSaveApiKey = () => {
     if (typeof window !== 'undefined') {
       const trimmed = tempApiKey.trim();
@@ -100,6 +106,7 @@ export default function LibraryPage() {
     }
   };
 
+  // 유저의 학습 레벨 진단 여부를 확인하고, 이력이 없다면 레벨 테스트(/test) 페이지로 즉시 강제 포워딩합니다.
   useEffect(() => {
     const level = profile?.level || getGuestLevel();
     if (!level) {
@@ -108,7 +115,7 @@ export default function LibraryPage() {
     }
     setUserLevel(level);
 
-    // Load saved levels & topics from localStorage, fallback to current level & empty topics if empty
+    // AI 생성기 팝업 창 내의 기본 레벨/주제 선택 기본값을 복원합니다.
     if (typeof window !== 'undefined') {
       const savedLevelsJson = localStorage.getItem('koreading_gen_levels');
       const savedTopicsJson = localStorage.getItem('koreading_gen_topics');
@@ -130,23 +137,23 @@ export default function LibraryPage() {
           setGenTopics([]);
         }
       } else {
-        setGenTopics([]); // Default to empty array (unselected)
+        setGenTopics([]);
       }
     }
   }, [profile, router]);
 
+  // Firestore DB로부터 해당 레벨의 아티클 목록을 쿼리하고 정렬 순서에 맞게 세팅하는 헬퍼 함수
   const loadArticles = useCallback(async (level: CEFRLevel | 'all', currentSort: 'rating' | 'newest') => {
     setLoadingArticles(true);
     try {
       let all: Article[] = [];
       if (level === 'all') {
-        const results = await Promise.all(LEVELS.map(l => getArticlesByLevel(l)));
-        all = results.flat();
+        all = await getAllArticles();
       } else {
         all = await getArticlesByLevel(level);
       }
 
-      // Sort
+      // 평점 정렬(별점 동일 시 최신순) 또는 최신 생성 시간 정렬 적용
       const sorted = [...all];
       if (currentSort === 'rating') {
         sorted.sort((a, b) => (b.averageRating || 0) - (a.averageRating || 0) || (b.createdAt?.seconds || 0) - (a.createdAt?.seconds || 0));
@@ -162,16 +169,19 @@ export default function LibraryPage() {
     }
   }, []);
 
+  // 레벨 조건 및 정렬 방식 변경 감지 시 도서관 목록 갱신
   useEffect(() => {
     loadArticles(selectedLevel, sortBy);
   }, [selectedLevel, sortBy, loadArticles]);
 
+  // 로그인 회원일 경우 읽은 아티클 목록 갱신
   useEffect(() => {
     if (user) {
       getReadArticles(user.uid).then(setReadArticles);
     }
   }, [user]);
 
+  // AI 텍스트 생성 버튼 클릭 이벤트 핸들러
   const handleGenerate = async () => {
     if (genLevels.length === 0) {
       triggerAlert('최소 한 개의 레벨을 선택해 주세요!', '조건 선택', 'warning');
@@ -182,7 +192,7 @@ export default function LibraryPage() {
       return;
     }
 
-    // Randomly pick a level and topic from Checked options
+    // 선택된 복수 난이도 및 복수 주제 중 하나씩 무작위 선택(Random Selection)하여 AI에 생성 요청
     const level = genLevels[Math.floor(Math.random() * genLevels.length)];
     const topic = genTopics[Math.floor(Math.random() * genTopics.length)];
     const lang = currentLang;
@@ -190,31 +200,32 @@ export default function LibraryPage() {
     setGenerating(true);
     setGenLogs([]);
     try {
+      // client wrapper function 호출 (진행 로그 콜백 연동)
       const data = await generateArticle(level, topic, lang, (logMsg) => {
         setGenLogs(prev => [...prev, logMsg]);
       });
       
       try {
-        // Try saving to Firestore persistently so all readers can see it
+        // Firestore 아티클 저장
         const id = await saveArticle(data);
         setShowGenModal(false);
         setGenLogs([]);
-        router.push(`/read/${id}`);
+        router.push(`/read/${id}`); // 완료 시 회원용 독해로 포워딩
       } catch (dbErr: any) {
-        console.warn('Firestore save failed, falling back to local guest storage:', dbErr);
-        // Save locally to sessionStorage for fallback guest reading
+        console.warn('Firestore 저장 실패, 임시 로컬 저장소로 백업합니다:', dbErr);
+        
+        // Firestore 권한이 모자랄 경우 (비로그인, 혹은 DB 규칙 상 미인증 시) 게스트 로컬 세션에 보관
         sessionStorage.setItem('koreading_guest_article', JSON.stringify({ ...data, id: 'guest' }));
         setShowGenModal(false);
         setGenLogs([]);
         
-        // Show a helpful warning explaining the Firebase rule constraint and how to fix it
         triggerAlert(
           'ℹ️ Firebase Database 권한 설정(Missing or insufficient permissions)으로 인해 도서관에 저장되지 못했습니다.\n\n걱정 마세요! 생성된 글은 임시 페이지에 로드되므로 지금 바로 읽으실 수 있습니다.\n\n(영구 저장하여 공유하시려면 Google 로그인 후 글을 생성하시거나, Firebase 콘솔의 Firestore 규칙에서 articles 컬렉션의 write 권한을 허용 [allow read, write: if true;]해 주세요!)',
           '데이터베이스 권한 오류',
           'warning'
         );
         
-        router.push('/read/guest');
+        router.push('/read/guest'); // 게스트용 임시 독해로 포워딩
       }
     } catch (err: any) {
       console.error(err);
@@ -223,7 +234,7 @@ export default function LibraryPage() {
       const isQuotaError = errMsg.includes('429') || errMsg.includes('Quota') || errMsg.includes('quota') || errMsg.includes('limit');
       const is503Error = errMsg.includes('503') || errMsg.includes('과부하') || errMsg.includes('high demand');
       
-      // 서버 로그를 읽기 쉬운 형태로 포맷
+      // 폴백 체인 수행 로그 정리
       const logBlock = serverLogs.length > 0
         ? '\n\n───── 📡 AI 엔진 시도 로그 ─────\n' + serverLogs.join('\n')
         : '';
@@ -243,6 +254,7 @@ export default function LibraryPage() {
     }
   };
 
+  // 모달 생성 시 레벨 체크박스 선택 제어
   const toggleLevelCheckbox = (lvl: CEFRLevel) => {
     setGenLevels(prev => {
       const next = prev.includes(lvl) ? prev.filter(l => l !== lvl) : [...prev, lvl];
@@ -253,6 +265,7 @@ export default function LibraryPage() {
     });
   };
 
+  // 모달 생성 시 주제 체크박스 선택 제어
   const toggleTopicCheckbox = (id: string) => {
     setGenTopics(prev => {
       const next = prev.includes(id) ? prev.filter(t => t !== id) : [...prev, id];
@@ -263,6 +276,7 @@ export default function LibraryPage() {
     });
   };
 
+  // 난이도 및 토픽 조건 기반 최종 필터링된 기사 목록
   const filteredArticles = articles.filter(a => {
     const matchLevel = selectedLevel === 'all' || a.level === selectedLevel;
     const matchTopic = selectedTopic === 'all' || a.topicCategory === selectedTopic;
@@ -274,7 +288,7 @@ export default function LibraryPage() {
   return (
     <div style={{ minHeight: '100vh', padding: '40px 24px' }}>
       <div className="container">
-        {/* Header */}
+        {/* 상단 타이틀 영역 (내 정보 및 레벨 배지 드로잉) */}
         <div style={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', marginBottom: '32px', flexWrap: 'wrap', gap: '16px' }}>
           <div>
             <h1 style={{ fontSize: '2rem', fontWeight: 900, marginBottom: '8px' }}>📚 도서관</h1>
@@ -284,8 +298,10 @@ export default function LibraryPage() {
               {isGuest && <span style={{ marginLeft: '8px', fontSize: '0.75rem', color: 'var(--text-muted)' }}>· 게스트 모드</span>}
             </p>
           </div>
+          
+          {/* 우측 상단 유저 행동 단추 그룹 (언어 선택, API Key 설정, 신규 생성) */}
           <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
-            {/* Language Selector */}
+            {/* 다국어 번역 언어 선택 드롭다운 버튼 */}
             <div style={{ position: 'relative' }}>
               <button
                 onClick={() => setShowLangDropdown(!showLangDropdown)}
@@ -353,6 +369,8 @@ export default function LibraryPage() {
                 </>
               )}
             </div>
+            
+            {/* 개인 API 키 등록 버튼 */}
             <button
               onClick={() => setShowApiKeyModal(true)}
               className="btn btn-ghost"
@@ -369,13 +387,15 @@ export default function LibraryPage() {
             >
               {hasApiKey ? '🔑 API Key 등록됨' : '🔑 API Key 설정'}
             </button>
+
+            {/* 새 텍스트 임시 생성 단추 (테스트 E2E용 generate-article-btn ID 바인딩) */}
             <button id="generate-article-btn" onClick={() => setShowGenModal(true)} disabled={generating} className="btn btn-primary">
               ✨ 새 텍스트 생성
             </button>
           </div>
         </div>
 
-        {/* Guest banner */}
+        {/* 비로그인 방문자 안내 카드 배너 */}
         {isGuest && (
           <div style={{ background: 'rgba(99,102,241,0.08)', border: '1px solid var(--border-medium)', borderRadius: 'var(--radius-md)', padding: '14px 20px', marginBottom: '24px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '12px' }}>
             <div style={{ fontSize: '0.875rem', color: 'var(--text-secondary)' }}>
@@ -385,9 +405,9 @@ export default function LibraryPage() {
           </div>
         )}
 
-        {/* Sort and Filter Header */}
+        {/* 정렬 바 및 레벨 필터 바 */}
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '24px', flexWrap: 'wrap', gap: '16px' }}>
-          {/* Level Filter */}
+          {/* 난이도 필터 버튼 그룹 */}
           <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
             <button onClick={() => setSelectedLevel('all')} className={`btn btn-sm ${selectedLevel === 'all' ? 'btn-primary' : 'btn-ghost'}`}>전체 레벨</button>
             {LEVELS.map(lvl => (
@@ -395,7 +415,7 @@ export default function LibraryPage() {
             ))}
           </div>
 
-          {/* Sort Selector */}
+          {/* 평점 및 최신 작성순 정렬 전환 단추 */}
           <div style={{ display: 'flex', background: 'var(--bg-card)', border: '1px solid var(--border-subtle)', borderRadius: '100px', padding: '3px' }}>
             <button
               onClick={() => setSortBy('rating')}
@@ -434,7 +454,7 @@ export default function LibraryPage() {
           </div>
         </div>
 
-        {/* Topic Filter */}
+        {/* 8대 주제 선택 필터 뱃지 */}
         <div style={{ display: 'flex', gap: '8px', marginBottom: '32px', flexWrap: 'wrap' }}>
           <button onClick={() => setSelectedTopic('all')} style={{ padding: '8px 16px', borderRadius: '100px', background: selectedTopic === 'all' ? 'var(--accent-primary)' : 'var(--bg-card)', border: '1px solid', borderColor: selectedTopic === 'all' ? 'var(--accent-primary)' : 'var(--border-subtle)', color: selectedTopic === 'all' ? 'white' : 'var(--text-secondary)', cursor: 'pointer', fontSize: '0.8rem', fontWeight: 600, transition: 'all 200ms ease', fontFamily: 'inherit' }}>전체 주제</button>
           {TOPICS.map(topic => (
@@ -444,7 +464,7 @@ export default function LibraryPage() {
           ))}
         </div>
 
-        {/* Articles List */}
+        {/* 아티클 로딩 스켈레톤 및 조회 리스트 그리드 */}
         {loadingArticles ? (
           <div className="loading-wrapper"><div className="loading-spinner" /><span style={{ color: 'var(--text-muted)' }}>텍스트 불러오는 중...</span></div>
         ) : filteredArticles.length === 0 ? (
@@ -463,7 +483,7 @@ export default function LibraryPage() {
                 <a key={article.id} href={`/read/${article.id}`} style={{ textDecoration: 'none' }}>
                   <div className="card" style={{ height: '100%', position: 'relative', opacity: isRead ? 0.7 : 1 }}>
                     {isRead && (
-                      <div style={{ position: 'absolute', top: '16px', right: '16px', background: 'rgba(16,185,129,0.15)', color: '#10b981', border: '1px solid rgba(16,185,129,0.3)', borderRadius: '100px', padding: '2px 10px', fontSize: '0.7rem', fontWeight: 700 }}>✓ 읽음</div>
+                      <div style={{ position: 'absolute', top: '16px', right: '16px', background: 'rgba(16,185,129,0.15)', color: '#10b981', border: '1px solid rgba(16,185,129,0.3)', borderRadius: '100px', padding: '2px 10px', fontSize: '0.75rem', fontWeight: 700 }}>✓ 읽음</div>
                     )}
                     <div style={{ display: 'flex', gap: '8px', alignItems: 'center', marginBottom: '12px' }}>
                       <span className={`level-badge level-${article.level}`}>{article.level}</span>
@@ -493,7 +513,7 @@ export default function LibraryPage() {
         )}
       </div>
 
-      {/* Generation Custom Conditions Modal */}
+      {/* 맞춤형 아티클 생성 설정 팝업 모달 */}
       {showGenModal && (
         <div className="word-popup-overlay" onClick={(e) => { if (e.target === e.currentTarget) setShowGenModal(false); }}>
           <div className="word-popup" style={{ maxWidth: '600px', width: '90%' }}>
@@ -506,6 +526,7 @@ export default function LibraryPage() {
               체크박스로 레벨과 주제를 원하는 대로 선택하세요. 선택된 조건 내에서 무작위 조합으로 AI 맞춤 텍스트가 즉시 생성되며, 생성된 자료는 도서관에 보존됩니다.
             </p>
 
+            {/* 레벨 선택 다중 조건 토픽 목록 */}
             <div style={{ marginBottom: '24px' }}>
               <div style={{ fontSize: '0.875rem', fontWeight: 700, color: 'var(--text-secondary)', marginBottom: '12px' }}>
                 📶 레벨 선택 (다중 선택 가능)
@@ -544,6 +565,7 @@ export default function LibraryPage() {
               </div>
             </div>
 
+            {/* 토픽 선택 다중 조건 목록 */}
             <div style={{ marginBottom: '32px' }}>
               <div style={{ fontSize: '0.875rem', fontWeight: 700, color: 'var(--text-secondary)', marginBottom: '12px' }}>
                 🏷️ 주제 선택 (다중 선택 가능)
@@ -582,7 +604,7 @@ export default function LibraryPage() {
               </div>
             </div>
 
-            {/* 🔄 AI 모델 상태 패널 */}
+            {/* 📡 실시간 AI 백그라운드 폴백 상태 로그 패널 */}
             {generating && (
               <div style={{
                 marginBottom: '16px',
@@ -596,7 +618,7 @@ export default function LibraryPage() {
               }}>
                 <div style={{ color: 'var(--text-muted)', marginBottom: '6px', fontSize: '0.7rem', fontWeight: 700, letterSpacing: '0.05em' }}>📡 AI 엔진 연결 로그</div>
                 {genLogs.length > 0 ? (
-                  /* 서버 응답 후: 실제 로그 표시 */
+                  /* 모델 전환 및 성공 여부 로그 실시간 리스트업 */
                   genLogs.map((log, i) => (
                     <div key={i} style={{
                       color: log.includes('✅') ? '#10b981'
@@ -610,7 +632,7 @@ export default function LibraryPage() {
                     </div>
                   ))
                 ) : (
-                  /* 서버 응답 대기 중: 프로그레스 애니메이션 */
+                  /* 최초 요청 전달 중: 고장 우려 경감을 위한 로딩 메시지 표출 */
                   <div>
                     <div style={{ color: '#818cf8', padding: '1px 0' }}>⚡ Groq + Gemini 총 8개 AI 모델 폴백 체인 가동 중...</div>
                     <div style={{ color: 'var(--text-secondary)', padding: '1px 0' }}>🔄 Groq Gemma 2 → Llama 3.3 → Llama 3.1</div>
@@ -643,7 +665,8 @@ export default function LibraryPage() {
           </div>
         </div>
       )}
-      {/* Custom API Key Configuration Modal */}
+
+      {/* 개인 구글 Gemini API Key 입력용 모달 */}
       {showApiKeyModal && (
         <div className="word-popup-overlay" onClick={(e) => { if (e.target === e.currentTarget) setShowApiKeyModal(false); }}>
           <div className="word-popup" style={{ maxWidth: '500px', width: '90%', userSelect: 'text' }}>
@@ -736,7 +759,7 @@ export default function LibraryPage() {
         </div>
       )}
 
-      {/* Custom Alert/Error Modal */}
+      {/* 공통 에러/알림창 모달 */}
       <AlertModal
         isOpen={alertOpen}
         title={alertTitle}

@@ -1,13 +1,14 @@
 'use client';
 
-import { useEffect, useState } from 'react';
-import { useRouter } from 'next/navigation';
+import { useState } from 'react';
 import Link from 'next/link';
 import Image from 'next/image';
 import { useAuth } from '@/contexts/AuthContext';
-import { getGuestLevel } from '@/lib/storage';
 
-// Bilingual text component — shows English, reveals Korean on hover with ZERO layout shifting
+/**
+ * 영어 텍스트를 기본 표출하고, 마우스 호버 시 한국어 번역 텍스트로 자연스럽게 페이드 전환하는 컴포넌트입니다.
+ * CSS Grid(동일 그리드 영역 1/1/2/2 배치) 기법을 활용하여 레이아웃이 튀거나 흔들리지(Layout Shift) 않도록 보장합니다.
+ */
 function BilingualText({
   en,
   ko,
@@ -34,6 +35,7 @@ function BilingualText({
         ...style,
       }}
     >
+      {/* 기본 영어 상태 텍스트 */}
       <span style={{
         gridArea: '1 / 1 / 2 / 2',
         transition: 'opacity 0.25s ease, transform 0.25s ease, visibility 0.25s ease',
@@ -43,6 +45,7 @@ function BilingualText({
       }}>
         {en}
       </span>
+      {/* 호버 시 페이드인되는 한국어 상태 텍스트 */}
       <span style={{
         gridArea: '1 / 1 / 2 / 2',
         transition: 'opacity 0.25s ease, transform 0.25s ease, visibility 0.25s ease',
@@ -58,23 +61,19 @@ function BilingualText({
   );
 }
 
+// 서비스의 인트로/랜딩 첫 화면을 그리는 HomePage 컴포넌트입니다.
+// 로고 클릭 시 항상 이 메인 화면으로 돌아올 수 있도록 자동 리다이렉트를 제거했습니다.
 export default function HomePage() {
   const { user, loading } = useAuth();
-  const router = useRouter();
 
-  useEffect(() => {
-    if (loading) return;
-    if (user) { router.push('/library'); return; }
-    const level = getGuestLevel();
-    if (level) router.push('/library');
-  }, [user, loading, router]);
-
+  // 회원 로그인 상태를 조회하고 있는 로딩 중 화면
   if (loading) return (
     <div className="loading-wrapper" style={{ minHeight: '100vh' }}>
       <div className="loading-spinner" />
     </div>
   );
 
+  // 서비스 특징 카드 데이터 모음
   const features = [
     {
       icon: '🎯',
@@ -122,27 +121,27 @@ export default function HomePage() {
 
   return (
     <div style={{ minHeight: '100vh', display: 'flex', flexDirection: 'column' }}>
-      {/* ── Hero ── */}
+      {/* ── 히어로 배너 섹션 ── */}
       <section style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '80px 24px', position: 'relative', overflow: 'hidden' }}>
-        {/* Background glows */}
+        {/* 장식용 은은한 네온 빛 무리 백그라운드 효과 */}
         <div style={{ position: 'absolute', top: '20%', left: '50%', transform: 'translateX(-50%)', width: '800px', height: '400px', background: 'radial-gradient(ellipse, rgba(99,102,241,0.15) 0%, transparent 70%)', pointerEvents: 'none' }} />
         <div style={{ position: 'absolute', bottom: '10%', left: '5%', width: '300px', height: '300px', background: 'radial-gradient(circle, rgba(139,92,246,0.1) 0%, transparent 70%)', pointerEvents: 'none' }} />
         <div style={{ position: 'absolute', top: '30%', right: '5%', width: '200px', height: '200px', background: 'radial-gradient(circle, rgba(6,182,212,0.1) 0%, transparent 70%)', pointerEvents: 'none' }} />
 
         <div className="container" style={{ textAlign: 'center', position: 'relative', zIndex: 1 }}>
-          {/* Logo mark */}
+          {/* Koreading 로고 마크 */}
           <div style={{ display: 'flex', justifyContent: 'center', marginBottom: '28px' }}>
             <div style={{ width: '80px', height: '80px', borderRadius: '20px', overflow: 'hidden', boxShadow: '0 0 40px rgba(99,102,241,0.4)', border: '1px solid var(--border-medium)' }}>
               <Image src="/logo.png" alt="Koreading logo" width={80} height={80} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
             </div>
           </div>
 
-          {/* Badge */}
+          {/* 서브 설명 뱃지 */}
           <div style={{ display: 'inline-flex', alignItems: 'center', gap: '8px', padding: '6px 16px', background: 'rgba(99,102,241,0.1)', border: '1px solid var(--border-medium)', borderRadius: '100px', fontSize: '0.8rem', color: 'var(--accent-primary)', marginBottom: '28px', fontWeight: 600 }}>
             ✨ i+1 Principle · Korean Reading
           </div>
 
-          {/* Headline */}
+          {/* 메인 헤드라인 타이틀 */}
           <h1 style={{ fontSize: 'clamp(2.5rem, 6vw, 5rem)', fontWeight: 900, lineHeight: 1.1, marginBottom: '12px', letterSpacing: '-0.02em' }}>
             Read Korean.{' '}
             <span style={{ background: 'var(--gradient-main)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent', backgroundClip: 'text' }}>
@@ -150,12 +149,12 @@ export default function HomePage() {
             </span>
           </h1>
 
-          {/* Hover hint */}
+          {/* 사용방법 힌트 */}
           <p style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginBottom: '32px', letterSpacing: '0.05em' }}>
             ✦ Hover the text below to see Korean · 아래 텍스트에 마우스를 올려보세요 ✦
           </p>
 
-          {/* Bilingual subtitle */}
+          {/* 레이아웃 시프트가 없는 2개 언어 실시간 페이드 자막 */}
           <div style={{ maxWidth: '640px', margin: '0 auto 48px' }}>
             <div style={{ fontSize: '1.15rem', color: 'var(--text-secondary)', display: 'flex', flexDirection: 'column', gap: '16px', textAlign: 'center', lineHeight: 1.6 }}>
               <BilingualText en="Koreading gives you Korean texts perfectly matched to your level." ko="코리딩은 당신의 레벨에 딱 맞는 한국어 텍스트를 제공합니다." />
@@ -164,7 +163,7 @@ export default function HomePage() {
             </div>
           </div>
 
-          {/* CTA */}
+          {/* 페이지 이동 유도 버튼 */}
           <div style={{ display: 'flex', gap: '16px', justifyContent: 'center', flexWrap: 'wrap' }}>
             <Link href="/test" className="btn btn-primary btn-lg">
               🎯 Start Level Test — Free
@@ -174,7 +173,7 @@ export default function HomePage() {
             </Link>
           </div>
 
-          {/* Stats */}
+          {/* 주요 학습 통계/수치 요약 */}
           <div style={{ display: 'flex', gap: '48px', justifyContent: 'center', marginTop: '64px', flexWrap: 'wrap' }}>
             {[
               { value: 'A1~C2', label: '6 CEFR Levels' },
@@ -193,7 +192,7 @@ export default function HomePage() {
         </div>
       </section>
 
-      {/* ── Features ── */}
+      {/* ── 서비스 상세 기능 리스트 섹션 ── */}
       <section style={{ padding: '80px 24px', background: 'rgba(15,22,41,0.5)' }}>
         <div className="container">
           <h2 style={{ textAlign: 'center', fontSize: '2rem', marginBottom: '12px' }}>
@@ -210,7 +209,7 @@ export default function HomePage() {
         </div>
       </section>
 
-      {/* ── CTA Banner ── */}
+      {/* ── 하단 마무리 CTA 배너 섹션 ── */}
       <section style={{ padding: '64px 24px', textAlign: 'center' }}>
         <div className="container" style={{ maxWidth: '600px' }}>
           <h2 style={{ fontSize: '1.8rem', fontWeight: 900, marginBottom: '16px' }}>
@@ -225,7 +224,7 @@ export default function HomePage() {
         </div>
       </section>
 
-      {/* ── Footer ── */}
+      {/* ── 최하단 푸터 ── */}
       <footer style={{ padding: '28px 24px', borderTop: '1px solid var(--border-subtle)', textAlign: 'center', color: 'var(--text-muted)', fontSize: '0.8rem' }}>
         <div className="container" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px' }}>
           <Image src="/logo.png" alt="Koreading logo" width={20} height={20} style={{ borderRadius: '4px', opacity: 0.6 }} />
@@ -236,7 +235,7 @@ export default function HomePage() {
   );
 }
 
-// Feature card with bilingual hover
+// 각 고유 기능 카드 컴포넌트 (BilingualHover 지원)
 function FeatureCard({ icon, en, ko, descEn, descKo }: { icon: string; en: string; ko: string; descEn: string; descKo: string }) {
   const [hovered, setHovered] = useState(false);
 
@@ -269,3 +268,4 @@ function FeatureCard({ icon, en, ko, descEn, descKo }: { icon: string; en: strin
     </div>
   );
 }
+

@@ -5,21 +5,24 @@ import { useRouter } from 'next/navigation';
 import { useAuth } from '@/contexts/AuthContext';
 import Image from 'next/image';
 
+// 사용자 로그인 및 가입 처리를 진행하는 LoginPage 컴포넌트입니다.
 export default function LoginPage() {
-  const { user, loading, signInWithGoogle } = useAuth();
+  const { user, loading, signInWithGoogle } = useAuth(); // AuthContext로부터 유저 데이터 및 로그인 핸들러 조회
   const router = useRouter();
 
+  // 이미 로그인 세션이 완료된 유저인 경우, 로그인 화면에 접근 시 즉시 도서관 페이지(/library)로 리다이렉션합니다.
   useEffect(() => {
     if (!loading && user) {
       router.push('/library');
     }
   }, [user, loading, router]);
 
+  // 구글 간편 로그인 버튼 클릭 시 구동될 액션 핸들러
   const handleGoogleLogin = async () => {
     try {
-      await signInWithGoogle();
+      await signInWithGoogle(); // 구글 소셜 로그인 팝업 활성화
     } catch (err) {
-      console.error('Login failed:', err);
+      console.error('로그인 에러:', err);
     }
   };
 
@@ -33,7 +36,7 @@ export default function LoginPage() {
       position: 'relative',
       overflow: 'hidden',
     }}>
-      {/* Background effects */}
+      {/* 백그라운드용 그라데이션 광원 조명 효과 */}
       <div style={{
         position: 'absolute',
         inset: 0,
@@ -42,7 +45,7 @@ export default function LoginPage() {
       }} />
 
       <div style={{ width: '100%', maxWidth: '440px', position: 'relative', zIndex: 1 }}>
-        {/* Logo */}
+        {/* 상단 로고 및 안내 문구 */}
         <div style={{ textAlign: 'center', marginBottom: '40px' }}>
           <div style={{
             width: '72px',
@@ -66,8 +69,9 @@ export default function LoginPage() {
           </p>
         </div>
 
-        {/* Login Card */}
+        {/* 로그인 수행 글래스모피즘 카드 박스 */}
         <div className="card-glass" style={{ padding: '36px' }}>
+          {/* Koreading 회원 가입 시 얻을 수 있는 유용한 가치 제안 목록 */}
           <div style={{ marginBottom: '28px' }}>
             {[
               { icon: '🎯', text: '내 레벨에 맞는 텍스트 추천' },
@@ -87,6 +91,7 @@ export default function LoginPage() {
             ))}
           </div>
 
+          {/* 구글 로그인 시작 버튼 (고유 ID google-login-btn 부여로 E2E 테스트 자동화 대응) */}
           <button
             id="google-login-btn"
             onClick={handleGoogleLogin}
@@ -102,6 +107,7 @@ export default function LoginPage() {
             Google 계정으로 계속하기
           </button>
 
+          {/* 약관 안내 문구 */}
           <p style={{
             textAlign: 'center',
             fontSize: '0.75rem',
@@ -116,3 +122,4 @@ export default function LoginPage() {
     </div>
   );
 }
+
