@@ -147,8 +147,9 @@ export default function TestPage() {
   const saveAndContinue = async () => {
     if (!resultLevel) return;
     setSaving(true);
-    // 게스트용 로컬 스토리지에 레벨 기록
+    // 게스트용 로컬 스토리지에 레벨 및 모국어 기록
     setGuestLevel(resultLevel);
+    setGuestLang(nativeLang);
     // 로그인된 정식 회원인 경우 Firestore의 사용자 문서 프로필 레벨 컬럼도 동시에 업데이트
     if (user) {
       await createOrUpdateUser(user.uid, { level: resultLevel, nativeLanguage: nativeLang });

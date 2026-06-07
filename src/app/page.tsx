@@ -143,7 +143,8 @@ export default function HomePage() {
 
           {/* 메인 헤드라인 타이틀 */}
           <h1 style={{ fontSize: 'clamp(2.5rem, 6vw, 5rem)', fontWeight: 900, lineHeight: 1.1, marginBottom: '12px', letterSpacing: '-0.02em' }}>
-            Read Korean.{' '}
+            Read Korean.
+            <br />
             <span style={{ background: 'var(--gradient-main)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent', backgroundClip: 'text' }}>
               Actually acquire it.
             </span>

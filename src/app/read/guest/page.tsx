@@ -142,6 +142,7 @@ export default function GuestReadPage() {
   // 마우스 오버 즉시 검색 옵션 관련 Ref 및 상태 값
   const [hoverLookup, setHoverLookup] = useState(false);
   const hoverTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const wordCacheRef = useRef<Record<string, { basic: any; advanced: any }>>({});
 
   // [신규 기능] 커스텀 카테고리 상태 및 단어 저장 시 선택된 카테고리
   const [customCategories, setCustomCategories] = useState<string[]>([]);
@@ -416,20 +417,44 @@ export default function GuestReadPage() {
 
   // 백그라운드 단어 사전 조회 비동기 코어 함수
   const fetchWordData = useCallback(async (word: string, sentence: string) => {
-    setWordData(null);
-    setLoadingWord(true);
-    setLoadingAdvanced(false);
     try {
       const nativeLang = profile?.nativeLanguage || getGuestLang() || 'en';
       if (!nativeLang) return;
+
+      const cacheKey = `${word}_${nativeLang}`;
+
+      // 캐시 히트 시 즉시 반환 (0ms)
+      if (wordCacheRef.current[cacheKey]) {
+        const cached = wordCacheRef.current[cacheKey];
+        setWordData(cached.basic);
+        setLoadingWord(false);
+        setLoadingAdvanced(false);
+
+        if (cached.advanced) {
+          setWordData(prev => prev ? { ...prev, ...cached.advanced } : null);
+        }
+        return;
+      }
+
+      setWordData(null);
+      setLoadingWord(true);
+      setLoadingAdvanced(false);
       
       const basicData = await lookupWordBasic(word, sentence, nativeLang);
       setWordData(basicData);
       setLoadingWord(false);
 
+      // 캐시에 basic 데이터 먼저 기록
+      wordCacheRef.current[cacheKey] = { basic: basicData, advanced: null };
+
       setLoadingAdvanced(true);
       const advancedData = await lookupWordAdvanced(word, sentence, nativeLang);
       setWordData(prev => prev ? { ...prev, ...advancedData } : null);
+
+      // 캐시에 advanced 데이터 업데이트
+      if (wordCacheRef.current[cacheKey]) {
+        wordCacheRef.current[cacheKey].advanced = advancedData;
+      }
     } catch (err) {
       console.error(err);
       setLoadingWord(false);
@@ -1033,7 +1058,7 @@ export default function GuestReadPage() {
 
               <div className="word-popup-section">
                 <div className="word-popup-section-title">
-                  🌐 {activeNativeLang === 'es' ? '스페인어' : '영어'} 번역
+                  🌐 {{ en: '영어', es: '스페인어', ja: '일본어', zh: '중국어' }[activeNativeLang] || '영어'} 번역
                 </div>
                 <div className="word-popup-translation">{wordData.translation}</div>
               </div>

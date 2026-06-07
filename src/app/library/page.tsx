@@ -6,11 +6,11 @@
  * @why 다양한 수준의 전 세계 한국어 학습자들이 자신에게 최적화된 자료를 주도적으로 탐색 및 생성하고 학습 의지를 극대화할 수 있는 핵심 게이트웨이 역할을 수행하기 위해 존재합니다.
  */
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/contexts/AuthContext';
 import { TOPICS, CEFRLevel, NativeLanguage, generateArticle } from '@/lib/gemini';
-import { getArticlesByLevel, getAllArticles, saveArticle, getReadArticles, Article } from '@/lib/db';
+import { getArticlesByLevel, getAllArticles, saveArticle, getReadArticles, createOrUpdateUser, Article } from '@/lib/db';
 import { getGuestLevel, getGuestLang, setGuestLang } from '@/lib/storage';
 import AlertModal from '@/components/AlertModal';
 
@@ -122,7 +122,7 @@ const TRANSLATIONS = {
 };
 
 export default function LibraryPage() {
-  const { user, profile } = useAuth();
+  const { user, profile, refreshProfile } = useAuth();
   const router = useRouter();
 
   // 도서관 필터링용 상태들
@@ -131,6 +131,7 @@ export default function LibraryPage() {
   const [articles, setArticles] = useState<Article[]>([]);                      // 도서관 기사 리스트
   const [readArticles, setReadArticles] = useState<string[]>([]);              // 유저가 다 읽은 기사 ID 배열
   const [loadingArticles, setLoadingArticles] = useState(false);               // 기사 목록 로딩 토글
+  const articleCacheRef = useRef<Record<string, Article[]>>({});               // 레벨별 아티클 캐시 Ref
   const [generating, setGenerating] = useState(false);                         // AI 기사 생성 대기 토글
   const [genLogs, setGenLogs] = useState<string[]>([]);                        // AI 생성 중 로그 출력 내용
   const [userLevel, setUserLevel] = useState<CEFRLevel | null>(null);          // 로그인 유저의 레벨 정보
@@ -241,10 +242,16 @@ export default function LibraryPage() {
     setLoadingArticles(true);
     try {
       let all: Article[] = [];
-      if (level === 'all') {
-        all = await getAllArticles();
+      const cacheKey = level;
+      if (articleCacheRef.current[cacheKey]) {
+        all = articleCacheRef.current[cacheKey];
       } else {
-        all = await getArticlesByLevel(level);
+        if (level === 'all') {
+          all = await getAllArticles();
+        } else {
+          all = await getArticlesByLevel(level);
+        }
+        articleCacheRef.current[cacheKey] = all;
       }
 
       // 평점 정렬(별점 동일 시 최신순) 또는 최신 생성 시간 정렬 적용
@@ -302,6 +309,7 @@ export default function LibraryPage() {
       try {
         // Firestore 아티클 저장
         const id = await saveArticle(data);
+        articleCacheRef.current = {}; // 새 아티클이 생성되었으므로 캐시 초기화
         setShowGenModal(false);
         setGenLogs([]);
         router.push(`/read/${id}`); // 완료 시 회원용 독해로 포워딩
@@ -445,9 +453,17 @@ export default function LibraryPage() {
                     {LANG_OPTIONS.map(lang => (
                       <button
                         key={lang.value}
-                        onClick={() => {
+                        onClick={async () => {
                           setCurrentLang(lang.value);
                           setGuestLang(lang.value);
+                          if (user) {
+                            try {
+                              await createOrUpdateUser(user.uid, { nativeLanguage: lang.value });
+                              await refreshProfile();
+                            } catch (err) {
+                              console.error('Failed to update user language in Firestore:', err);
+                            }
+                          }
                           setShowLangDropdown(false);
                         }}
                         style={{

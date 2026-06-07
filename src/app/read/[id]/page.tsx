@@ -166,6 +166,7 @@ export default function ReadPage({ params }: { params: Promise<{ id: string }> }
   // 마우스 오버 시 즉시 사전을 표출하는 토글을 위한 Refs 및 상태
   const [hoverLookup, setHoverLookup] = useState(false);
   const hoverTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const wordCacheRef = useRef<Record<string, { basic: any; advanced: any }>>({});
 
   // [신규 기능] 툴팁 사전 및 독해 뷰어 커스텀 설정 상태 변수들
   const [tooltipPosition, setTooltipPosition] = useState<{ top: number; left: number } | null>(null);
@@ -477,20 +478,44 @@ export default function ReadPage({ params }: { params: Promise<{ id: string }> }
 
   // 백그라운드 단어 사전 조회 비동기 코어 함수
   const fetchWordData = useCallback(async (word: string, sentence: string) => {
-    setWordData(null);
-    setLoadingWord(true);
-    setLoadingAdvanced(false);
     try {
       const nativeLang = user ? (profile?.nativeLanguage || 'en') : getGuestLang();
       if (!nativeLang) return;
+
+      const cacheKey = `${word}_${nativeLang}`;
+
+      // 캐시 히트 시 즉시 반환 (0ms)
+      if (wordCacheRef.current[cacheKey]) {
+        const cached = wordCacheRef.current[cacheKey];
+        setWordData(cached.basic);
+        setLoadingWord(false);
+        setLoadingAdvanced(false);
+
+        if (cached.advanced) {
+          setWordData(prev => prev ? { ...prev, ...cached.advanced } : null);
+        }
+        return;
+      }
+
+      setWordData(null);
+      setLoadingWord(true);
+      setLoadingAdvanced(false);
       
       const basicData = await lookupWordBasic(word, sentence, nativeLang);
       setWordData(basicData);
       setLoadingWord(false);
 
+      // 캐시에 basic 데이터 먼저 기록
+      wordCacheRef.current[cacheKey] = { basic: basicData, advanced: null };
+
       setLoadingAdvanced(true);
       const advancedData = await lookupWordAdvanced(word, sentence, nativeLang);
       setWordData(prev => prev ? { ...prev, ...advancedData } : null);
+
+      // 캐시에 advanced 데이터 업데이트
+      if (wordCacheRef.current[cacheKey]) {
+        wordCacheRef.current[cacheKey].advanced = advancedData;
+      }
     } catch (err) {
       console.error(err);
       setLoadingWord(false);
@@ -1320,7 +1345,7 @@ export default function ReadPage({ params }: { params: Promise<{ id: string }> }
 
               <div className="word-popup-section">
                 <div className="word-popup-section-title">
-                  🌐 {activeNativeLang === 'es' ? '스페인어' : '영어'} 번역
+                  🌐 {{ en: '영어', es: '스페인어', ja: '일본어', zh: '중국어' }[activeNativeLang] || '영어'} 번역
                 </div>
                 <div className="word-popup-translation">{wordData.translation}</div>
               </div>

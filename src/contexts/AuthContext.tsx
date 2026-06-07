@@ -16,6 +16,7 @@ import {
 import { auth, googleProvider } from '@/lib/firebase';
 import { createOrUpdateUser, getUserProfile, UserProfile } from '@/lib/db';
 import { serverTimestamp, Timestamp } from 'firebase/firestore';
+import { getGuestLang, getGuestLevel } from '@/lib/storage';
 
 // 애플리케이션 전체에서 공유할 인증 컨텍스트 데이터 구조 정의
 interface AuthContextType {
@@ -64,8 +65,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             email: firebaseUser.email || '',
             displayName: firebaseUser.displayName || '',
             photoURL: firebaseUser.photoURL || '',
-            nativeLanguage: 'en', // 기본 모국어는 영어로 설정
-            level: null,          // 레벨 테스트 전이므로 null
+            nativeLanguage: getGuestLang() || 'en', // 게스트 설정이 있다면 계승, 기본은 영어
+            level: getGuestLevel() || null,          // 게스트 설정이 있다면 계승, 기본은 null
             createdAt: Timestamp.now(), // DB에는 serverTimestamp()를 쓰되 로컬 상태는 현재 시간으로 즉시 주입
           };
 
