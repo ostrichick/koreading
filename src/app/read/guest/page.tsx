@@ -228,6 +228,119 @@ export default function GuestReadPage() {
     }
   };
 
+  // 🎙️ 발음 연습 및 채점 상태 변수들
+  const [recordingParaIdx, setRecordingParaIdx] = useState<number | null>(null);
+  const [paraScores, setParaScores] = useState<Record<number, { text: string; score: number }>>({});
+  const recognitionRef = useRef<any>(null);
+
+  useEffect(() => {
+    return () => {
+      if (recognitionRef.current) {
+        try {
+          recognitionRef.current.stop();
+        } catch (e) {
+          console.error(e);
+        }
+      }
+    };
+  }, []);
+
+  // Levenshtein Distance 계산을 통한 유사도 측정 (0-100점)
+  const calculateSimilarity = (str1: string, str2: string): number => {
+    const clean = (s: string) => s.replace(/[^ㄱ-ㅎㅏ-ㅣ가-힣a-zA-Z0-9]/g, '').toLowerCase();
+    const s1 = clean(str1);
+    const s2 = clean(str2);
+
+    if (!s1 || !s2) return 0;
+    if (s1 === s2) return 100;
+
+    const m = s1.length;
+    const n = s2.length;
+    const dp = Array.from({ length: m + 1 }, () => Array(n + 1).fill(0));
+
+    for (let i = 0; i <= m; i++) dp[i][0] = i;
+    for (let j = 0; j <= n; j++) dp[0][j] = j;
+
+    for (let i = 1; i <= m; i++) {
+      for (let j = 1; j <= n; j++) {
+        if (s1[i - 1] === s2[j - 1]) {
+          dp[i][j] = dp[i - 1][j - 1];
+        } else {
+          dp[i][j] = Math.min(
+            dp[i - 1][j] + 1,
+            dp[i][j - 1] + 1,
+            dp[i - 1][j - 1] + 1
+          );
+        }
+      }
+    }
+
+    const distance = dp[m][n];
+    const maxLength = Math.max(m, n);
+    const similarity = ((maxLength - distance) / maxLength) * 100;
+    return Math.round(similarity);
+  };
+
+  const handleMicClick = (pIdx: number, originalText: string) => {
+    if (typeof window === 'undefined') return;
+
+    if (recordingParaIdx !== null) {
+      if (recognitionRef.current) {
+        try {
+          recognitionRef.current.stop();
+        } catch (e) {
+          console.error(e);
+        }
+      }
+      setRecordingParaIdx(null);
+      if (recordingParaIdx === pIdx) return;
+    }
+
+    const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+    if (!SpeechRecognition) {
+      alert('이 브라우저는 음성 인식을 지원하지 않습니다. Chrome 또는 Safari 브라우저 사용을 권장합니다.');
+      return;
+    }
+
+    const rec = new SpeechRecognition();
+    rec.lang = 'ko-KR';
+    rec.interimResults = false;
+    rec.maxAlternatives = 1;
+
+    rec.onstart = () => {
+      setRecordingParaIdx(pIdx);
+    };
+
+    rec.onresult = (event: any) => {
+      const resultText = event.results[0][0].transcript;
+      const score = calculateSimilarity(originalText, resultText);
+      setParaScores(prev => ({
+        ...prev,
+        [pIdx]: { text: resultText, score }
+      }));
+    };
+
+    rec.onerror = (event: any) => {
+      console.error('Speech recognition error:', event.error);
+      if (event.error !== 'no-speech') {
+        alert(`음성 인식 중 에러가 발생했습니다: ${event.error}`);
+      }
+      setRecordingParaIdx(null);
+    };
+
+    rec.onend = () => {
+      setRecordingParaIdx(null);
+    };
+
+    recognitionRef.current = rec;
+    try {
+      rec.start();
+    } catch (e) {
+      console.error(e);
+      setRecordingParaIdx(null);
+    }
+  };
+
   // 로그인 상태 변화 시 커스텀 카테고리 로딩
   useEffect(() => {
     if (user) {
@@ -652,6 +765,14 @@ export default function GuestReadPage() {
                   >
                     💬
                   </button>
+                  <button
+                    onClick={() => handleMicClick(pIdx, cleanText)}
+                    className={`reader-para-mic-btn ${recordingParaIdx === pIdx ? 'recording' : ''}`}
+                    title={recordingParaIdx === pIdx ? "녹음 중지" : "이 문단 따라 읽고 발음 채점"}
+                    style={{ margin: 0 }}
+                  >
+                    🎙️
+                  </button>
                 </div>
                 <span style={{ flex: 1 }}>
                   {tokens.map((token, tIdx) =>
@@ -669,6 +790,29 @@ export default function GuestReadPage() {
                     ) : (
                       <span key={tIdx}>{token}</span>
                     )
+                  )}
+                  {paraScores[pIdx] && (
+                    <div style={{
+                      marginTop: '10px',
+                      fontSize: '0.85rem',
+                      display: 'flex',
+                      alignItems: 'center',
+                      flexWrap: 'wrap',
+                      gap: '8px',
+                      background: 'var(--bg-secondary)',
+                      padding: '8px 12px',
+                      borderRadius: 'var(--radius-sm)',
+                      borderLeft: `4px solid ${paraScores[pIdx].score >= 80 ? '#10b981' : paraScores[pIdx].score >= 50 ? '#f59e0b' : '#ef4444'}`,
+                      animation: 'fadeIn 200ms ease',
+                      width: 'fit-content'
+                    }}>
+                      <span style={{ fontWeight: 700, color: 'var(--text-primary)' }}>
+                        🎯 발음 일치도: {paraScores[pIdx].score}%
+                      </span>
+                      <span style={{ color: 'var(--text-muted)', fontSize: '0.775rem' }}>
+                        (인식: "{paraScores[pIdx].text}")
+                      </span>
+                    </div>
                   )}
                 </span>
               </p>

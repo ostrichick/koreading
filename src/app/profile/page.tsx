@@ -4,7 +4,8 @@ import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import Image from 'next/image';
 import { useAuth } from '@/contexts/AuthContext';
-import { createOrUpdateUser, getReadArticlesWithDates } from '@/lib/db';
+import { createOrUpdateUser, getReadArticlesWithDates, getVocabulary } from '@/lib/db';
+import { TOPICS } from '@/lib/gemini';
 import type { CEFRLevel, NativeLanguage } from '@/lib/gemini';
 
 // 화면에 보여줄 6가지 CEFR 한국어 레벨 정보 정의
@@ -31,6 +32,11 @@ export default function ProfilePage() {
   const [streak, setStreak] = useState<number>(0);
   const [loadingStats, setLoadingStats] = useState<boolean>(true);
 
+  // [신규 기능] 어휘 통계 및 그래프 상태 훅
+  const [vocabRecords, setVocabRecords] = useState<any[]>([]);
+  const [weeklyStats, setWeeklyStats] = useState<any[]>([]);
+  const [categoryDistribution, setCategoryDistribution] = useState<{ category: string; count: number }[]>([]);
+
   // 비로그인 상태일 때는 로그인 유도 화면으로 넘기고, 로그인 유저라면 DB에서 가져온 초기 프로필 세팅을 채워 넣습니다.
   useEffect(() => {
     if (!user) { router.push('/login'); return; }
@@ -43,6 +49,10 @@ export default function ProfilePage() {
       try {
         const records = await getReadArticlesWithDates(user.uid);
         setReadRecords(records);
+
+        // [신규 기능] 어휘 단어 로드
+        const vocabs = await getVocabulary(user.uid);
+        setVocabRecords(vocabs);
         
         // 스트릭 계산
         const readDatesSet = new Set<string>();
@@ -84,6 +94,69 @@ export default function ProfilePage() {
           }
         }
         setStreak(currentStreak);
+
+        // 7일 주간 통계 가공
+        const formatDateKey = (date: Date) => {
+          const y = date.getFullYear();
+          const m = String(date.getMonth() + 1).padStart(2, '0');
+          const d = String(date.getDate()).padStart(2, '0');
+          return `${y}-${m}-${d}`;
+        };
+
+        const today = new Date();
+        const last7Days: any[] = [];
+        for (let i = 6; i >= 0; i--) {
+          const d = new Date(today);
+          d.setDate(today.getDate() - i);
+          last7Days.push({
+            dateObj: d,
+            dateKey: formatDateKey(d),
+            label: `${d.getMonth() + 1}/${d.getDate()}`,
+            readCount: 0,
+            vocabCount: 0
+          });
+        }
+
+        // 지문 읽은 날짜 매핑
+        records.forEach(r => {
+          if (r.readAt) {
+            const date = typeof r.readAt.toDate === 'function'
+              ? r.readAt.toDate()
+              : new Date(r.readAt.seconds * 1000);
+            const key = formatDateKey(date);
+            const day = last7Days.find(d => d.dateKey === key);
+            if (day) day.readCount++;
+          }
+        });
+
+        // 단어 저장한 날짜 매핑
+        vocabs.forEach(v => {
+          if (v.savedAt) {
+            const date = typeof v.savedAt.toDate === 'function'
+              ? v.savedAt.toDate()
+              : new Date(v.savedAt.seconds * 1000);
+            const key = formatDateKey(date);
+            const day = last7Days.find(d => d.dateKey === key);
+            if (day) day.vocabCount++;
+          }
+        });
+
+        setWeeklyStats(last7Days);
+
+        // 카테고리 점유 분포 집계
+        const catMap: Record<string, number> = {};
+        vocabs.forEach(v => {
+          const cat = v.topic || '기타';
+          catMap[cat] = (catMap[cat] || 0) + 1;
+        });
+
+        const catList = Object.entries(catMap)
+          .map(([category, count]) => ({ category, count }))
+          .sort((a, b) => b.count - a.count)
+          .slice(0, 5); // top 5
+
+        setCategoryDistribution(catList);
+
       } catch (err) {
         console.error('Failed to load read stats:', err);
       } finally {
@@ -279,6 +352,125 @@ export default function ProfilePage() {
                 </div>
               );
             })()
+          )}
+        </div>
+
+        {/* 📊 나의 학습 대시보드 카드 */}
+        <div className="card" style={{ marginBottom: '24px', padding: '24px' }}>
+          <h2 style={{ fontSize: '1.1rem', fontWeight: 900, marginBottom: '20px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+            📊 나의 학습 대시보드
+          </h2>
+
+          {loadingStats ? (
+            <div style={{ display: 'flex', justifyContent: 'center', padding: '4px' }}>
+              <div className="loading-spinner" style={{ width: '24px', height: '24px' }} />
+            </div>
+          ) : (
+            <>
+              {/* 요약 카드 그리드 */}
+              <div className="dashboard-stats-grid">
+                <div className="dashboard-stat-card">
+                  <div className="dashboard-stat-label">📚 누적 독서</div>
+                  <div className="dashboard-stat-value">{readRecords.length}개</div>
+                </div>
+                <div className="dashboard-stat-card">
+                  <div className="dashboard-stat-label">📝 저장 단어</div>
+                  <div className="dashboard-stat-value">{vocabRecords.length}개</div>
+                </div>
+                <div className="dashboard-stat-card">
+                  <div className="dashboard-stat-label">🔥 독서 스트릭</div>
+                  <div className="dashboard-stat-value">{streak}일</div>
+                </div>
+              </div>
+
+              {/* 7일 주간 통계 막대 그래프 */}
+              <div style={{ marginBottom: '24px' }}>
+                <div style={{ fontSize: '0.875rem', fontWeight: 700, color: 'var(--text-primary)', marginBottom: '16px' }}>
+                  📅 최근 7일 학습 성과
+                </div>
+                
+                <div className="chart-canvas">
+                  {weeklyStats.map((day, idx) => {
+                    const maxVal = Math.max(...weeklyStats.map(d => Math.max(d.readCount, d.vocabCount)), 5);
+                    const readHeight = (day.readCount / maxVal) * 140;
+                    const vocabHeight = (day.vocabCount / maxVal) * 140;
+
+                    return (
+                      <div key={idx} className="chart-column">
+                        {/* 마우스 오버 툴팁 */}
+                        <div className="chart-bar-tooltip">
+                          <div style={{ fontWeight: 700, marginBottom: '2px' }}>{day.dateKey}</div>
+                          <div style={{ color: '#10b981' }}>• 독서: {day.readCount}회</div>
+                          <div style={{ color: '#6366f1' }}>• 단어 저장: {day.vocabCount}개</div>
+                        </div>
+
+                        {/* 그래프 막대 묶음 */}
+                        <div className="chart-bars-wrapper">
+                          <div
+                            className="chart-bar-single read"
+                            style={{ height: `${Math.max(readHeight, day.readCount > 0 ? 8 : 0)}px` }}
+                            title={`독서: ${day.readCount}회`}
+                          />
+                          <div
+                            className="chart-bar-single vocab"
+                            style={{ height: `${Math.max(vocabHeight, day.vocabCount > 0 ? 8 : 0)}px` }}
+                            title={`단어 저장: ${day.vocabCount}개`}
+                          />
+                        </div>
+                        
+                        {/* 날짜 라벨 */}
+                        <div className="chart-label-date">{day.label}</div>
+                      </div>
+                    );
+                  })}
+                </div>
+
+                {/* 그래프 범례 */}
+                <div style={{ display: 'flex', gap: '12px', justifyContent: 'center', fontSize: '0.75rem', color: 'var(--text-muted)' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                    <div style={{ width: '12px', height: '8px', background: '#10b981', borderRadius: '2px' }} />
+                    <span>독서 지문</span>
+                  </div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                    <div style={{ width: '12px', height: '8px', background: '#6366f1', borderRadius: '2px' }} />
+                    <span>어휘 저장</span>
+                  </div>
+                </div>
+              </div>
+
+              {/* 어휘 저장 카테고리 분포 */}
+              {categoryDistribution.length > 0 && (
+                <div>
+                  <div style={{ fontSize: '0.875rem', fontWeight: 700, color: 'var(--text-primary)', marginBottom: '12px' }}>
+                    🗂️ 어휘 카테고리 분포 (Top 5)
+                  </div>
+                  <div className="category-share-list">
+                    {categoryDistribution.map((item, idx) => {
+                      const maxCount = Math.max(...categoryDistribution.map(d => d.count));
+                      const percent = (item.count / maxCount) * 100;
+                      const categoryLabel = TOPICS.find(t => t.id === item.category)?.label || item.category;
+
+                      return (
+                        <div key={idx} className="category-share-item">
+                          <span className="category-share-label">
+                            {categoryLabel}
+                          </span>
+                          <div className="category-share-bar-bg">
+                            <div
+                              className="category-share-bar-fill"
+                              style={{ width: `${percent}%` }}
+                            />
+                          </div>
+                          <span className="category-share-count">
+                            {item.count}개
+                          </span>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+            </>
           )}
         </div>
 
