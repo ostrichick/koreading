@@ -3,7 +3,14 @@
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/contexts/AuthContext';
-import { getVocabulary, VocabularyEntry } from '@/lib/db';
+import { 
+  getVocabulary, 
+  VocabularyEntry, 
+  deleteVocabulary,
+  getCustomCategories,
+  addCustomCategory,
+  deleteCustomCategory 
+} from '@/lib/db';
 import { TOPICS } from '@/lib/gemini';
 import { getGuestLang, getGuestLevel } from '@/lib/storage';
 
@@ -41,6 +48,12 @@ const TRANSLATIONS = {
     translationTitle: '🌐 번역',
     examplesSectionTitle: '📝 예문',
     origin: '출처: ',
+    deleteBtn: '삭제',
+    deleteConfirm: '정말로 이 단어를 삭제하시겠습니까?',
+    manageCategories: '📁 카테고리 관리',
+    addCategory: '추가',
+    newCategoryPlaceholder: '새 카테고리 이름 입력',
+    categoryTitle: '📁 카테고리 관리',
   },
   en: {
     title: '📝 My Vocabulary',
@@ -74,6 +87,12 @@ const TRANSLATIONS = {
     translationTitle: '🌐 Translation',
     examplesSectionTitle: '📝 Examples',
     origin: 'Source: ',
+    deleteBtn: 'Delete',
+    deleteConfirm: 'Are you sure you want to delete this word?',
+    manageCategories: '📁 Manage Categories',
+    addCategory: 'Add',
+    newCategoryPlaceholder: 'New category name',
+    categoryTitle: '📁 Manage Categories',
   },
   es: {
     title: '📝 Mi Vocabulario',
@@ -107,6 +126,12 @@ const TRANSLATIONS = {
     translationTitle: '🌐 Traducción',
     examplesSectionTitle: '📝 Ejemplos',
     origin: 'Origen: ',
+    deleteBtn: 'Eliminar',
+    deleteConfirm: '¿Realmente quieres eliminar esta palabra?',
+    manageCategories: '📁 Gestionar categorías',
+    addCategory: 'Añadir',
+    newCategoryPlaceholder: 'Nuevo nombre de categoría',
+    categoryTitle: '📁 Gestionar categorías',
   },
   ja: {
     title: '📝 マイ単語帳',
@@ -140,6 +165,12 @@ const TRANSLATIONS = {
     translationTitle: '🌐 翻訳',
     examplesSectionTitle: '📝 例文',
     origin: '出典: ',
+    deleteBtn: '削除',
+    deleteConfirm: '本当にこの単語を削除しますか？',
+    manageCategories: '📁 カテゴリ管理',
+    addCategory: '追加',
+    newCategoryPlaceholder: '新しいカテゴリ名を入力',
+    categoryTitle: '📁 カテゴリ管理',
   },
   zh: {
     title: '📝 我的单词本',
@@ -173,56 +204,113 @@ const TRANSLATIONS = {
     translationTitle: '🌐 翻译',
     examplesSectionTitle: '📝 例句',
     origin: '来源: ',
+    deleteBtn: '删除',
+    deleteConfirm: '确定要删除这个单词吗？',
+    manageCategories: '📁 管理分类',
+    addCategory: '添加',
+    newCategoryPlaceholder: '输入新分类名称',
+    categoryTitle: '📁 管理分类',
   }
 };
 
-// 사용자가 저장한 단어들을 목록 조회하고, 3D 플래시카드 및 미니 퀴즈 등으로 스마트 복습이 가능한 단어장(VocabularyPage) 컴포넌트입니다.
 export default function VocabularyPage() {
   const { user, profile } = useAuth();
   const router = useRouter();
 
-  // 사용자의 로그인 여부 및 레벨에 따른 UI 언어 선택
   const activeNativeLang = profile?.nativeLanguage || getGuestLang() || 'en';
   const getUiLang = (): 'en' | 'es' | 'ja' | 'zh' | 'ko' => {
     const level = profile?.level || getGuestLevel();
     if (!user) return activeNativeLang;
     if (level && ['C1', 'C2'].includes(level)) {
-      return 'ko'; // C1, C2 레벨은 한국어로
+      return 'ko';
     }
-    return activeNativeLang; // A1, A2, B1, B2 레벨은 설정한 언어로
+    return activeNativeLang;
   };
 
   const uiLang = getUiLang();
   const t = TRANSLATIONS[uiLang];
 
-  const [vocab, setVocab] = useState<VocabularyEntry[]>([]); // 유저가 등록한 단어장 원본 배열
-  const [loading, setLoading] = useState(true);              // 로딩 중 상태 제어
-  const [selectedTopic, setSelectedTopic] = useState<string>('all'); // 필터링을 위해 클릭된 현재 카테고리 주제
-  const [selectedEntry, setSelectedEntry] = useState<VocabularyEntry | null>(null); // 목록 보기 팝업용 상세 단어 객체
+  const [vocab, setVocab] = useState<VocabularyEntry[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [selectedTopic, setSelectedTopic] = useState<string>('all');
+  const [selectedEntry, setSelectedEntry] = useState<VocabularyEntry | null>(null);
 
-  // [신규 기능 1] 탭 메뉴 상태 제어 ('list' | 'flashcard' | 'quiz')
   const [activeTab, setActiveTab] = useState<string>('list');
-
-  // [신규 기능 2] 3D 플래시카드 관련 상태
   const [cardIdx, setCardIdx] = useState<number>(0);
   const [isFlipped, setIsFlipped] = useState<boolean>(false);
   const [shuffledVocab, setShuffledVocab] = useState<VocabularyEntry[]>([]);
 
-  // [신규 기능 3] 미니 퀴즈 관련 상태
   const [quizQuestion, setQuizQuestion] = useState<VocabularyEntry | null>(null);
   const [quizOptions, setQuizOptions] = useState<string[]>([]);
   const [selectedAnswer, setSelectedAnswer] = useState<string | null>(null);
   const [isCorrect, setIsCorrect] = useState<boolean | null>(null);
   const [quizScore, setQuizScore] = useState<{ correct: number; total: number }>({ correct: 0, total: 0 });
 
-  // 컴포넌트 마운트 시 로그인 여부를 검증하고, 유효한 계정이라면 Firestore에서 개인 단어장 데이터를 로딩합니다.
+  const [customCategories, setCustomCategories] = useState<string[]>([]);
+  const [showCategoryModal, setShowCategoryModal] = useState<boolean>(false);
+  const [newCategoryName, setNewCategoryName] = useState<string>('');
+
   useEffect(() => {
     if (!user) { router.push('/login'); return; }
     getVocabulary(user.uid).then(v => {
       setVocab(v);
       setLoading(false);
     });
+    getCustomCategories(user.uid).then(cats => {
+      setCustomCategories(cats);
+    });
   }, [user, router]);
+
+  // 단어 삭제 핸들러
+  const handleDeleteWord = async (entryId: string) => {
+    if (!user) return;
+    if (confirm(t.deleteConfirm)) {
+      try {
+        await deleteVocabulary(user.uid, entryId);
+        setVocab(prev => prev.filter(v => v.id !== entryId));
+        if (selectedEntry?.id === entryId) {
+          setSelectedEntry(null);
+        }
+      } catch (err) {
+        console.error('단어 삭제 실패:', err);
+      }
+    }
+  };
+
+  // 커스텀 카테고리 추가 핸들러
+  const handleAddCategory = async () => {
+    if (!user || !newCategoryName.trim()) return;
+    const catName = newCategoryName.trim();
+    try {
+      await addCustomCategory(user.uid, catName);
+      setCustomCategories(prev => {
+        if (!prev.includes(catName)) {
+          return [...prev, catName];
+        }
+        return prev;
+      });
+      setNewCategoryName('');
+    } catch (err) {
+      console.error('카테고리 추가 실패:', err);
+    }
+  };
+
+  // 커스텀 카테고리 삭제 핸들러
+  const handleDeleteCategory = async (name: string) => {
+    if (!user) return;
+    if (confirm(`"${name}" 카테고리를 삭제하시겠습니까? (이 카테고리에 속한 단어들은 지워지지 않으며, 카테고리만 삭제됩니다)`)) {
+      try {
+        await deleteCustomCategory(user.uid, name);
+        setCustomCategories(prev => prev.filter(c => c !== name));
+        if (selectedTopic === name) {
+          setSelectedTopic('all');
+        }
+      } catch (err) {
+        console.error('카테고리 삭제 실패:', err);
+      }
+    }
+  };
+
 
   // 사용자가 고른 상단 토픽 카테고리 필터에 맞추어 단어장 데이터를 필터링합니다.
   const filteredVocab = vocab.filter(entry =>
@@ -243,8 +331,8 @@ export default function VocabularyPage() {
     }
   }, [activeTab, selectedTopic]);
 
-  // 저장되어 있는 단어들의 토픽 카테고리 ID들을 중복 없이 추출하여 필터 뱃지 리스트를 연산합니다.
-  const topicsWithWords = ['all', ...Array.from(new Set(vocab.map(v => v.topic)))];
+  // 저장되어 있는 단어들의 토픽 카테고리 ID 및 커스텀 카테고리들을 중복 없이 추출하여 필터 뱃지 리스트를 연산합니다.
+  const topicsWithWords = ['all', ...Array.from(new Set([...vocab.map(v => v.topic), ...customCategories]))];
 
   // 🔊 TTS 한국어 발음 목소리 재생 기능
   const speakWord = (text: string) => {
@@ -346,9 +434,9 @@ export default function VocabularyPage() {
               {t.savedWords}<strong style={{ color: 'var(--text-primary)' }}>{vocab.length}{t.wordUnit}</strong>
             </p>
           </div>
-          {vocab.length > 0 && (
+          <div style={{ display: 'flex', gap: '8px' }}>
             <button
-              onClick={exportToAnkiCSV}
+              onClick={() => setShowCategoryModal(true)}
               className="btn btn-secondary"
               style={{
                 fontSize: '0.85rem',
@@ -359,9 +447,25 @@ export default function VocabularyPage() {
                 borderRadius: 'var(--radius-md)',
               }}
             >
-              {t.exportAnki}
+              {t.manageCategories}
             </button>
-          )}
+            {vocab.length > 0 && (
+              <button
+                onClick={exportToAnkiCSV}
+                className="btn btn-secondary"
+                style={{
+                  fontSize: '0.85rem',
+                  padding: '10px 18px',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '8px',
+                  borderRadius: 'var(--radius-md)',
+                }}
+              >
+                {t.exportAnki}
+              </button>
+            )}
+          </div>
         </div>
 
         {/* [복습 모드 활성화를 위한 신규 탭 메뉴 바] */}
@@ -419,7 +523,7 @@ export default function VocabularyPage() {
                   gap: '6px',
                 }}
               >
-                {topicInfo ? `${topicInfo.emoji} ${topicInfo.label}` : t.allTopics}
+                {topicInfo ? `${topicInfo.emoji} ${topicInfo.label}` : topic === 'all' ? t.allTopics : `📁 ${topic}`}
                 <span style={{
                   background: selectedTopic === topic ? 'rgba(255,255,255,0.2)' : 'var(--border-subtle)',
                   borderRadius: '100px',
@@ -454,10 +558,35 @@ export default function VocabularyPage() {
                     onClick={() => setSelectedEntry(entry)} // 클릭 시 상세 모달 오픈
                   >
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '8px' }}>
-                      <span className={`level-badge level-${entry.level}`}>{entry.level}</span>
-                      {topicInfo && (
-                        <span style={{ fontSize: '1rem' }}>{topicInfo.emoji}</span>
-                      )}
+                      <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
+                        <span className={`level-badge level-${entry.level}`}>{entry.level}</span>
+                        {topicInfo && (
+                          <span style={{ fontSize: '1rem' }}>{topicInfo.emoji}</span>
+                        )}
+                        {!topicInfo && entry.topic && (
+                          <span style={{ fontSize: '0.75rem', background: 'var(--border-subtle)', padding: '2px 6px', borderRadius: '4px', color: 'var(--text-secondary)' }}>📁 {entry.topic}</span>
+                        )}
+                      </div>
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleDeleteWord(entry.id);
+                        }}
+                        style={{
+                          background: 'none',
+                          border: 'none',
+                          color: 'var(--text-muted)',
+                          cursor: 'pointer',
+                          fontSize: '1rem',
+                          padding: '0 4px',
+                          transition: 'color 0.2s',
+                        }}
+                        onMouseEnter={(e) => e.currentTarget.style.color = 'var(--accent-primary)'}
+                        onMouseLeave={(e) => e.currentTarget.style.color = 'var(--text-muted)'}
+                        title={t.deleteBtn}
+                      >
+                        ✕
+                      </button>
                     </div>
 
                     <div style={{
@@ -707,6 +836,93 @@ export default function VocabularyPage() {
         )}
       </div>
 
+      {/* 카테고리 관리 모달 */}
+      {showCategoryModal && (
+        <div
+          className="word-popup-overlay"
+          onClick={(e) => { if (e.target === e.currentTarget) setShowCategoryModal(false); }}
+        >
+          <div className="word-popup" style={{ maxWidth: '450px', width: '90%' }}>
+            <div className="word-popup-header">
+              <div className="word-popup-word" style={{ fontSize: '1.25rem' }}>{t.categoryTitle}</div>
+              <button className="word-popup-close" onClick={() => setShowCategoryModal(false)}>✕</button>
+            </div>
+
+            <div style={{ margin: '16px 0' }}>
+              {/* 카테고리 추가 폼 */}
+              <div style={{ display: 'flex', gap: '8px', marginBottom: '20px' }}>
+                <input
+                  type="text"
+                  value={newCategoryName}
+                  onChange={(e) => setNewCategoryName(e.target.value)}
+                  placeholder={t.newCategoryPlaceholder}
+                  style={{
+                    flex: 1,
+                    padding: '10px 14px',
+                    borderRadius: 'var(--radius-md)',
+                    border: '1px solid var(--border-subtle)',
+                    background: 'var(--bg-card)',
+                    color: 'var(--text-primary)',
+                    fontSize: '0.9rem',
+                    fontFamily: 'inherit',
+                  }}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') handleAddCategory();
+                  }}
+                />
+                <button
+                  onClick={handleAddCategory}
+                  className="btn btn-primary"
+                  style={{ padding: '10px 16px', fontSize: '0.9rem' }}
+                >
+                  {t.addCategory}
+                </button>
+              </div>
+
+              {/* 커스텀 카테고리 목록 */}
+              <div style={{ maxHeight: '250px', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                {customCategories.length === 0 ? (
+                  <p style={{ color: 'var(--text-secondary)', fontSize: '0.85rem', textAlign: 'center', margin: '20px 0' }}>
+                    생성된 커스텀 카테고리가 없습니다.
+                  </p>
+                ) : (
+                  customCategories.map((cat, i) => (
+                    <div
+                      key={i}
+                      style={{
+                        display: 'flex',
+                        justifyContent: 'space-between',
+                        alignItems: 'center',
+                        padding: '10px 14px',
+                        background: 'var(--bg-card)',
+                        border: '1px solid var(--border-subtle)',
+                        borderRadius: 'var(--radius-sm)',
+                      }}
+                    >
+                      <span style={{ fontSize: '0.9rem', fontWeight: 600, color: 'var(--text-primary)' }}>📁 {cat}</span>
+                      <button
+                        onClick={() => handleDeleteCategory(cat)}
+                        style={{
+                          background: 'none',
+                          border: 'none',
+                          color: '#ef4444',
+                          cursor: 'pointer',
+                          fontSize: '0.9rem',
+                          padding: '4px',
+                        }}
+                        title={t.deleteBtn}
+                      >
+                        🗑️
+                      </button>
+                    </div>
+                  ))
+                )}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* 선택된 단어가 있을 때 화면 전체를 덮어 상세 정보를 정밀하게 제공하는 상세 팝업 모달 */}
       {selectedEntry && (
         <div
@@ -770,11 +986,41 @@ export default function VocabularyPage() {
             </div>
 
             {/* 레벨 배지 및 기사 출처 */}
-            <div style={{ display: 'flex', gap: '8px', alignItems: 'center', marginTop: '4px', flexWrap: 'wrap' }}>
-              <span className={`level-badge level-${selectedEntry.level}`}>{selectedEntry.level}</span>
-              <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
-                {t.origin}{selectedEntry.articleTitle}
-              </span>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '16px', borderTop: '1px solid var(--border-subtle)', paddingTop: '16px' }}>
+              <div style={{ display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap' }}>
+                <span className={`level-badge level-${selectedEntry.level}`}>{selectedEntry.level}</span>
+                <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
+                  {t.origin}{selectedEntry.articleTitle}
+                </span>
+                {selectedEntry.topic && !TOPICS.some(t => t.id === selectedEntry.topic) && (
+                  <span style={{ fontSize: '0.75rem', background: 'var(--border-subtle)', padding: '2px 6px', borderRadius: '4px', color: 'var(--text-secondary)' }}>📁 {selectedEntry.topic}</span>
+                )}
+              </div>
+              <button
+                onClick={() => handleDeleteWord(selectedEntry.id)}
+                style={{
+                  padding: '6px 12px',
+                  borderRadius: 'var(--radius-sm)',
+                  border: '1px solid var(--accent-primary)',
+                  background: 'none',
+                  color: 'var(--accent-primary)',
+                  cursor: 'pointer',
+                  fontSize: '0.8rem',
+                  fontWeight: 600,
+                  fontFamily: 'inherit',
+                  transition: 'all 0.2s',
+                }}
+                onMouseEnter={(e) => {
+                  e.currentTarget.style.background = 'var(--accent-primary)';
+                  e.currentTarget.style.color = 'white';
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.background = 'none';
+                  e.currentTarget.style.color = 'var(--accent-primary)';
+                }}
+              >
+                🗑️ {t.deleteBtn}
+              </button>
             </div>
           </div>
         </div>

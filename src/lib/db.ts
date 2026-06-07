@@ -232,3 +232,48 @@ export async function deleteArticle(id: string): Promise<void> {
   await deleteDoc(ref);
 }
 
+/**
+ * 사용자가 저장한 단어(VocabularyEntry)를 유저 문서 하위의 'vocabulary' 서브컬렉션에서 완전히 삭제합니다.
+ */
+export async function deleteVocabulary(uid: string, entryId: string): Promise<void> {
+  const ref = doc(db, 'users', uid, 'vocabulary', entryId);
+  await deleteDoc(ref);
+}
+
+/**
+ * 유저가 직접 생성한 커스텀 카테고리(단어장 카테고리) 목록을 가져옵니다.
+ * 카테고리 이름 문자열의 배열을 반환합니다.
+ */
+export async function getCustomCategories(uid: string): Promise<string[]> {
+  const ref = collection(db, 'users', uid, 'customCategories');
+  const snap = await getDocs(ref);
+  return snap.docs.map(d => d.data().name as string);
+}
+
+/**
+ * 유저 문서 하위에 새로운 커스텀 카테고리를 추가합니다.
+ * 중복 검사 후 저장합니다.
+ */
+export async function addCustomCategory(uid: string, name: string): Promise<void> {
+  const categoriesRef = collection(db, 'users', uid, 'customCategories');
+  // 중복 확인
+  const snap = await getDocs(categoriesRef);
+  const exists = snap.docs.some(d => d.data().name === name);
+  if (!exists) {
+    await addDoc(categoriesRef, { name, createdAt: serverTimestamp() });
+  }
+}
+
+/**
+ * 유저 문서 하위에서 커스텀 카테고리를 삭제합니다.
+ */
+export async function deleteCustomCategory(uid: string, name: string): Promise<void> {
+  const categoriesRef = collection(db, 'users', uid, 'customCategories');
+  const q = query(categoriesRef, where('name', '==', name));
+  const snap = await getDocs(q);
+  for (const d of snap.docs) {
+    await deleteDoc(doc(db, 'users', uid, 'customCategories', d.id));
+  }
+}
+
+

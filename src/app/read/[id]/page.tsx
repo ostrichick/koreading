@@ -9,7 +9,7 @@
 import { useState, useEffect, useCallback, use, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/contexts/AuthContext';
-import { getArticleById, markArticleRead, saveVocabulary, getReadArticles, Article, saveReview, getReviews, Review, deleteArticle } from '@/lib/db';
+import { getArticleById, markArticleRead, saveVocabulary, getReadArticles, Article, saveReview, getReviews, Review, deleteArticle, getCustomCategories } from '@/lib/db';
 import { lookupWordBasic, lookupWordAdvanced, TOPICS } from '@/lib/gemini';
 import { getGuestLang } from '@/lib/storage';
 import AlertModal from '@/components/AlertModal';
@@ -160,6 +160,10 @@ export default function ReadPage({ params }: { params: Promise<{ id: string }> }
   const [alertMsg, setAlertMsg] = useState('');
   const [alertType, setAlertType] = useState<'info' | 'error' | 'warning' | 'success'>('info');
 
+  // [신규 기능] 커스텀 카테고리 상태 및 단어 저장 시 선택된 카테고리
+  const [customCategories, setCustomCategories] = useState<string[]>([]);
+  const [selectedSaveCategory, setSelectedSaveCategory] = useState<string>('');
+
   const triggerAlert = (message: string, title = '알림', type: 'info' | 'error' | 'warning' | 'success' = 'info') => {
     setAlertTitle(title);
     setAlertMsg(message);
@@ -184,11 +188,14 @@ export default function ReadPage({ params }: { params: Promise<{ id: string }> }
       const a = await getArticleById(id);
       if (!a) { router.push('/library'); return; }
       setArticle(a);
+      setSelectedSaveCategory(a.topicCategory);
       
       // 유저가 로그인 상태라면 완독 이력 데이터를 DB에서 로드합니다.
       if (user) {
         const readIds = await getReadArticles(user.uid);
         setIsRead(readIds.includes(id));
+        // Fetch custom categories
+        getCustomCategories(user.uid).then(setCustomCategories);
       }
       
       // 기사별 한줄 평 목록 취득
@@ -334,7 +341,7 @@ export default function ReadPage({ params }: { params: Promise<{ id: string }> }
         partOfSpeech: wordData.partOfSpeech,
         examples: wordData.examples || [],
         level: wordData.level,
-        topic: article.topicCategory,
+        topic: selectedSaveCategory || article.topicCategory,
         articleTitle: article.title,
       });
       setSavedWords(prev => {
@@ -913,6 +920,39 @@ export default function ReadPage({ params }: { params: Promise<{ id: string }> }
                 {wordData.translation}
               </div>
 
+              {user && (
+                <div style={{ marginBottom: '8px' }}>
+                  <label style={{ fontSize: '0.65rem', color: 'var(--text-muted)', display: 'block', marginBottom: '2px' }}>카테고리 선택</label>
+                  <select
+                    value={selectedSaveCategory}
+                    onChange={(e) => setSelectedSaveCategory(e.target.value)}
+                    style={{
+                      width: '100%',
+                      fontSize: '0.7rem',
+                      padding: '4px 6px',
+                      borderRadius: '4px',
+                      border: '1px solid var(--border-subtle)',
+                      background: 'var(--bg-card)',
+                      color: 'var(--text-primary)',
+                      fontFamily: 'inherit',
+                    }}
+                  >
+                    <optgroup label="기본 주제">
+                      {TOPICS.map(t => (
+                        <option key={t.id} value={t.id}>{t.emoji} {t.label}</option>
+                      ))}
+                    </optgroup>
+                    {customCategories.length > 0 && (
+                      <optgroup label="내 카테고리">
+                        {customCategories.map(c => (
+                          <option key={c} value={c}>📁 {c}</option>
+                        ))}
+                      </optgroup>
+                    )}
+                  </select>
+                </div>
+              )}
+
               <div style={{ display: 'flex', gap: '6px', marginTop: '10px' }}>
                 <button
                   onClick={handleSaveWord}
@@ -1041,6 +1081,39 @@ export default function ReadPage({ params }: { params: Promise<{ id: string }> }
               <div style={{ display: 'flex', gap: '8px', marginBottom: '16px' }}>
                 <span className={`level-badge level-${wordData.level}`}>{wordData.level}</span>
               </div>
+
+              {user && (
+                <div style={{ marginBottom: '16px', display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                  <label style={{ fontSize: '0.8rem', fontWeight: 600, color: 'var(--text-secondary)' }}>📁 저장할 카테고리 선택</label>
+                  <select
+                    value={selectedSaveCategory}
+                    onChange={(e) => setSelectedSaveCategory(e.target.value)}
+                    style={{
+                      width: '100%',
+                      fontSize: '0.9rem',
+                      padding: '8px 12px',
+                      borderRadius: 'var(--radius-md)',
+                      border: '1px solid var(--border-subtle)',
+                      background: 'var(--bg-card)',
+                      color: 'var(--text-primary)',
+                      fontFamily: 'inherit',
+                    }}
+                  >
+                    <optgroup label="기본 주제">
+                      {TOPICS.map(t => (
+                        <option key={t.id} value={t.id}>{t.emoji} {t.label}</option>
+                      ))}
+                    </optgroup>
+                    {customCategories.length > 0 && (
+                      <optgroup label="내 카테고리">
+                        {customCategories.map(c => (
+                          <option key={c} value={c}>📁 {c}</option>
+                        ))}
+                      </optgroup>
+                    )}
+                  </select>
+                </div>
+              )}
 
               {/* 단어장에 저장 단추 */}
               <button

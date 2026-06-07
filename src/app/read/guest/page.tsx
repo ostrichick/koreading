@@ -11,7 +11,7 @@ import { useRouter } from 'next/navigation';
 import { useAuth } from '@/contexts/AuthContext';
 import { lookupWordBasic, lookupWordAdvanced, TOPICS } from '@/lib/gemini';
 import { getGuestArticle, getGuestLang, getGuestLevel, incrementGuestReadCount } from '@/lib/storage';
-import { saveVocabulary, deleteArticle } from '@/lib/db';
+import { saveVocabulary, deleteArticle, getCustomCategories } from '@/lib/db';
 import { tokenizeKorean, isKoreanWord } from '@/lib/utils';
 
 // 단어 상세 사전 데이터를 보관할 인터페이스 정의
@@ -108,6 +108,19 @@ export default function GuestReadPage() {
   const [hoverLookup, setHoverLookup] = useState(false);
   const hoverTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
+  // [신규 기능] 커스텀 카테고리 상태 및 단어 저장 시 선택된 카테고리
+  const [customCategories, setCustomCategories] = useState<string[]>([]);
+  const [selectedSaveCategory, setSelectedSaveCategory] = useState<string>('');
+
+  // 로그인 상태 변화 시 커스텀 카테고리 로딩
+  useEffect(() => {
+    if (user) {
+      getCustomCategories(user.uid).then(setCustomCategories);
+    } else {
+      setCustomCategories([]);
+    }
+  }, [user]);
+
   // 컴포넌트 마운트 시 브라우저 설정 로드 및 세션 기사 읽어오기
   useEffect(() => {
     // 로컬 스토리지에 저장된 마우스 오버 사전 검색 활성화 선호도 설정 로드
@@ -126,6 +139,7 @@ export default function GuestReadPage() {
     const a = getGuestArticle();
     if (!a) { router.push('/library'); return; }
     setArticle(a);
+    setSelectedSaveCategory(a.topicCategory || '');
 
     // 외부 영역 클릭 시 미니 사전 툴팁 닫기
     const handleGlobalClick = (e: MouseEvent) => {
@@ -265,7 +279,7 @@ export default function GuestReadPage() {
         partOfSpeech: wordData.partOfSpeech,
         examples: wordData.examples || [],
         level: wordData.level,
-        topic: article?.topicCategory || '',
+        topic: selectedSaveCategory || article?.topicCategory || '',
         articleTitle: article?.title || '',
       });
       setSavedWords(prev => {
@@ -618,6 +632,39 @@ export default function GuestReadPage() {
                 {wordData.translation}
               </div>
 
+              {user && (
+                <div style={{ marginBottom: '8px' }}>
+                  <label style={{ fontSize: '0.65rem', color: 'var(--text-muted)', display: 'block', marginBottom: '2px' }}>카테고리 선택</label>
+                  <select
+                    value={selectedSaveCategory}
+                    onChange={(e) => setSelectedSaveCategory(e.target.value)}
+                    style={{
+                      width: '100%',
+                      fontSize: '0.7rem',
+                      padding: '4px 6px',
+                      borderRadius: '4px',
+                      border: '1px solid var(--border-subtle)',
+                      background: 'var(--bg-card)',
+                      color: 'var(--text-primary)',
+                      fontFamily: 'inherit',
+                    }}
+                  >
+                    <optgroup label="기본 주제">
+                      {TOPICS.map(t => (
+                        <option key={t.id} value={t.id}>{t.emoji} {t.label}</option>
+                      ))}
+                    </optgroup>
+                    {customCategories.length > 0 && (
+                      <optgroup label="내 카테고리">
+                        {customCategories.map(c => (
+                          <option key={c} value={c}>📁 {c}</option>
+                        ))}
+                      </optgroup>
+                    )}
+                  </select>
+                </div>
+              )}
+
               <div style={{ display: 'flex', gap: '6px', marginTop: '10px' }}>
                 <button
                   onClick={handleSaveWord}
@@ -745,6 +792,39 @@ export default function GuestReadPage() {
               <div style={{ display: 'flex', gap: '8px', marginBottom: '16px' }}>
                 <span className={`level-badge level-${wordData.level}`}>{wordData.level}</span>
               </div>
+
+              {user && (
+                <div style={{ marginBottom: '16px', display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                  <label style={{ fontSize: '0.8rem', fontWeight: 600, color: 'var(--text-secondary)' }}>📁 저장할 카테고리 선택</label>
+                  <select
+                    value={selectedSaveCategory}
+                    onChange={(e) => setSelectedSaveCategory(e.target.value)}
+                    style={{
+                      width: '100%',
+                      fontSize: '0.9rem',
+                      padding: '8px 12px',
+                      borderRadius: 'var(--radius-md)',
+                      border: '1px solid var(--border-subtle)',
+                      background: 'var(--bg-card)',
+                      color: 'var(--text-primary)',
+                      fontFamily: 'inherit',
+                    }}
+                  >
+                    <optgroup label="기본 주제">
+                      {TOPICS.map(t => (
+                        <option key={t.id} value={t.id}>{t.emoji} {t.label}</option>
+                      ))}
+                    </optgroup>
+                    {customCategories.length > 0 && (
+                      <optgroup label="내 카테고리">
+                        {customCategories.map(c => (
+                          <option key={c} value={c}>📁 {c}</option>
+                        ))}
+                      </optgroup>
+                    )}
+                  </select>
+                </div>
+              )}
 
               {/* 단어 저장 단추 */}
               <button className="word-popup-save-btn" onClick={handleSaveWord}>
