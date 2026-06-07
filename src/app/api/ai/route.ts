@@ -305,26 +305,37 @@ CEFR ${level} 레벨의 한국어 학습자를 위한 "${topicLabel}" 주제의 
       const langMap: Record<string, string> = { en: 'English', es: 'Spanish', ja: 'Japanese', zh: 'Chinese' };
       const langName = langMap[nativeLang] || 'English';
 
-      // (2-1) 일반 단어 사전 검색 (단어 뜻, 번역, 발음, 품사, 수준)
+      // (2-1) 일반 단어 사전 검색 (단어 뜻, 번역, 발음, 품사, 수준, 사전적 기본형)
       if (type === 'basic') {
         const prompt = `당신은 대한민국 국어사전 및 한국어 교육 전문가입니다.
 
 한국어 단어: "${word}"
 문맥 속 문장: "${sentence}"
 
+[과업]:
+주어진 한국어 단어 "${word}"를 문맥 속 문장 "${sentence}"에서 찾아 분석하고, 사전에서 검색할 수 있는 기본형(원형/lemma)을 도출하여 제공하십시오.
+예를 들어:
+- '유명합니다', '유명한' -> 기본형: '유명하다'
+- '갔어요', '가고' -> 기본형: '가다'
+- '책을', '책이' -> 기본형: '책' (조사 제거)
+- '공부했다' -> 기본형: '공부하다'
+
 [절대 준수해야 하는 강한 제약 조건]:
-1. "definition" 필드는 반드시 100% 순수한 한국어 한글로만 작성해야 합니다. 절대 일본어, 영어, 한자(漢字), 또는 그 외의 외국어를 섞어서 작성하지 마십시오.
-2. "partOfSpeech" field는 한국어 품사 용어(예: 명사, 동사, 형용사, 부사, 조사, 어미 등)를 사용하여 100% 한국어로만 작성하십시오.
-3. "translation" 필드는 반드시 ${langName}로 작성해야 합니다.
+1. "dictionaryForm" 필드는 단어의 사전적 기본형(원형)을 명확하게 한글로 작성하십시오. (예: '유명합니다'는 '유명하다', '책을'은 '책')
+2. "definition" 필드는 반드시 100% 순수한 한국어 한글로만 작성해야 합니다. 절대 일본어, 영어, 한자(漢字), 또는 그 외의 외국어를 섞어서 작성하지 마십시오.
+3. "partOfSpeech" field는 한국어 품사 용어(예: 명사, 동사, 형용사, 부사, 조사, 어미 등)를 사용하여 100% 한국어로만 작성하십시오.
+4. "translation" 필드는 반드시 ${langName}로 작성해야 합니다.
+5. "pronunciation", "partOfSpeech", "definition", "translation", "level" 등 모든 필드는 "dictionaryForm"에 해당하는 기본형 단어를 기준으로 작성하십시오.
 
 반드시 다음 형식의 JSON 객체만 반환해 주세요 (마크다운 기호나 추가 설명 없이 JSON만 반환):
 {
   "word": "${word}",
-  "pronunciation": "발음 로마자 표기",
-  "partOfSpeech": "품사 (한국어로 작성)",
-  "definition": "한국어 정의 (100% 순수 한글)",
-  "translation": "${langName} 번역",
-  "level": "CEFR 레벨 (A1/A2/B1/B2/C1/C2 중 하나)"
+  "dictionaryForm": "기본형 단어 (예: '유명하다', '가다', '책' 등)",
+  "pronunciation": "기본형 단어의 발음 로마자 표기",
+  "partOfSpeech": "기본형 단어의 품사 (한국어로 작성)",
+  "definition": "기본형 단어의 한국어 정의 (100% 순수 한글)",
+  "translation": "기본형 단어의 ${langName} 번역",
+  "level": "기본형 단어의 CEFR 레벨 (A1/A2/B1/B2/C1/C2 중 하나)"
 }`;
 
         const { text } = await generateWithFallback(prompt, 'application/json');

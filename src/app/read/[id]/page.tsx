@@ -18,6 +18,7 @@ import { tokenizeKorean, isKoreanWord } from '@/lib/utils';
 // 사전 조회 데이터를 담을 구조 인터페이스
 interface WordData {
   word: string;
+  dictionaryForm?: string;
   pronunciation: string;
   partOfSpeech: string;
   structure?: string;
@@ -165,9 +166,10 @@ export default function ReadPage({ params }: { params: Promise<{ id: string }> }
     }
     setSavingWord(true);
     try {
+      const wordToSave = wordData.dictionaryForm || wordData.word;
       // DB 유저 하부 서브컬렉션 vocabulary 테이블에 신규 레코드 생성
       await saveVocabulary(user.uid, {
-        word: wordData.word,
+        word: wordToSave,
         pronunciation: wordData.pronunciation,
         definition: wordData.definition,
         translation: wordData.translation,
@@ -177,7 +179,14 @@ export default function ReadPage({ params }: { params: Promise<{ id: string }> }
         topic: article.topicCategory,
         articleTitle: article.title,
       });
-      setSavedWords(prev => new Set([...prev, wordData.word])); // 완료 뱃지 추가
+      setSavedWords(prev => {
+        const next = new Set(prev);
+        next.add(wordData.word);
+        if (wordData.dictionaryForm) {
+          next.add(wordData.dictionaryForm);
+        }
+        return next;
+      }); // 완료 뱃지 추가
       setSavedToast(true);
       setTimeout(() => setSavedToast(false), 2000); // 토스트 피드백 2초 표출
       closePopup();
@@ -710,7 +719,14 @@ export default function ReadPage({ params }: { params: Promise<{ id: string }> }
               <>
                 <div className="word-popup-header">
                   <div>
-                    <div className="word-popup-word">{wordData.word}</div>
+                    <div style={{ display: 'flex', alignItems: 'baseline', gap: '8px', flexWrap: 'wrap' }}>
+                      <div className="word-popup-word">{wordData.dictionaryForm || wordData.word}</div>
+                      {wordData.dictionaryForm && wordData.dictionaryForm !== wordData.word && (
+                        <span style={{ fontSize: '0.85rem', color: 'var(--text-muted)', fontWeight: 500, fontFamily: 'Noto Sans KR, sans-serif' }}>
+                          (원문: {wordData.word})
+                        </span>
+                      )}
+                    </div>
                     <div className="word-popup-pronunciation">[{wordData.pronunciation}]</div>
                   </div>
                   <button className="word-popup-close" onClick={closePopup}>✕</button>

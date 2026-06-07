@@ -17,6 +17,7 @@ import { tokenizeKorean, isKoreanWord } from '@/lib/utils';
 // 단어 상세 사전 데이터를 보관할 인터페이스 정의
 interface WordData {
   word: string;
+  dictionaryForm?: string;
   pronunciation: string;
   partOfSpeech: string;
   structure?: string;
@@ -128,9 +129,10 @@ export default function GuestReadPage() {
       return;
     }
     try {
+      const wordToSave = wordData.dictionaryForm || wordData.word;
       // 로그인되어 있을 시 Firestore에 단어 저장
       await saveVocabulary(user.uid, {
-        word: wordData.word,
+        word: wordToSave,
         pronunciation: wordData.pronunciation,
         definition: wordData.definition,
         translation: wordData.translation,
@@ -140,7 +142,14 @@ export default function GuestReadPage() {
         topic: article?.topicCategory || '',
         articleTitle: article?.title || '',
       });
-      setSavedWords(prev => new Set([...prev, wordData.word]));
+      setSavedWords(prev => {
+        const next = new Set(prev);
+        next.add(wordData.word);
+        if (wordData.dictionaryForm) {
+          next.add(wordData.dictionaryForm);
+        }
+        return next;
+      });
       closePopup();
     } catch (e) { console.error(e); }
   };
@@ -436,9 +445,16 @@ export default function GuestReadPage() {
             ) : wordData && (
               // AI로부터 성공적으로 수집 완료된 단어 사전 데이터 표출
               <>
-                <div className="word-popup-header">
+                 <div className="word-popup-header">
                   <div>
-                    <div className="word-popup-word">{wordData.word}</div>
+                    <div style={{ display: 'flex', alignItems: 'baseline', gap: '8px', flexWrap: 'wrap' }}>
+                      <div className="word-popup-word">{wordData.dictionaryForm || wordData.word}</div>
+                      {wordData.dictionaryForm && wordData.dictionaryForm !== wordData.word && (
+                        <span style={{ fontSize: '0.85rem', color: 'var(--text-muted)', fontWeight: 500, fontFamily: 'Noto Sans KR, sans-serif' }}>
+                          (원문: {wordData.word})
+                        </span>
+                      )}
+                    </div>
                     <div className="word-popup-pronunciation">[{wordData.pronunciation}]</div>
                   </div>
                   <button className="word-popup-close" onClick={closePopup}>✕</button>
