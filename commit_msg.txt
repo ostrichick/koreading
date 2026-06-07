@@ -1,6 +1,0 @@
-feat: implement daily reading streak, visual activity grass, and fix guest reader UI alignment
-
-- Added `getReadArticlesWithDates` to track reading completion timestamps.
-- Implemented calculation of continuous daily reading streaks and a GitHub-style 12-week activity grass in the profile settings tab.
-- Integrated coordinate-aware floating tooltip dictionary, TTS voice player, and reader customizations (line height, background themes, font size) into both user and guest reading views.
-- Added 3D flashcards, multi-choice review quizzes, and Anki CSV exporting features in `/vocabulary`.
