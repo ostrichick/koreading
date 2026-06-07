@@ -72,7 +72,7 @@ Conq/
 | :--- | :--- |
 | AuthContext.tsx | Firebase Auth 로그인 상태를 기반으로 Firestore users 컬렉션에서 프로필 데이터를 조회하여 전역에 공급합니다. 회원가입 시 중복 Firestore 쿼리를 방지하도록 최적화되어 있습니다. |
 | NavBar.tsx | 전역 상단 내비게이션 바로, 로그인/게스트/비로그인 상태에 따라 메뉴 항목을 동적 분기합니다. About 링크는 항상 표시됩니다. |
-| Footer.tsx | [AdSense 필수] 사이트 하단 공통 푸터입니다. 개인정보처리방침, 이용약관, About 링크를 항상 노출하여 Google AdSense 심사 기준을 충족하고 사이트 신뢰성을 높입니다. |
+| Footer.tsx | [AdSense 필수] 사이트 하단 공통 푸터입니다. 개인정보처리방침, 이용약관, About 링크를 항상 노출하여 Google AdSense 심사 기준을 충족하고 사이트 신뢰성을 높입니다. (이벤트 핸들러 적용으로 'use client' 선언) |
 | AlertModal.tsx | 직접 구현된 모달 팝업입니다. 단순 경고 외에, AI 생성 과정의 상세 동작 로그 목록(_logs)을 터미널 뷰 형태로 제공합니다. |
 
 ### 3. `src/app/` - 페이지 컴포넌트
@@ -84,7 +84,7 @@ Conq/
 | about/page.tsx | [AdSense 필수] 서비스 목적/미션, 주요 6가지 기능, 기술 스택, 개발자(Munseong Choi) 정보를 소개하는 About 페이지입니다. |
 | privacy/page.tsx | [AdSense 필수] 개인정보처리방침 페이지. Firebase, Gemini, Groq, Vercel, AdSense 사용 사실을 모두 명시하고 사용자 권리 행사 방법을 안내합니다. |
 | terms/page.tsx | [AdSense 필수] 이용약관 페이지. AI 생성 콘텐츠 면책 조항, 광고 게재 고지, 금지 행위, 준거법 등을 포함합니다. |
-| page.tsx (Landing) | Koreading 홈(랜딩) 페이지입니다. 직관적인 서비스 소개 카드, 레벨 테스트 바로가기, FAQ 아코디언 등이 포함되어 있습니다. |
+| page.tsx (Landing) | Koreading 홈(랜딩) 페이지입니다. 직관적인 서비스 소개 카드, 레벨 테스트 바로가기, FAQ 아코디언 등이 포함되어 있습니다. (랜딩 페이지로 무조건 가도록 리다이렉션 로직이 삭제되었습니다.) |
 | login/page.tsx | 구글 OAuth 간편 로그인 수단만을 노출하는 카드형 로그인/회원가입 관문 페이지입니다. |
 | profile/page.tsx | 사용자 마이페이지입니다. 닉네임 수정, 모국어 설정 변경, 가입 일자 조회, 계정 삭제(회원 탈퇴) 프로세스를 지원합니다. |
 | test/page.tsx | 10개의 독해 평가 문항을 순서대로 푸는 레벨 테스트 페이지입니다. 사용자의 제출 답안을 채점하여 권장 CEFR 수준을 자동 도출하고 프로필에 반영합니다. |
@@ -113,5 +113,5 @@ Conq/
 
 | 날짜 | 변경 내용 |
 | :--- | :--- |
-| 2026-06-07 | SEO 최적화 및 AdSense 심사 준비: robots.txt, sitemap.ts, about/privacy/terms 페이지, Footer 컴포넌트, layout.tsx 전면 메타데이터 강화 (OG, Twitter Card, JSON-LD) |
+| 2026-06-07 | - SEO 최적화 및 AdSense 심사 준비: robots.txt, sitemap.ts, about/privacy/terms 페이지, Footer 컴포넌트, layout.tsx 전면 메타데이터 강화 (OG, Twitter Card, JSON-LD)<br>- 로고 클릭 시 메인(랜딩) 페이지로 이동을 방해하는 로그인 리다이렉트 로직 제거<br>- Footer 컴포넌트 이벤트 핸들러 오류 수정을 위해 'use client' 추가 및 배포 완료 |
 | 2026-06-06 | 전체 코드 한국어 주석 작성, utils.ts 신설, db.ts getAllArticles 최적화, AuthContext 최적화 |
