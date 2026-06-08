@@ -416,7 +416,7 @@ export default function ReadPage({ params }: { params: Promise<{ id: string }> }
       const a = await getArticleById(id);
       if (!a) { router.push('/library'); return; }
       setArticle(a);
-      setSelectedSaveCategory(a.topicCategory);
+      setSelectedSaveCategory(''); // 기본값은 미분류('')
       
       // 유저가 로그인 상태라면 완독 이력 데이터를 DB에서 로드합니다.
       if (user) {
@@ -1230,18 +1230,10 @@ export default function ReadPage({ params }: { params: Promise<{ id: string }> }
                       fontFamily: 'inherit',
                     }}
                   >
-                    <optgroup label="기본 주제">
-                      {TOPICS.map(t => (
-                        <option key={t.id} value={t.id}>{t.emoji} {t.label}</option>
-                      ))}
-                    </optgroup>
-                    {customCategories.length > 0 && (
-                      <optgroup label="내 카테고리">
-                        {customCategories.map(c => (
-                          <option key={c} value={c}>📁 {c}</option>
-                        ))}
-                      </optgroup>
-                    )}
+                    <option value="">📁 미분류 (기본)</option>
+                    {customCategories.map(c => (
+                      <option key={c} value={c}>📁 {c}</option>
+                    ))}
                   </select>
                 </div>
               )}
@@ -1392,18 +1384,10 @@ export default function ReadPage({ params }: { params: Promise<{ id: string }> }
                       fontFamily: 'inherit',
                     }}
                   >
-                    <optgroup label="기본 주제">
-                      {TOPICS.map(t => (
-                        <option key={t.id} value={t.id}>{t.emoji} {t.label}</option>
-                      ))}
-                    </optgroup>
-                    {customCategories.length > 0 && (
-                      <optgroup label="내 카테고리">
-                        {customCategories.map(c => (
-                          <option key={c} value={c}>📁 {c}</option>
-                        ))}
-                      </optgroup>
-                    )}
+                    <option value="">📁 미분류 (기본)</option>
+                    {customCategories.map(c => (
+                      <option key={c} value={c}>📁 {c}</option>
+                    ))}
                   </select>
                 </div>
               )}

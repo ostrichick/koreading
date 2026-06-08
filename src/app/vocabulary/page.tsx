@@ -312,10 +312,16 @@ export default function VocabularyPage() {
   };
 
 
+  const isUncategorized = (topic: string) => {
+    return !topic || !customCategories.includes(topic);
+  };
+
   // 사용자가 고른 상단 토픽 카테고리 필터에 맞추어 단어장 데이터를 필터링합니다.
-  const filteredVocab = vocab.filter(entry =>
-    selectedTopic === 'all' || entry.topic === selectedTopic
-  );
+  const filteredVocab = vocab.filter(entry => {
+    if (selectedTopic === 'all') return true;
+    if (selectedTopic === '') return isUncategorized(entry.topic);
+    return entry.topic === selectedTopic;
+  });
 
   // 플래시카드 학습을 위해 필터링된 단어 목록을 초기화합니다.
   useEffect(() => {
@@ -331,8 +337,8 @@ export default function VocabularyPage() {
     }
   }, [activeTab, selectedTopic]);
 
-  // 저장되어 있는 단어들의 토픽 카테고리 ID 및 커스텀 카테고리들을 중복 없이 추출하여 필터 뱃지 리스트를 연산합니다.
-  const topicsWithWords = ['all', ...Array.from(new Set([...vocab.map(v => v.topic), ...customCategories]))];
+  // 단어장의 카테고리 리스트 (전체, 미분류, 유저 커스텀 카테고리)
+  const topicsWithWords = ['all', '', ...customCategories];
 
   // 🔊 TTS 한국어 발음 목소리 재생 기능
   const speakWord = (text: string) => {
@@ -500,8 +506,23 @@ export default function VocabularyPage() {
         {/* 토픽 분류 뱃지 필터 바 */}
         <div style={{ display: 'flex', gap: '8px', marginBottom: '32px', flexWrap: 'wrap' }}>
           {topicsWithWords.map(topic => {
-            const topicInfo = TOPICS.find(t => t.id === topic);
-            const count = topic === 'all' ? vocab.length : vocab.filter(v => v.topic === topic).length;
+            let label = '';
+            let count = 0;
+            if (topic === 'all') {
+              label = t.allTopics;
+              count = vocab.length;
+            } else if (topic === '') {
+              label = uiLang === 'ko' ? '📁 미분류' : 
+                      uiLang === 'ja' ? '📁 未分類' :
+                      uiLang === 'zh' ? '📁 未分类' :
+                      uiLang === 'es' ? '📁 Sin clasificar' :
+                      '📁 Uncategorized';
+              count = vocab.filter(v => isUncategorized(v.topic)).length;
+            } else {
+              label = `📁 ${topic}`;
+              count = vocab.filter(v => v.topic === topic).length;
+            }
+
             return (
               <button
                 key={topic}
@@ -523,7 +544,7 @@ export default function VocabularyPage() {
                   gap: '6px',
                 }}
               >
-                {topicInfo ? `${topicInfo.emoji} ${topicInfo.label}` : topic === 'all' ? t.allTopics : `📁 ${topic}`}
+                {label}
                 <span style={{
                   background: selectedTopic === topic ? 'rgba(255,255,255,0.2)' : 'var(--border-subtle)',
                   borderRadius: '100px',
@@ -560,11 +581,8 @@ export default function VocabularyPage() {
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '8px' }}>
                       <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
                         <span className={`level-badge level-${entry.level}`}>{entry.level}</span>
-                        {topicInfo && (
-                          <span style={{ fontSize: '1rem' }}>{topicInfo.emoji}</span>
-                        )}
-                        {!topicInfo && entry.topic && (
-                          <span style={{ fontSize: '0.75rem', background: 'var(--border-subtle)', padding: '2px 6px', borderRadius: '4px', color: 'var(--text-secondary)' }}>📁 {entry.topic}</span>
+                        {entry.topic && customCategories.includes(entry.topic) && (
+                          <span style={{ fontSize: '0.75rem', background: 'rgba(99,102,241,0.1)', border: '1px solid var(--border-subtle)', padding: '2px 8px', borderRadius: '4px', color: 'var(--accent-primary)', fontWeight: 600 }}>📁 {entry.topic}</span>
                         )}
                       </div>
                       <button

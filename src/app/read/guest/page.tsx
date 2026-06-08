@@ -369,7 +369,7 @@ export default function GuestReadPage() {
     const a = getGuestArticle();
     if (!a) { router.push('/library'); return; }
     setArticle(a);
-    setSelectedSaveCategory(a.topicCategory || '');
+    setSelectedSaveCategory('');
 
     // 외부 영역 클릭 시 미니 사전 툴팁 닫기
     const handleGlobalClick = (e: MouseEvent) => {
@@ -533,7 +533,7 @@ export default function GuestReadPage() {
         partOfSpeech: wordData.partOfSpeech,
         examples: wordData.examples || [],
         level: wordData.level,
-        topic: selectedSaveCategory || article?.topicCategory || '',
+        topic: selectedSaveCategory,
         articleTitle: article?.title || '',
       });
       setSavedWords(prev => {
@@ -944,18 +944,10 @@ export default function GuestReadPage() {
                       fontFamily: 'inherit',
                     }}
                   >
-                    <optgroup label="기본 주제">
-                      {TOPICS.map(t => (
-                        <option key={t.id} value={t.id}>{t.emoji} {t.label}</option>
-                      ))}
-                    </optgroup>
-                    {customCategories.length > 0 && (
-                      <optgroup label="내 카테고리">
-                        {customCategories.map(c => (
-                          <option key={c} value={c}>📁 {c}</option>
-                        ))}
-                      </optgroup>
-                    )}
+                    <option value="">📁 미분류 (기본)</option>
+                    {customCategories.map(c => (
+                      <option key={c} value={c}>📁 {c}</option>
+                    ))}
                   </select>
                 </div>
               )}
@@ -1105,18 +1097,10 @@ export default function GuestReadPage() {
                       fontFamily: 'inherit',
                     }}
                   >
-                    <optgroup label="기본 주제">
-                      {TOPICS.map(t => (
-                        <option key={t.id} value={t.id}>{t.emoji} {t.label}</option>
-                      ))}
-                    </optgroup>
-                    {customCategories.length > 0 && (
-                      <optgroup label="내 카테고리">
-                        {customCategories.map(c => (
-                          <option key={c} value={c}>📁 {c}</option>
-                        ))}
-                      </optgroup>
-                    )}
+                    <option value="">📁 미분류 (기본)</option>
+                    {customCategories.map(c => (
+                      <option key={c} value={c}>📁 {c}</option>
+                    ))}
                   </select>
                 </div>
               )}
