@@ -1,0 +1,6 @@
+feat: add PWA support for Android APK build (PWABuilder)
+
+- Add manifest.json to public/ defining app metadata, display mode, background/theme colors, and icon sizes
+- Add sw.js to public/ as a lightweight service worker to meet Chrome install prompt criteria
+- Register sw.js inside Footer.tsx client component
+- Update project_meta.md recent changes log

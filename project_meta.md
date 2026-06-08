@@ -113,5 +113,6 @@ Conq/
 
 | 날짜 | 변경 내용 |
 | :--- | :--- |
+| 2026-06-08 | APK 빌드(PWABuilder) 및 PWA 설치를 지원하기 위해 manifest.json 및 sw.js(서비스 워커) 추가, Footer.tsx에 서비스 워커 등록 연동 |
 | 2026-06-07 | - SEO 최적화 및 AdSense 심사 준비: robots.txt, sitemap.ts, about/privacy/terms 페이지, Footer 컴포넌트, layout.tsx 전면 메타데이터 강화 (OG, Twitter Card, JSON-LD)<br>- 로고 클릭 시 메인(랜딩) 페이지로 이동을 방해하는 로그인 리다이렉트 로직 제거<br>- Footer 컴포넌트 이벤트 핸들러 오류 수정을 위해 'use client' 추가 및 배포 완료<br>- 단어장에서 단어 저장 시 원래 텍스트의 어형(예: '유명합니다') 대신 사전 검색이 가능한 기본형(원형/lemma, 예: '유명하다')으로 변환하여 저장하는 기능 구현 및 배포 |
 | 2026-06-06 | 전체 코드 한국어 주석 작성, utils.ts 신설, db.ts getAllArticles 최적화, AuthContext 최적화 |

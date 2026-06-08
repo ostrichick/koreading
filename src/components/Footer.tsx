@@ -7,11 +7,21 @@
  * onMouseEnter/onMouseLeave 이벤트 핸들러를 사용하므로 클라이언트 컴포넌트로 선언합니다.
  */
 
+import { useEffect } from 'react';
 import Link from 'next/link';
 import Image from 'next/image';
 
 export default function Footer() {
   const currentYear = new Date().getFullYear();
+
+  // PWA 서비스 워커 등록
+  useEffect(() => {
+    if (typeof window !== 'undefined' && 'serviceWorker' in navigator) {
+      navigator.serviceWorker.register('/sw.js')
+        .then((reg) => console.log('PWA Service Worker registered:', reg.scope))
+        .catch((err) => console.error('PWA Service Worker registration failed:', err));
+    }
+  }, []);
 
   return (
     <footer style={{
