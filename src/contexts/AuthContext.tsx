@@ -10,6 +10,7 @@ import {
 import {
   onAuthStateChanged,
   signInWithPopup,
+  signInWithRedirect,
   signOut,
   User,
 } from 'firebase/auth';
@@ -91,9 +92,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return unsub;
   }, []);
 
-  // 구글 팝업 창을 띄워 로그인을 시도합니다.
+  // 구글 로그인을 시도합니다. (웹뷰 환경인 경우 리다이렉트 로그인 사용)
   const signInWithGoogle = async () => {
-    await signInWithPopup(auth, googleProvider);
+    const isWebView = typeof window !== 'undefined' && 
+      (/wv|Android/i.test(navigator.userAgent) || navigator.userAgent.includes('Koreading'));
+
+    if (isWebView) {
+      await signInWithRedirect(auth, googleProvider);
+    } else {
+      await signInWithPopup(auth, googleProvider);
+    }
   };
 
   // 로그아웃을 요청합니다.
