@@ -120,7 +120,7 @@ export default function Footer() {
         {/* 구분선 */}
         <div style={{ borderTop: '1px solid var(--border-subtle)', paddingTop: '20px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '12px' }}>
           <p style={{ color: 'var(--text-muted)', fontSize: '0.78rem' }}>
-            © {currentYear} Koreading by Munseong Choi. All rights reserved.
+            © {currentYear} Koreading. All rights reserved.
           </p>
           <p style={{ color: 'var(--text-muted)', fontSize: '0.78rem' }}>
             Powered by Google Gemini AI & Groq LPU

@@ -29,8 +29,8 @@ export const metadata: Metadata = {
     '한국어 레벨 테스트', '한국어 단어장', 'K-content Korean',
     '한국어 공부', 'learn Korean', 'Korean vocabulary',
   ],
-  authors: [{ name: 'Munseong Choi', url: 'mailto:asulchoi@gmail.com' }],
-  creator: 'Munseong Choi',
+  authors: [{ name: 'Koreading', url: 'mailto:asulchoi@gmail.com' }],
+  creator: 'Koreading',
   publisher: 'Koreading',
 
   // ── 색인 허용 설정 ──
@@ -110,8 +110,8 @@ const jsonLdWebsite = {
   url: SITE_URL,
   description: SITE_DESCRIPTION,
   author: {
-    '@type': 'Person',
-    name: 'Munseong Choi',
+    '@type': 'Organization',
+    name: 'Koreading',
     email: 'asulchoi@gmail.com',
   },
   potentialAction: {
@@ -138,8 +138,8 @@ const jsonLdApp = {
   teaches: 'Korean Language',
   inLanguage: ['ko', 'en', 'es', 'ja', 'zh'],
   author: {
-    '@type': 'Person',
-    name: 'Munseong Choi',
+    '@type': 'Organization',
+    name: 'Koreading',
     email: 'asulchoi@gmail.com',
   },
 };

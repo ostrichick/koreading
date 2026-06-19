@@ -142,7 +142,7 @@ export default function AboutPage() {
             <div style={{ fontSize: '2.5rem', marginBottom: '16px' }}>👨‍💻</div>
             <h2 style={{ fontSize: '1.25rem', fontWeight: 800, marginBottom: '8px' }}>개발자 소개</h2>
             <p style={{ color: 'var(--text-secondary)', fontSize: '0.9rem', lineHeight: 1.75, marginBottom: '20px' }}>
-              안녕하세요, Koreading을 만든 <strong style={{ color: 'var(--text-primary)' }}>Munseong Choi</strong>입니다.<br />
+              안녕하세요, <strong style={{ color: 'var(--text-primary)' }}>Koreading</strong>입니다.<br />
               한국어를 배우는 전 세계 학습자들을 위해 더 쉽고 재미있는 학습 경험을 제공하고자 이 서비스를 만들었습니다.
             </p>
             <a

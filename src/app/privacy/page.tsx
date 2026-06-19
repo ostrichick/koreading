@@ -9,7 +9,7 @@
 
 export default function PrivacyPage() {
   const lastUpdated = '2026년 6월 7일';
-  const operatorName = 'Munseong Choi';
+  const operatorName = 'Koreading';
   const contactEmail = 'asulchoi@gmail.com';
   const serviceName = 'Koreading';
   const serviceUrl = 'https://koreading.vercel.app';
