@@ -93,10 +93,13 @@ export const metadata: Metadata = {
   // ── 앱 매니페스트 ──
   manifest: '/manifest.json',
 
-  // ── Google 사이트 소유자 확인 (Google Search Console 연동 시 실제 코드로 교체) ──
-  // verification: {
-  //   google: 'YOUR_GOOGLE_SITE_VERIFICATION_CODE',
-  // },
+  // ── Google/Naver 사이트 소유자 확인 ──
+  verification: {
+    google: 'OkxKUjbjTQN9m5i-fGojaL6G_Jstcow-L2hnUwok6vs',
+    other: {
+      'naver-site-verification': '843a1eeed07286ead68bb0fe8f99ae66978e1d71',
+    },
+  },
 };
 
 /**
