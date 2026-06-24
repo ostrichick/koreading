@@ -1,7 +1,7 @@
 {
   "name": "Koreading",
   "short_name": "Koreading",
-  "description": "AI 기반 맞춤형 한국어 독해 학습 플랫폼",
+  "description": "AI-powered Korean reading practice app. Free, personalized texts for all levels (A1–C2). | AI 기반 맞춤형 한국어 독해 학습 플랫폼.",
   "start_url": "/",
   "display": "standalone",
   "orientation": "portrait",
