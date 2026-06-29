@@ -40,13 +40,13 @@ export default function NavBar() {
   // About 링크는 항상 표시하여 신뢰성 있는 사이트임을 Google 크롤러에게 보여줍니다.
   const navLinks = user
     ? [
-        { href: '/library', label: '도서관' },
-        { href: '/vocabulary', label: '내 단어장' },
+        { href: '/library', label: 'Library' },
+        { href: '/vocabulary', label: 'Vocabulary' },
         { href: '/about', label: 'About' },
       ]
     : guestLevel
     ? [
-        { href: '/library', label: '도서관' },
+        { href: '/library', label: 'Library' },
         { href: '/about', label: 'About' },
       ]
     : [{ href: '/about', label: 'About' }];
@@ -114,7 +114,7 @@ export default function NavBar() {
                   <div style={{ padding: '12px 12px 8px', borderBottom: '1px solid var(--border-subtle)' }}>
                     <div style={{ fontSize: '0.875rem', fontWeight: 600 }}>{user.displayName}</div>
                     <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: '2px' }}>
-                      레벨: {profile.level || '미설정'}
+                      Level: {profile.level || 'Not set'}
                     </div>
                   </div>
                   {/* 상세 톱니바퀴 프로필 설정 버튼 및 로그아웃 버튼 */}
@@ -134,7 +134,7 @@ export default function NavBar() {
                       onMouseEnter={e => (e.currentTarget.style.background = 'var(--border-subtle)')}
                       onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}
                     >
-                      ⚙️ 프로필 설정
+                      ⚙️ Profile Settings
                     </Link>
                     <button
                       onClick={handleLogout}
@@ -154,7 +154,7 @@ export default function NavBar() {
                       onMouseEnter={e => (e.currentTarget.style.background = 'rgba(244,63,94,0.1)')}
                       onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}
                     >
-                      🚪 로그아웃
+                      🚪 Sign Out
                     </button>
                   </div>
                 </div>
@@ -164,7 +164,7 @@ export default function NavBar() {
             // 비로그인 상태이면서 로그인 관련 화면이 아닐 경우 시작하기 버튼 노출
             !pathname?.startsWith('/login') && (
               <Link href="/login" className="btn btn-primary btn-sm">
-                시작하기
+                Get Started
               </Link>
             )
           )}

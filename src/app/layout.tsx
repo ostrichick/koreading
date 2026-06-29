@@ -3,6 +3,7 @@ import './globals.css';
 import { AuthProvider } from '@/contexts/AuthContext';
 import NavBar from '@/components/NavBar';
 import Footer from '@/components/Footer';
+import SeoTextBlock from '@/components/SeoTextBlock';
 
 // ─── 사이트 기본 정보 상수 ───
 const SITE_URL = 'https://koreading.vercel.app';
@@ -265,6 +266,8 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
           <NavBar />
           {/* 각 개별 페이지별 콘텐츠가 렌더링되는 본문 영역 */}
           <main className="page-wrapper" style={{ flex: 1 }}>
+            {/* 구글 크롤러가 JS 없이도 읽을 수 있는 영어 SEO 텍스트 블록 (화면에는 보이지 않음) */}
+            <SeoTextBlock />
             {children}
           </main>
           {/* 하단 공통 푸터 (Privacy Policy, Terms, About 링크 포함) */}
