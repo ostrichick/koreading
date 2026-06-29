@@ -4,7 +4,11 @@
  * 1순위로 Groq (Gemma 2, Llama 3 등) 엔진을 호출하며, 2순위 비상망으로 Gemini 2.5/2.0/1.5 Flash 폴백망을 가동합니다.
  * 텍스트 생성, 레벨 테스트 출제, 정밀 문법 형태소 분석 및 예문 사전 검색을 처리합니다.
  * @why AI 서비스들의 API 키 유출을 방지하고 백엔드 서버 단에서 쿼터 초과(429) 시 지능적으로 우회 및 교차 이중화 네트워크를 완성하기 위해 안전한 단일 엔드포인트 게이트웨이로 설계되었습니다.
+ * @perf Edge Runtime으로 배포되어 Vercel의 엣지 네트워크에서 콜드 스타트 없이 즉시 실행됩니다.
  */
+
+// Edge Runtime: Vercel 엣지 네트워크에서 직접 실행 → 콜드 스타트 제거, 응답 지연 최소화
+export const runtime = 'edge';
 
 import { NextRequest, NextResponse } from 'next/server';
 import { GoogleGenerativeAI } from '@google/generative-ai';
@@ -104,12 +108,13 @@ export async function POST(req: NextRequest) {
         responseMimeType: responseMimeType === 'application/json' ? 'application/json' : undefined
       };
       
+      // 단어 사전 조회용 모델 체인: 경량·고속 모델을 우선 배치하여 응답 속도를 최적화합니다.
       const geminiModels = [
-        { model: model25, name: 'Gemini 2.5 Flash' },
-        { model: model20, name: 'Gemini 2.0 Flash' },
-        { model: model15, name: 'Gemini 1.5 Flash' },
         { model: model20lite, name: 'Gemini 2.0 Flash Lite' },
         { model: model15_8b, name: 'Gemini 1.5 Flash 8B' },
+        { model: model20, name: 'Gemini 2.0 Flash' },
+        { model: model15, name: 'Gemini 1.5 Flash' },
+        { model: model25, name: 'Gemini 2.5 Flash' },
       ];
       
       for (const { model: m, name } of geminiModels) {
@@ -305,9 +310,7 @@ CEFR ${level} 레벨의 한국어 학습자를 위한 "${topicLabel}" 주제의 
       const langMap: Record<string, string> = { en: 'English', es: 'Spanish', ja: 'Japanese', zh: 'Chinese' };
       const langName = langMap[nativeLang] || 'English';
 
-      // (2-1) 일반 단어 사전 검색 (단어 뜻, 번역, 발음, 품사, 수준, 사전적 기본형)
-      if (type === 'basic') {
-        const prompt = `당신은 대한민국 국어사전 및 한국어 교육 전문가입니다.
+      const basicPrompt = `당신은 대한민국 국어사전 및 한국어 교육 전문가입니다.
 
 한국어 단어: "${word}"
 문맥 속 문장: "${sentence}"
@@ -338,12 +341,7 @@ CEFR ${level} 레벨의 한국어 학습자를 위한 "${topicLabel}" 주제의 
   "level": "기본형 단어의 CEFR 레벨 (A1/A2/B1/B2/C1/C2 중 하나)"
 }`;
 
-        const { text } = await generateWithFallback(prompt, 'application/json');
-        return NextResponse.json(JSON.parse(text));
-      } 
-      // (2-2) 고급 형태소 구조 분석 및 실용 예문 제공
-      else {
-        const prompt = `당신은 한국어 형태소 분석 및 언어학 전문가입니다.
+      const advancedPrompt = `당신은 한국어 형태소 분석 및 언어학 전문가입니다.
 
 분석할 한국어 단어: "${word}"
 문맥 속 문장: "${sentence}"
@@ -363,7 +361,25 @@ CEFR ${level} 레벨의 한국어 학습자를 위한 "${topicLabel}" 주제의 
   ]
 }`;
 
-        const { text } = await generateWithFallback(prompt, 'application/json');
+      // ─── lookupWordAll: basic + advanced를 서버에서 병렬 실행 (1 RTT로 합산) ───
+      // 기존 2번의 순차 API 호출을 서버에서 Promise.all로 동시 실행하여
+      // 클라이언트의 왕복(RTT) 횟수를 2회 → 1회로 단축합니다.
+      if (type === 'all') {
+        const [basicResult, advancedResult] = await Promise.all([
+          generateWithFallback(basicPrompt, 'application/json'),
+          generateWithFallback(advancedPrompt, 'application/json'),
+        ]);
+        const basic = JSON.parse(basicResult.text);
+        const advanced = JSON.parse(advancedResult.text);
+        return NextResponse.json({ ...basic, ...advanced, _modelBasic: basicResult.modelUsed, _modelAdv: advancedResult.modelUsed });
+      }
+
+      // (하위 호환) 개별 basic / advanced 호출도 유지합니다.
+      if (type === 'basic') {
+        const { text } = await generateWithFallback(basicPrompt, 'application/json');
+        return NextResponse.json(JSON.parse(text));
+      } else {
+        const { text } = await generateWithFallback(advancedPrompt, 'application/json');
         return NextResponse.json(JSON.parse(text));
       }
 

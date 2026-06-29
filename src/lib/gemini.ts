@@ -106,6 +106,14 @@ export async function lookupWordAdvanced(word: string, sentence: string, nativeL
 }
 
 /**
+ * ⚡ 성능 최적화: basic + advanced 사전 조회를 서버에서 병렬 실행하여 단 1번의 API 호출로 반환합니다.
+ * 기존 순차 2회 호출(basic → advanced) 대비 네트워크 왕복 횟수를 절반으로 줄입니다.
+ */
+export async function lookupWordAll(word: string, sentence: string, nativeLang: NativeLanguage) {
+  return callAI({ action: 'lookupWord', type: 'all', word, sentence, nativeLang });
+}
+
+/**
  * 신규 사용자를 위한 10문항 한국어 레벨 테스트(Placement Test) 문제집을 생성합니다.
  */
 export async function generatePlacementTest() {

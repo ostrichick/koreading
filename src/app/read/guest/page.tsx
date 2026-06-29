@@ -9,7 +9,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/contexts/AuthContext';
-import { lookupWordBasic, lookupWordAdvanced, TOPICS } from '@/lib/gemini';
+import { lookupWordAll, TOPICS } from '@/lib/gemini';
 import { getGuestArticle, getGuestLang, getGuestLevel, incrementGuestReadCount } from '@/lib/storage';
 import { saveVocabulary, deleteArticle, getCustomCategories } from '@/lib/db';
 import { tokenizeKorean, isKoreanWord } from '@/lib/utils';
@@ -422,39 +422,51 @@ export default function GuestReadPage() {
       if (!nativeLang) return;
 
       const cacheKey = `${word}_${nativeLang}`;
+      const sessionKey = `koreading_word_${cacheKey}`;
 
-      // 캐시 히트 시 즉시 반환 (0ms)
+      // 1순위: 인메모리 캐시 히트 시 0ms 즉시 반환
       if (wordCacheRef.current[cacheKey]) {
         const cached = wordCacheRef.current[cacheKey];
         setWordData(cached.basic);
         setLoadingWord(false);
         setLoadingAdvanced(false);
-
         if (cached.advanced) {
           setWordData(prev => prev ? { ...prev, ...cached.advanced } : null);
         }
         return;
       }
 
+      // 2순위: sessionStorage 영속 캐시 (페이지 이동 후 재방문 시에도 즉시 반환)
+      try {
+        const stored = sessionStorage.getItem(sessionKey);
+        if (stored) {
+          const parsed = JSON.parse(stored);
+          wordCacheRef.current[cacheKey] = { basic: parsed, advanced: parsed };
+          setWordData(parsed);
+          setLoadingWord(false);
+          setLoadingAdvanced(false);
+          return;
+        }
+      } catch { /* sessionStorage 접근 불가 환경 무시 */ }
+
       setWordData(null);
       setLoadingWord(true);
       setLoadingAdvanced(false);
-      
-      const basicData = await lookupWordBasic(word, sentence, nativeLang);
-      setWordData(basicData);
+
+      // ⚡ 단일 API 호출: 서버에서 basic + advanced를 Promise.all로 병렬 실행 후 합산 반환
+      const allData = await lookupWordAll(word, sentence, nativeLang);
+      setWordData(allData);
       setLoadingWord(false);
+      setLoadingAdvanced(false);
 
-      // 캐시에 basic 데이터 먼저 기록
-      wordCacheRef.current[cacheKey] = { basic: basicData, advanced: null };
+      // 인메모리 캐시 저장
+      wordCacheRef.current[cacheKey] = { basic: allData, advanced: allData };
 
-      setLoadingAdvanced(true);
-      const advancedData = await lookupWordAdvanced(word, sentence, nativeLang);
-      setWordData(prev => prev ? { ...prev, ...advancedData } : null);
+      // sessionStorage 영속 캐시 저장
+      try {
+        sessionStorage.setItem(sessionKey, JSON.stringify(allData));
+      } catch { /* sessionStorage 용량 초과 등 무시 */ }
 
-      // 캐시에 advanced 데이터 업데이트
-      if (wordCacheRef.current[cacheKey]) {
-        wordCacheRef.current[cacheKey].advanced = advancedData;
-      }
     } catch (err) {
       console.error(err);
       setLoadingWord(false);
