@@ -1,0 +1,95 @@
+rules_version = '2';
+
+/**
+ * Koreading — Firestore Security Rules
+ *
+ * 보안 전략 계층:
+ *   1층 (UI)        : 관리자 이메일 체크로 버튼 숨김 (adminConfig.ts)
+ *   2층 (함수)      : deleteArticle() 내 callerEmail 검증 (db.ts)
+ *   3층 (DB Rules)  : 이 파일 — Firebase 서버에서 최종 강제 적용
+ *
+ * Rules는 UI/코드를 우회한 직접 API 호출도 차단하므로,
+ * 클라이언트 측 가드가 우회되더라도 데이터를 보호합니다.
+ */
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // ══════════════════════════════════════════════════════
+    // 헬퍼 함수
+    // ══════════════════════════════════════════════════════
+
+    /** 요청자가 로그인된 Firebase 사용자인지 확인 */
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    /** 요청자가 관리자 이메일인지 확인 (Google 로그인 = 이메일 인증 완료) */
+    function isAdmin() {
+      return isAuthenticated()
+          && request.auth.token.email == 'asulchoi@gmail.com'
+          && request.auth.token.email_verified == true;
+    }
+
+    /** 요청자가 해당 uid의 소유자인지 확인 */
+    function isOwner(uid) {
+      return isAuthenticated() && request.auth.uid == uid;
+    }
+
+    // ══════════════════════════════════════════════════════
+    // /articles/{articleId}
+    // 누구나 읽기 가능 (공개 콘텐츠)
+    // 생성: 인증된 사용자만 (아티클 생성 기능)
+    // 수정: 관리자만
+    // 삭제: 관리자만
+    // ══════════════════════════════════════════════════════
+    match /articles/{articleId} {
+      allow read: if true;
+      allow create: if isAuthenticated();
+      allow update: if isAdmin();
+      allow delete: if isAdmin();
+
+      // 리뷰 서브컬렉션
+      // 읽기: 누구나, 작성: 인증된 사용자, 삭제: 본인 또는 관리자
+      match /reviews/{reviewId} {
+        allow read: if true;
+        allow create: if isAuthenticated();
+        allow update: if isAuthenticated()
+                      && request.auth.uid == resource.data.userId;
+        allow delete: if isAdmin()
+                      || (isAuthenticated()
+                          && request.auth.uid == resource.data.userId);
+      }
+    }
+
+    // ══════════════════════════════════════════════════════
+    // /users/{uid}
+    // 읽기/쓰기: 본인만 접근 가능 (관리자 포함)
+    // 다른 사용자의 프로필은 접근 불가
+    // ══════════════════════════════════════════════════════
+    match /users/{uid} {
+      allow read, write: if isOwner(uid) || isAdmin();
+
+      // 읽은 아티클 기록
+      match /readArticles/{articleId} {
+        allow read, write: if isOwner(uid);
+      }
+
+      // 개인 단어장
+      match /vocabulary/{entryId} {
+        allow read, write, delete: if isOwner(uid);
+      }
+
+      // 커스텀 카테고리
+      match /customCategories/{categoryId} {
+        allow read, write, delete: if isOwner(uid);
+      }
+    }
+
+    // ══════════════════════════════════════════════════════
+    // 그 외 모든 경로 — 기본 차단
+    // ══════════════════════════════════════════════════════
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}

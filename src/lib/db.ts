@@ -13,6 +13,7 @@ import {
   deleteDoc,
 } from 'firebase/firestore';
 import { db } from './firebase';
+import { isAdminEmail } from './adminConfig';
 import type { CEFRLevel, NativeLanguage } from './gemini';
 
 // Firestore의 'users' 컬렉션에 매핑되는 사용자 프로필 데이터 인터페이스
@@ -225,9 +226,15 @@ export async function getAllArticles(): Promise<Article[]> {
 
 /**
  * AI가 생성한 한국어 독해 지문 중 품질이 미비하거나 비정상적인 지문을 완전히 영구 삭제합니다.
- * 주로 테스트 모드 및 아티클 조회 화면 하단에서 사용자가 품질 저하 텍스트 영구 삭제를 요청할 때 구동됩니다.
+ * @param id - 삭제할 아티클 Firestore 문서 ID
+ * @param callerEmail - 삭제를 요청하는 사용자의 이메일 (관리자 여부 검증에 사용)
+ * @throws 사용자가 관리자가 아닰 경우 Error 발생
  */
-export async function deleteArticle(id: string): Promise<void> {
+export async function deleteArticle(id: string, callerEmail: string | null | undefined): Promise<void> {
+  // 클라이언트 측 관리자 가드 (천번째 방어선: UI)
+  if (!isAdminEmail(callerEmail)) {
+    throw new Error('PERMISSION_DENIED: 관리자만 아티클을 삭제할 수 있습니다.');
+  }
   const ref = doc(db, 'articles', id);
   await deleteDoc(ref);
 }

@@ -12,6 +12,7 @@ import { useAuth } from '@/contexts/AuthContext';
 import { getArticleById, markArticleRead, saveVocabulary, getReadArticles, Article, saveReview, getReviews, Review, deleteArticle, getCustomCategories } from '@/lib/db';
 import { lookupWordAll, TOPICS } from '@/lib/gemini';
 import { getGuestLang } from '@/lib/storage';
+import { isAdminEmail } from '@/lib/adminConfig';
 import AlertModal from '@/components/AlertModal';
 import { tokenizeKorean, isKoreanWord } from '@/lib/utils';
 
@@ -639,15 +640,29 @@ export default function ReadPage({ params }: { params: Promise<{ id: string }> }
     setMarkingRead(false);
   };
 
-  // 품질 저하 시 독서 화면에서 해당 텍스트를 영구 삭제하는 E2E 액션
+  // 현재 로그인한 사용자가 관리자인지 여부 (삭제 버튼 표시 제어)
+  const isAdmin = isAdminEmail(user?.email);
+
+  // 품질 저하 시 독서 화면에서 해당 텍스트를 영구 삭제하는 관리자 전용 액션
   const handleDeleteArticle = async () => {
+    // 1차 가드: 로그인 여부 확인
+    if (!user) {
+      triggerAlert('삭제는 로그인이 필요합니다.', '권한 없음', 'error');
+      return;
+    }
+    // 2차 가드: 관리자 여부 확인
+    if (!isAdmin) {
+      triggerAlert('관리자만 아티클을 삭제할 수 있습니다.', '권한 없음', 'error');
+      return;
+    }
+
     const confirmDelete = window.confirm(
-      '🚨 [테스트 기간 전용 액션]\n\n이 텍스트의 퀄리티가 너무 낮아 도서관에서 영구 삭제하시겠습니까?\n이 작업은 되돌릴 수 없으며, 모든 독자의 목록에서 완전히 제거됩니다.'
+      '🚨 [관리자 전용]\n\n이 텍스트의 퀄리티가 너무 낮아 도서관에서 영구 삭제하시겠습니까?\n이 작업은 되돌릴 수 없으며, 모든 독자의 목록에서 완전히 제거됩니다.'
     );
     if (!confirmDelete) return;
-    
+
     try {
-      await deleteArticle(id); // Firestore 데이터 완전 삭제
+      await deleteArticle(id, user.email); // callerEmail 전달 → db.ts에서 관리자 검증
       triggerAlert('텍스트가 성공적으로 삭제되었습니다. 도서관으로 이동합니다.', '삭제 완료', 'success');
       setTimeout(() => {
         router.push('/library');
@@ -1141,30 +1156,32 @@ export default function ReadPage({ params }: { params: Promise<{ id: string }> }
 
         {/* 독해 완료 처리 버튼 바 */}
         <div style={{ display: 'flex', gap: '12px', justifyContent: 'flex-end', marginBottom: '60px', flexWrap: 'wrap', alignItems: 'center' }}>
-          {/* [품질 저하 테스트 전용 삭제 버튼] 레이아웃 흐름을 해치지 않도록 맨 좌측 배치 */}
-          <button
-            onClick={handleDeleteArticle}
-            style={{
-              background: 'rgba(239,68,68,0.1)',
-              color: '#ef4444',
-              border: '1px solid rgba(239,68,68,0.3)',
-              borderRadius: '100px',
-              padding: '8px 20px',
-              fontSize: '0.85rem',
-              fontWeight: 700,
-              cursor: 'pointer',
-              display: 'flex',
-              alignItems: 'center',
-              gap: '6px',
-              transition: 'all 150ms ease',
-              fontFamily: 'inherit',
-              marginRight: 'auto',
-            }}
-            onMouseEnter={e => e.currentTarget.style.background = 'rgba(239,68,68,0.15)'}
-            onMouseLeave={e => e.currentTarget.style.background = 'rgba(239,68,68,0.1)'}
-          >
-            {t.deleteArticle}
-          </button>
+          {/* [관리자 전용] 품질 저하 아티클 영구 삭제 버튼 — 관리자 이메일로 로그인 시에만 표시됨 */}
+          {isAdmin && (
+            <button
+              onClick={handleDeleteArticle}
+              style={{
+                background: 'rgba(239,68,68,0.1)',
+                color: '#ef4444',
+                border: '1px solid rgba(239,68,68,0.3)',
+                borderRadius: '100px',
+                padding: '8px 20px',
+                fontSize: '0.85rem',
+                fontWeight: 700,
+                cursor: 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '6px',
+                transition: 'all 150ms ease',
+                fontFamily: 'inherit',
+                marginRight: 'auto',
+              }}
+              onMouseEnter={e => e.currentTarget.style.background = 'rgba(239,68,68,0.15)'}
+              onMouseLeave={e => e.currentTarget.style.background = 'rgba(239,68,68,0.1)'}
+            >
+              {t.deleteArticle}
+            </button>
+          )}
 
           <a href="/library" className="btn btn-ghost">{t.toLibrary}</a>
           {!isRead && (

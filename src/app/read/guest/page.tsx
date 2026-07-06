@@ -11,7 +11,7 @@ import { useRouter } from 'next/navigation';
 import { useAuth } from '@/contexts/AuthContext';
 import { lookupWordAll, TOPICS } from '@/lib/gemini';
 import { getGuestArticle, getGuestLang, getGuestLevel, incrementGuestReadCount } from '@/lib/storage';
-import { saveVocabulary, deleteArticle, getCustomCategories } from '@/lib/db';
+import { saveVocabulary, getCustomCategories } from '@/lib/db';
 import { tokenizeKorean, isKoreanWord } from '@/lib/utils';
 
 // 단어 상세 사전 데이터를 보관할 인터페이스 정의
@@ -560,27 +560,8 @@ export default function GuestReadPage() {
     } catch (e) { console.error(e); }
   };
 
-  // 테스트 모드 및 기사 품질 저하 시 텍스트 영구 삭제 기능 실행 핸들러
-  const handleDeleteArticle = async () => {
-    const confirmDelete = window.confirm(
-      '🚨 [테스트 기간 전용 액션]\n\n이 텍스트의 퀄리티가 너무 낮아 영구 삭제하시겠습니까?\n도서관 데이터베이스 혹은 임시 스토리지에서 완전히 제거됩니다.'
-    );
-    if (!confirmDelete) return;
-
-    try {
-      if (article?.id && article.id !== 'guest') {
-        // Firestore에 아티클 레코드가 있는 경우 삭제
-        await deleteArticle(article.id);
-      }
-      // 로컬 세션스토리지에 적재된 아티클도 함께 비우기
-      sessionStorage.removeItem('koreading_guest_article');
-      alert('텍스트가 성공적으로 삭제되었습니다. 도서관으로 이동합니다.');
-      router.push('/library');
-    } catch (err: any) {
-      console.error(err);
-      alert(`삭제 실패: ${err?.message || JSON.stringify(err)}`);
-    }
-  };
+  // 게스트는 관리자가 아니므로 deleteArticle 기능이 없습니다.
+  // 아티클 삭제는 관리자 이메일로 로그인한 사용자만 read/[id]/page.tsx에서 수행할 수 있습니다.
 
   // '다 읽었어요' 클릭 시 게스트의 읽은 횟수를 1 증가시키고 로그인 유도 모달 토글
   const handleDoneReading = () => {
@@ -860,30 +841,7 @@ export default function GuestReadPage() {
         {/* 독해 완료 유도 버튼 툴바 영역 */}
         {!readingDone && (
           <div style={{ display: 'flex', gap: '12px', justifyContent: 'flex-end', marginBottom: '60px', flexWrap: 'wrap', alignItems: 'center' }}>
-            {/* [품질 저하 테스트 전용 영구 삭제 버튼] 레이아웃이 꼬이지 않도록 왼쪽 정렬(marginRight: auto) 적용 */}
-            <button
-              onClick={handleDeleteArticle}
-              style={{
-                background: 'rgba(239,68,68,0.1)',
-                color: '#ef4444',
-                border: '1px solid rgba(239,68,68,0.3)',
-                borderRadius: '100px',
-                padding: '8px 20px',
-                fontSize: '0.85rem',
-                fontWeight: 700,
-                cursor: 'pointer',
-                display: 'flex',
-                alignItems: 'center',
-                gap: '6px',
-                transition: 'all 150ms ease',
-                fontFamily: 'inherit',
-                marginRight: 'auto',
-              }}
-              onMouseEnter={e => e.currentTarget.style.background = 'rgba(239,68,68,0.15)'}
-              onMouseLeave={e => e.currentTarget.style.background = 'rgba(239,68,68,0.1)'}
-            >
-              {t.deleteArticle}
-            </button>
+            {/* 게스트는 관리자가 아니디로 삭제 버튼을 표시하지 않습니다 */}
 
             <a href="/library" className="btn btn-ghost">{t.toLibrary}</a>
             <button id="mark-done-btn" onClick={handleDoneReading} className="btn btn-primary">

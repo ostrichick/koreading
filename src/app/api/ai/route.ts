@@ -28,9 +28,34 @@ if (!process.env.GEMINI_API_KEY) {
  */
 export async function POST(req: NextRequest) {
   try {
+    // ── 보안 체크 1: Content-Type 검증 ──
+    // application/json 외의 요청은 거부하여 CSRF 및 폼 기반 공격을 차단합니다.
+    const contentType = req.headers.get('content-type') || '';
+    if (!contentType.includes('application/json')) {
+      return NextResponse.json({ error: 'Invalid Content-Type' }, { status: 415 });
+    }
+
     // 요청 바디에서 필요한 매개변수를 추출합니다.
     const body = await req.json();
     const { action, level, topic, nativeLang, word, sentence, customApiKey, paragraph, userMessage, chatHistory } = body;
+
+    // ── 보안 체크 2: action 허용 목록 검증 ──
+    // 알 수 없는 action으로 서버 리소스를 소모하는 것을 방지합니다.
+    const ALLOWED_ACTIONS = ['generateArticle', 'lookupWord', 'generateTest', 'tutorChat'] as const;
+    if (!action || !ALLOWED_ACTIONS.includes(action)) {
+      return NextResponse.json({ error: 'Invalid action' }, { status: 400 });
+    }
+
+    // ── 보안 체크 3: 입력값 길이 제한 (프롬프트 인젝션 방지) ──
+    if (word && word.length > 50) {
+      return NextResponse.json({ error: 'word too long' }, { status: 400 });
+    }
+    if (sentence && sentence.length > 500) {
+      return NextResponse.json({ error: 'sentence too long' }, { status: 400 });
+    }
+    if (userMessage && userMessage.length > 1000) {
+      return NextResponse.json({ error: 'message too long' }, { status: 400 });
+    }
 
     // 사용자가 직접 입력한 개인 API Key가 있다면 이를 최우선으로 사용하고, 없으면 서버 환경변수 키를 사용합니다.
     const activeApiKey = (customApiKey && customApiKey.trim()) || process.env.GEMINI_API_KEY || '';
@@ -40,6 +65,7 @@ export async function POST(req: NextRequest) {
         { status: 400 }
       );
     }
+
 
     // AI가 한글 전용 필드에 다른 외국어 문자나 한자를 절대 섞지 않도록 강제하는 공통 시스템 지침입니다.
     const systemInstruction = 'You are an expert Korean linguist and native language teacher. You must strictly follow all instructions. In any field designed for Korean (such as "content", "title", "definition", "structure", "korean" in examples), you MUST write strictly and 100% in pure Korean characters (한글) only. Absolutely NEVER include any foreign characters, Chinese characters (한자/漢字), Japanese (日本語/かな/カナ), English, Hindi, Vietnamese, or any other languages, symbols, or alphabets. Every single word in the Korean fields must be natural, correct, 100% pure Korean as written by a native speaker. Strictly follow this rule without exception.';
