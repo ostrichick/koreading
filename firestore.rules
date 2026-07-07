@@ -26,7 +26,7 @@ service cloud.firestore {
     /** 요청자가 관리자 이메일인지 확인 (Google 로그인 = 이메일 인증 완료) */
     function isAdmin() {
       return isAuthenticated()
-          && request.auth.token.email == 'asulchoi@gmail.com'
+          && request.auth.token.email in ['asulchoi@gmail.com', 'xilencist@gmail.com']
           && request.auth.token.email_verified == true;
     }
 

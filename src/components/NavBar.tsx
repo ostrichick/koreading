@@ -5,6 +5,7 @@ import { usePathname, useRouter } from 'next/navigation';
 import Image from 'next/image';
 import { useAuth } from '@/contexts/AuthContext';
 import { useState, useRef, useEffect } from 'react';
+import { isAdminEmail } from '@/lib/adminConfig';
 
 // 서비스 최상단 공통 헤더 및 탐색 메뉴 역할을 수행하는 네비게이션 바 컴포넌트입니다.
 export default function NavBar() {
@@ -13,6 +14,9 @@ export default function NavBar() {
   const router = useRouter();                  // Next.js 페이지 라우터
   const [menuOpen, setMenuOpen] = useState(false); // 프로필 드롭다운 메뉴 활성화 상태
   const menuRef = useRef<HTMLDivElement>(null);    // 드롭다운 메뉴 엘리먼트 참조값
+
+  // 현재 로그인한 사용자가 관리자인지 판별합니다.
+  const isAdmin = isAdminEmail(user?.email);
 
   // 드롭다운 메뉴 바깥 영역을 클릭했을 때 메뉴를 자동으로 닫아주는 기능입니다.
   useEffect(() => {
@@ -52,125 +56,207 @@ export default function NavBar() {
     : [{ href: '/about', label: 'About' }];
 
   return (
-    <nav className="nav">
-      <div className="container nav-inner">
-        {/* 서비스 로고 및 랜딩 홈 링크 */}
-        <Link href="/" className="nav-logo">
-          <Image src="/logo.png" alt="Koreading logo" width={32} height={32} style={{ borderRadius: '8px' }} />
-          Koreading
-        </Link>
+    <>
+      {/* ── 관리자 모드 상단 배너 ── 관리자 계정으로 로그인했을 때만 표시 */}
+      {isAdmin && (
+        <div
+          style={{
+            background: 'linear-gradient(90deg, #7c3aed, #4f46e5, #7c3aed)',
+            backgroundSize: '200% 100%',
+            animation: 'adminBannerSlide 3s linear infinite',
+            color: '#fff',
+            fontSize: '0.75rem',
+            fontWeight: 700,
+            textAlign: 'center',
+            padding: '5px 16px',
+            letterSpacing: '0.08em',
+            userSelect: 'none',
+          }}
+        >
+          <style>{`
+            @keyframes adminBannerSlide {
+              0%   { background-position: 0% 50%; }
+              50%  { background-position: 100% 50%; }
+              100% { background-position: 0% 50%; }
+            }
+          `}</style>
+          🛡️ ADMIN MODE &nbsp;·&nbsp; {user?.email}
+        </div>
+      )}
 
-        {/* 네비게이션 링크 그룹 */}
-        <div className="nav-links">
-          {navLinks.map(link => (
-            <Link
-              key={link.href}
-              href={link.href}
-              // 현재 머무르고 있는 페이지에 불이 들어오도록 active 클래스 바인딩
-              className={`nav-link ${pathname === link.href ? 'active' : ''}`}
-            >
-              {link.label}
-            </Link>
-          ))}
-
-          {/* 로그인 세션 존재 시 우측 상단 유저 아바타 드롭다운 표시 */}
-          {user && profile ? (
-            <div style={{ position: 'relative' }} ref={menuRef}>
-              <button
-                onClick={() => setMenuOpen(!menuOpen)}
-                style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}
+      <nav className="nav">
+        <div className="container nav-inner">
+          {/* 서비스 로고 및 랜딩 홈 링크 */}
+          <Link href="/" className="nav-logo">
+            <Image src="/logo.png" alt="Koreading logo" width={32} height={32} style={{ borderRadius: '8px' }} />
+            Koreading
+            {/* 로고 옆 관리자 배지 — 관리자 계정으로 로그인했을 때만 표시 */}
+            {isAdmin && (
+              <span
+                style={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: '3px',
+                  background: 'rgba(124,58,237,0.15)',
+                  border: '1px solid rgba(124,58,237,0.4)',
+                  borderRadius: '100px',
+                  padding: '2px 8px',
+                  fontSize: '0.65rem',
+                  fontWeight: 800,
+                  color: '#a78bfa',
+                  letterSpacing: '0.05em',
+                  marginLeft: '4px',
+                  verticalAlign: 'middle',
+                }}
               >
-                {user.photoURL ? (
-                  <Image
-                    src={user.photoURL}
-                    alt="Profile"
-                    width={36}
-                    height={36}
-                    className="nav-avatar"
-                  />
-                ) : (
-                  // 프로필 이미지가 따로 존재하지 않는 구글 계정의 경우 첫 글자로 대체
-                  <div className="nav-avatar-placeholder">
-                    {user.displayName?.charAt(0) || 'U'}
-                  </div>
-                )}
-              </button>
+                🛡️ ADMIN
+              </span>
+            )}
+          </Link>
 
-              {/* 드롭다운 하부 메뉴 구성 */}
-              {menuOpen && (
-                <div style={{
-                  position: 'absolute',
-                  top: '48px',
-                  right: 0,
-                  background: 'var(--bg-secondary)',
-                  border: '1px solid var(--border-medium)',
-                  borderRadius: 'var(--radius-md)',
-                  padding: '8px',
-                  minWidth: '200px',
-                  boxShadow: 'var(--shadow-lg)',
-                  zIndex: 200,
-                }}>
-                  {/* 유저 성함 및 권장 레벨 정보 간략 요약 */}
-                  <div style={{ padding: '12px 12px 8px', borderBottom: '1px solid var(--border-subtle)' }}>
-                    <div style={{ fontSize: '0.875rem', fontWeight: 600 }}>{user.displayName}</div>
-                    <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: '2px' }}>
-                      Level: {profile.level || 'Not set'}
+          {/* 네비게이션 링크 그룹 */}
+          <div className="nav-links">
+            {navLinks.map(link => (
+              <Link
+                key={link.href}
+                href={link.href}
+                // 현재 머무르고 있는 페이지에 불이 들어오도록 active 클래스 바인딩
+                className={`nav-link ${pathname === link.href ? 'active' : ''}`}
+              >
+                {link.label}
+              </Link>
+            ))}
+
+            {/* 로그인 세션 존재 시 우측 상단 유저 아바타 드롭다운 표시 */}
+            {user && profile ? (
+              <div style={{ position: 'relative' }} ref={menuRef}>
+                <button
+                  onClick={() => setMenuOpen(!menuOpen)}
+                  style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 0, position: 'relative' }}
+                >
+                  {user.photoURL ? (
+                    <Image
+                      src={user.photoURL}
+                      alt="Profile"
+                      width={36}
+                      height={36}
+                      className="nav-avatar"
+                      style={{
+                        // 관리자 계정은 아바타 테두리를 보라색 링으로 강조
+                        outline: isAdmin ? '2px solid #7c3aed' : 'none',
+                        outlineOffset: '2px',
+                      }}
+                    />
+                  ) : (
+                    // 프로필 이미지가 따로 존재하지 않는 구글 계정의 경우 첫 글자로 대체
+                    <div
+                      className="nav-avatar-placeholder"
+                      style={{
+                        outline: isAdmin ? '2px solid #7c3aed' : 'none',
+                        outlineOffset: '2px',
+                      }}
+                    >
+                      {user.displayName?.charAt(0) || 'U'}
+                    </div>
+                  )}
+                </button>
+
+                {/* 드롭다운 하부 메뉴 구성 */}
+                {menuOpen && (
+                  <div style={{
+                    position: 'absolute',
+                    top: '48px',
+                    right: 0,
+                    background: 'var(--bg-secondary)',
+                    border: isAdmin
+                      ? '1px solid rgba(124,58,237,0.5)'  // 관리자: 보라색 테두리
+                      : '1px solid var(--border-medium)',
+                    borderRadius: 'var(--radius-md)',
+                    padding: '8px',
+                    minWidth: '220px',
+                    boxShadow: isAdmin
+                      ? '0 8px 32px rgba(124,58,237,0.2)'  // 관리자: 보라색 그림자
+                      : 'var(--shadow-lg)',
+                    zIndex: 200,
+                  }}>
+                    {/* 유저 성함 및 권장 레벨 정보 간략 요약 */}
+                    <div style={{ padding: '12px 12px 8px', borderBottom: '1px solid var(--border-subtle)' }}>
+                      <div style={{ fontSize: '0.875rem', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '6px' }}>
+                        {user.displayName}
+                        {/* 드롭다운 내 관리자 배지 */}
+                        {isAdmin && (
+                          <span style={{
+                            background: 'rgba(124,58,237,0.15)',
+                            border: '1px solid rgba(124,58,237,0.4)',
+                            borderRadius: '100px',
+                            padding: '1px 7px',
+                            fontSize: '0.6rem',
+                            fontWeight: 800,
+                            color: '#a78bfa',
+                            letterSpacing: '0.05em',
+                          }}>
+                            🛡️ ADMIN
+                          </span>
+                        )}
+                      </div>
+                      <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: '2px' }}>
+                        Level: {profile.level || 'Not set'}
+                      </div>
+                    </div>
+                    {/* 상세 톱니바퀴 프로필 설정 버튼 및 로그아웃 버튼 */}
+                    <div style={{ marginTop: '4px' }}>
+                      <Link
+                        href="/profile"
+                        onClick={() => setMenuOpen(false)}
+                        style={{
+                          display: 'block',
+                          padding: '10px 12px',
+                          color: 'var(--text-secondary)',
+                          textDecoration: 'none',
+                          borderRadius: 'var(--radius-sm)',
+                          fontSize: '0.875rem',
+                          transition: 'all 150ms ease',
+                        }}
+                        onMouseEnter={e => (e.currentTarget.style.background = 'var(--border-subtle)')}
+                        onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}
+                      >
+                        ⚙️ Profile Settings
+                      </Link>
+                      <button
+                        onClick={handleLogout}
+                        style={{
+                          display: 'block',
+                          width: '100%',
+                          padding: '10px 12px',
+                          color: 'var(--accent-rose)',
+                          background: 'none',
+                          border: 'none',
+                          borderRadius: 'var(--radius-sm)',
+                          fontSize: '0.875rem',
+                          cursor: 'pointer',
+                          textAlign: 'left',
+                          transition: 'all 150ms ease',
+                        }}
+                        onMouseEnter={e => (e.currentTarget.style.background = 'rgba(244,63,94,0.1)')}
+                        onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}
+                      >
+                        🚪 Sign Out
+                      </button>
                     </div>
                   </div>
-                  {/* 상세 톱니바퀴 프로필 설정 버튼 및 로그아웃 버튼 */}
-                  <div style={{ marginTop: '4px' }}>
-                    <Link
-                      href="/profile"
-                      onClick={() => setMenuOpen(false)}
-                      style={{
-                        display: 'block',
-                        padding: '10px 12px',
-                        color: 'var(--text-secondary)',
-                        textDecoration: 'none',
-                        borderRadius: 'var(--radius-sm)',
-                        fontSize: '0.875rem',
-                        transition: 'all 150ms ease',
-                      }}
-                      onMouseEnter={e => (e.currentTarget.style.background = 'var(--border-subtle)')}
-                      onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}
-                    >
-                      ⚙️ Profile Settings
-                    </Link>
-                    <button
-                      onClick={handleLogout}
-                      style={{
-                        display: 'block',
-                        width: '100%',
-                        padding: '10px 12px',
-                        color: 'var(--accent-rose)',
-                        background: 'none',
-                        border: 'none',
-                        borderRadius: 'var(--radius-sm)',
-                        fontSize: '0.875rem',
-                        cursor: 'pointer',
-                        textAlign: 'left',
-                        transition: 'all 150ms ease',
-                      }}
-                      onMouseEnter={e => (e.currentTarget.style.background = 'rgba(244,63,94,0.1)')}
-                      onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}
-                    >
-                      🚪 Sign Out
-                    </button>
-                  </div>
-                </div>
-              )}
-            </div>
-          ) : (
-            // 비로그인 상태이면서 로그인 관련 화면이 아닐 경우 시작하기 버튼 노출
-            !pathname?.startsWith('/login') && (
-              <Link href="/login" className="btn btn-primary btn-sm">
-                Get Started
-              </Link>
-            )
-          )}
+                )}
+              </div>
+            ) : (
+              // 비로그인 상태이면서 로그인 관련 화면이 아닐 경우 시작하기 버튼 노출
+              !pathname?.startsWith('/login') && (
+                <Link href="/login" className="btn btn-primary btn-sm">
+                  Get Started
+                </Link>
+              )
+            )}
+          </div>
         </div>
-      </div>
-    </nav>
+      </nav>
+    </>
   );
 }
-
