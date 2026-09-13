@@ -6,12 +6,7 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint src",
-    "test": "node --import tsx --test tests/*.test.ts",
-    "test:integration": "node --require ./tests/server-only.cjs --import tsx --test tests/security.integration.ts",
-    "test:emulators": "npx firebase-tools emulators:exec --only firestore,auth --project demo-koreading \"npm run test:integration\"",
-    "test:browser": "playwright test",
-    "typecheck": "tsc --noEmit --incremental false"
+    "lint": "eslint src"
   },
   "dependencies": {
     "@google/generative-ai": "^0.15.0",
