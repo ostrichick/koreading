@@ -862,10 +862,10 @@ export default function LibraryPage() {
                 ) : (
                   /* 최초 요청 전달 중: 고장 우려 경감을 위한 로딩 메시지 표출 */
                   <div>
-                    <div style={{ color: '#818cf8', padding: '1px 0' }}>⚡ Groq + Gemini 총 8개 AI 모델 폴백 체인 가동 중...</div>
-                    <div style={{ color: 'var(--text-secondary)', padding: '1px 0' }}>🔄 Groq Gemma 2 → Llama 3.3 → Llama 3.1</div>
-                    <div style={{ color: 'var(--text-secondary)', padding: '1px 0' }}>🔄 Gemini 2.5 → 2.0 → 1.5 → Lite → 8B</div>
-                    <div style={{ color: 'var(--text-muted)', padding: '1px 0', fontSize: '0.7rem', marginTop: '4px' }}>서버 과부하 시 자동으로 다음 모델로 전환됩니다</div>
+                    <div style={{ color: '#818cf8', padding: '1px 0' }}>⚡ Groq + Gemini 초고속 AI 모델 폴백 체인 가동 중...</div>
+                    <div style={{ color: 'var(--text-secondary)', padding: '1px 0' }}>🔄 Groq Qwen 3.8 → GPT-OSS 120B</div>
+                    <div style={{ color: 'var(--text-secondary)', padding: '1px 0' }}>🔄 Gemini 2.5 Flash → 3.5 Lite → 3.5 Flash</div>
+                    <div style={{ color: 'var(--text-muted)', padding: '1px 0', fontSize: '0.7rem', marginTop: '4px' }}>서버 과부하 시 자동으로 다음 모델로 즉시 전환됩니다</div>
                   </div>
                 )}
                 <div style={{ color: 'var(--accent-primary)', animation: 'pulse 1.5s ease-in-out infinite' }}>▍</div>

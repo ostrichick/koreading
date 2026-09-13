@@ -47,7 +47,18 @@ async function callAI(body: object) {
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ ...body, customApiKey }),
   });
-  const data = await res.json();
+
+  const text = await res.text();
+  let data: any;
+  try {
+    data = JSON.parse(text);
+  } catch {
+    if (!res.ok) {
+      throw new Error(`AI 서버 과부하 (HTTP ${res.status}): 일시적인 지연입니다. 잠시 후 다시 시도해 주세요.`);
+    }
+    throw new Error(`서버 응답 파싱 오류: ${text.substring(0, 100)}`);
+  }
+
   if (!res.ok) throw new Error(data.detail || data.error || 'AI request failed');
   return data;
 }
@@ -102,7 +113,16 @@ export async function generateArticle(
     }),
   });
 
-  const data = await res.json();
+  const text = await res.text();
+  let data: any;
+  try {
+    data = JSON.parse(text);
+  } catch {
+    if (!res.ok) {
+      throw new Error(`AI 서버 과부하 (HTTP ${res.status}): 일시적인 지연입니다. 잠시 후 다시 시도해 주세요.`);
+    }
+    throw new Error(`서버 응답 파싱 오류: ${text.substring(0, 100)}`);
+  }
 
   // 서버에서 반환된 기사 생성 로그가 존재할 경우, 화면에 출력하기 위해 onLog 콜백을 호출합니다.
   if (data._logs && onLog) {

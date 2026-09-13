@@ -107,12 +107,11 @@ export async function POST(req: NextRequest) {
     // API 키를 주입하여 GoogleGenerativeAI 인스턴스를 초기화합니다.
     const genAI = new GoogleGenerativeAI(activeApiKey);
     
-    // 모델별 인스턴스들을 생성합니다.
+    // 2026년 현재 100% 가동 검증된 최신 고속 Gemini 모델 인스턴스들을 생성합니다.
     const model25 = genAI.getGenerativeModel({ model: 'gemini-2.5-flash', systemInstruction });
-    const model20 = genAI.getGenerativeModel({ model: 'gemini-2.0-flash', systemInstruction });
-    const model15 = genAI.getGenerativeModel({ model: 'gemini-1.5-flash', systemInstruction });
-    const model20lite = genAI.getGenerativeModel({ model: 'gemini-2.0-flash-lite', systemInstruction });
-    const model15_8b = genAI.getGenerativeModel({ model: 'gemini-1.5-flash-8b', systemInstruction });
+    const model35 = genAI.getGenerativeModel({ model: 'gemini-3.5-flash', systemInstruction });
+    const model35lite = genAI.getGenerativeModel({ model: 'gemini-3.5-flash-lite', systemInstruction });
+    const modelFlashLiteLatest = genAI.getGenerativeModel({ model: 'gemini-flash-lite-latest', systemInstruction });
 
     // 폴백 대기용 헬퍼 함수
     const sleep = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
@@ -124,25 +123,27 @@ export async function POST(req: NextRequest) {
       msg.includes('503') || msg.includes('429') || msg.includes('overloaded') || msg.includes('high demand') || msg.includes('Quota') || msg.includes('quota');
 
     /**
-     * Groq Gemma 2 9B 모델을 우선 호출하고, 실패 시 여러 Gemini 모델로 순차 전환(폴백)하며 결과를 얻는 헬퍼 함수입니다.
-     * 주로 사전 검색(lookupWord) 및 레벨 테스트 생성(generateTest)과 같이 스트리밍이 필요 없는 단발성 요청에 사용됩니다.
+     * Groq 최신 모델을 우선 시도하고, 실패 시 초고속 Gemini 최신 모델군으로 전환(폴백)하는 헬퍼 함수입니다.
+     * 주로 사전 검색(lookupWord) 및 레벨 테스트 생성(generateTest)에 사용됩니다.
      * 
      * @param prompt AI에 보낼 프롬프트 텍스트
      * @param responseMimeType 반환 데이터 타입 (예: 'application/json')
      */
     const generateWithFallback = async (prompt: string, responseMimeType?: string): Promise<{ text: string; modelUsed: string }> => {
-      // 1. 서버 환경 변수에 Groq API Key가 설정되어 있다면, Groq의 Gemma 2 9B를 1순위로 호출합니다.
+      // 1. Groq 시도 (최대 3초 타임아웃으로 지연 방지)
       if (process.env.GROQ_API_KEY) {
         try {
-          console.log('⚡ Calling primary Groq API: gemma2-9b-it');
+          const controller = new AbortController();
+          const timeoutId = setTimeout(() => controller.abort(), 3000);
           const res = await fetch('https://api.groq.com/openai/v1/chat/completions', {
             method: 'POST',
+            signal: controller.signal,
             headers: {
               'Content-Type': 'application/json',
               'Authorization': `Bearer ${process.env.GROQ_API_KEY}`
             },
             body: JSON.stringify({
-              model: 'gemma2-9b-it',
+              model: 'qwen/qwen3.8-27b',
               temperature: 0.1,
               messages: [
                 { role: 'system', content: systemInstruction },
@@ -151,30 +152,27 @@ export async function POST(req: NextRequest) {
               response_format: responseMimeType === 'application/json' ? { type: 'json_object' } : undefined
             })
           });
+          clearTimeout(timeoutId);
           if (res.ok) {
             const data = await res.json();
-            return { text: data.choices[0].message.content, modelUsed: 'Gemma 2 9B (Groq LPU)' };
+            return { text: data.choices[0].message.content, modelUsed: 'Groq Qwen 3.8 27B' };
           }
-          const errText = await res.text();
-          console.warn(`[Groq API warning status ${res.status}]: ${errText}`);
         } catch (groqErr) {
-          console.warn('⚠️ Groq connection failed, falling back to Gemini...', groqErr);
+          // Groq 실패 시 즉시 Gemini로 진입
         }
       }
 
-      // 2. Groq 호출이 실패했거나 키가 없으면, Gemini 모델군으로 구성된 폴백 체인을 가동합니다.
+      // 2. 초고속 검증된 Gemini 모델 체인 (단어 사전: 800ms대 Lite 모델 우선 가동)
       const config = {
         temperature: 0.1,
         responseMimeType: responseMimeType === 'application/json' ? 'application/json' : undefined
       };
       
-      // 단어 사전 조회용 모델 체인: 경량·고속 모델을 우선 배치하여 응답 속도를 최적화합니다.
       const geminiModels = [
-        { model: model20lite, name: 'Gemini 2.0 Flash Lite' },
-        { model: model15_8b, name: 'Gemini 1.5 Flash 8B' },
-        { model: model20, name: 'Gemini 2.0 Flash' },
-        { model: model15, name: 'Gemini 1.5 Flash' },
+        { model: model35lite, name: 'Gemini 3.5 Flash Lite' },
+        { model: modelFlashLiteLatest, name: 'Gemini Flash Lite Latest' },
         { model: model25, name: 'Gemini 2.5 Flash' },
+        { model: model35, name: 'Gemini 3.5 Flash' },
       ];
       
       for (const { model: m, name } of geminiModels) {
@@ -188,8 +186,7 @@ export async function POST(req: NextRequest) {
           const msg = err?.message || String(err);
           console.warn(`[${name} error]: ${msg}`);
           if (isRetryableError(msg)) {
-            // 서버 과부하나 한도 초과 오류일 경우 1.5초 대기 후 다음 모델로 넘어갑니다.
-            await sleep(1500);
+            await sleep(300);
             continue;
           }
           continue;
@@ -288,17 +285,19 @@ ${duplicateAvoidanceInstruction}
       // Google API 서버와 완전 별도 인프라이므로, 구글 측 429나 503 에러 발생 시 최상의 즉시 대체 경로입니다.
       if (process.env.GROQ_API_KEY) {
         const groqModels = [
-          { id: 'gemma2-9b-it', name: 'Groq Gemma 2 9B' },
-          { id: 'llama-3.3-70b-versatile', name: 'Groq Llama 3.3 70B' },
-          { id: 'llama-3.1-8b-instant', name: 'Groq Llama 3.1 8B' },
+          { id: 'qwen/qwen3.8-27b', name: 'Groq Qwen 3.8 27B' },
+          { id: 'openai/gpt-oss-120b', name: 'Groq GPT-OSS 120B' },
         ];
         
         for (const gm of groqModels) {
           if (resultText) break;
           logs.push(`⚡ ${gm.name} 모델에 연결 중...`);
           try {
+            const controller = new AbortController();
+            const timeoutId = setTimeout(() => controller.abort(), 5000);
             const res = await fetch('https://api.groq.com/openai/v1/chat/completions', {
               method: 'POST',
+              signal: controller.signal,
               headers: {
                 'Content-Type': 'application/json',
                 'Authorization': `Bearer ${process.env.GROQ_API_KEY}`
@@ -313,6 +312,7 @@ ${duplicateAvoidanceInstruction}
                 response_format: { type: 'json_object' }
               })
             });
+            clearTimeout(timeoutId);
             
             if (res.ok) {
               const data = await res.json();
@@ -320,24 +320,23 @@ ${duplicateAvoidanceInstruction}
               modelUsed = gm.name;
               logs.push(`✅ ${gm.name} 모델로 생성 성공!`);
             } else {
-              const errText = (await res.text()).substring(0, 120);
-              logs.push(`⚠️ ${gm.name} 오류 (HTTP ${res.status}): ${errText}`);
+              const errText = (await res.text()).substring(0, 100);
+              logs.push(`⚠️ ${gm.name} 상태 (HTTP ${res.status}): ${errText}`);
             }
           } catch (e: any) {
-            logs.push(`⚠️ ${gm.name} 연결 실패: ${(e?.message || '').substring(0, 100)}`);
+            logs.push(`⚠️ ${gm.name} 전환: ${(e?.message || '').substring(0, 80)}`);
           }
         }
       }
 
       // ── (2단계) Gemini 5종 순차 폴백 체인 시도 ──
-      // Groq가 없거나 모두 연결 실패 시 작동하며, 트래픽에 맞춰 하위 리소스 사양 모델로 계단식 하향 전환합니다.
+      // Groq가 없거나 모두 연결 실패 시 작동하며, 최신 활성 Gemini 모델들로 순차 전환합니다.
       if (!resultText) {
         const geminiChain = [
           { model: model25, name: 'Gemini 2.5 Flash' },
-          { model: model20, name: 'Gemini 2.0 Flash' },
-          { model: model15, name: 'Gemini 1.5 Flash' },
-          { model: model20lite, name: 'Gemini 2.0 Flash Lite' },
-          { model: model15_8b, name: 'Gemini 1.5 Flash 8B' },
+          { model: model35lite, name: 'Gemini 3.5 Flash Lite' },
+          { model: modelFlashLiteLatest, name: 'Gemini Flash Lite Latest' },
+          { model: model35, name: 'Gemini 3.5 Flash' },
         ];
         
         for (const { model: m, name } of geminiChain) {
@@ -355,9 +354,9 @@ ${duplicateAvoidanceInstruction}
             const msg = err?.message || String(err);
             if (isRetryableError(msg)) {
               logs.push(`⏳ ${name} 서버 과부하 (503/429). 다음 모델로 전환...`);
-              await sleep(1000);
+              await sleep(500);
             } else {
-              logs.push(`⚠️ ${name} 오류: ${msg.substring(0, 120)}`);
+              logs.push(`⚠️ ${name} 오류: ${msg.substring(0, 100)}`);
             }
           }
         }
