@@ -15,6 +15,7 @@ import { GoogleGenerativeAI } from '@google/generative-ai';
 import type { CEFRLevel, NativeLanguage } from '@/lib/gemini';
 import { TOPICS } from '@/lib/gemini';
 import { getRandomSubTopic, getGenreInstruction } from '@/lib/topicSeeds';
+import { getPedagogicalInstruction, getVisualAidDirectingInstruction } from '@/lib/koreanCurriculum';
 
 // 서버 환경변수에 GEMINI_API_KEY가 설정되어 있지 않으면 에러 로그를 남깁니다.
 if (!process.env.GEMINI_API_KEY) {
@@ -242,43 +243,43 @@ export async function POST(req: NextRequest) {
         }
       }
 
-      // 프롬프트를 정교하게 구성합니다.
-      const prompt = `당신은 대한민국 최고의 한국어 문학 작가이자 전문 한국어 교육자입니다.
-CEFR ${level} 레벨의 한국어 학습자를 위한 "${topicLabel}" 주제의 흥미진진하고 유려한 한국어 독해 본문을 작성해 주세요.
+      const pedagogicalGuide = getPedagogicalInstruction(level as CEFRLevel, topicLabel);
+      const visualAidGuide = getVisualAidDirectingInstruction();
+
+      // 프롬프트를 정교하게 구성합니다. (소설가 페르소나 탈피 -> KFL 한국어 교육학 전문 집필관)
+      const prompt = `당신은 국립국어원 한국어 표준 교육과정 및 국제 한국어 교육학(KFL) 최고 권위자이자 한국어 독해 교재 전문 집필관입니다.
+CEFR ${level} 레벨의 외국인 학습자가 실질적인 한국어 습득 효과(Comprehensible Input)를 온전히 누릴 수 있도록 "${topicLabel}" 주제의 체계적이고 유익한 교육용 독해 지문을 작성해 주세요.
 ${subtopicInstruction}
 ${genreInstruction}
 ${duplicateAvoidanceInstruction}
+${pedagogicalGuide}
+${visualAidGuide}
 
 [절대 준수해야 하는 강한 제약 조건 (CRITICAL)]:
-1. "title"과 "content" 필드는 반드시 100% 순수한 한글(한국어 문자)로만 작성해야 합니다.
-2. 절대 본문("content")이나 제목("title")에 영어, 스페인어, 한자(漢字/简繁体字), 일본어(日本語/かな/カナ), 러시아어, 터키어, 힌디어, 베트남어 등 그 어떤 외국어 문자, 알파벳, 단어도 단 한 글자도 포함해서는 안 됩니다. 100% 완벽한 한글로만 구성해야 합니다.
-3. 100% 순수 한국어 제약: 어려운 어휘를 설명하거나 학습 자료를 구성할 때, 괄호 속 번역이나 외국어 주석(예: '맥락(contexto)' 또는 '공부(study)하다' 또는 '건강(健康)' 등)을 절대로 본문에 집어넣지 마십시오. 모든 단어는 괄호나 번역 표기 없이 100% 순수한 한글 단어로만 문장 속에 자연스럽게 녹여내야 합니다. 번역 설명용 외래 문자는 절대 금지입니다.
-4. 문장 구조 및 길이 제약 조건:
-- ${levelConfig[level as CEFRLevel]}
-5. 본문은 한 문장마다 줄바꿈을 하지 말고, 3~4개 이상의 문장이 자연스럽게 연결된 완성도 높은 문단(Paragraph)으로 구성해 주세요. (A1/A2 레벨의 경우에도 4~6개의 문장이 하나의 유기적인 문단으로 묶여 있어야 합니다.)
-
-[자연스럽고 생생한 한국어 작성을 위한 상투어 금지 규칙 (Anti-Cliche)]:
-1. 첫 문장 상투어 절대 금지: "오늘은 ~에 대해 이야기해 보겠습니다", "~에 대해 알아보겠습니다", "~는 매우 유명합니다", "여러분은 ~를 아십니까?" 같은 전형적이고 지루한 AI 도입부를 절대 쓰지 마십시오. 첫 문장은 즉시 생생한 현장 묘사, 인물의 행동이나 감각, 또는 인상적인 대사로 독자의 흥미를 사로잡으며 시작하십시오.
-2. 결말 상투어 절대 금지: "여러분도 꼭 ~해보세요", "한국에 오시면 꼭 경험해 보시기 바랍니다", "앞으로의 발전이 기대됩니다" 같은 기계적인 훈화형 결말을 쓰지 마십시오. 여운을 남기는 주인공의 생각, 상황의 자연스러운 마무리, 혹은 깊은 인상을 남기는 감각적 문장으로 세련되게 끝맺으십시오.
-3. 번역기 특유의 딱딱한 직역투를 피하고, 실제 한국인 에세이스트나 소설가가 쓴 것처럼 문맥과 호응이 물 흐르듯 유려해야 합니다.
+1. 100% 순수 한글 원칙: "title"과 "content" 필드는 반드시 100% 순수한 한글(한국어 문자)로만 작성해야 합니다.
+2. 절대 본문("content")이나 제목("title")에 영어, 한자(漢字/简繁体字), 일본어, 외국어 번역 괄호 표기(예: '공부(study)하다', '건강(健康)')를 단 한 글자도 넣지 마십시오. 모든 단어는 100% 순수한 한글 단어로만 문장 속에 자연스럽게 녹여내야 합니다. 번역 설명용 외래 문자는 절대 금지입니다.
+3. 한국어 교육학적 완성도:
+   - 본문에 이번 레벨(${level})의 필수 목표 문법이 2~3개 이상 자연스럽게 사용되어야 합니다.
+   - 5개의 핵심 어휘(keyVocabulary)는 본문 속에서 각각 최소 2회 이상 자연스럽게 반복(Recycled)되어야 합니다.
+   - 어휘 난이도와 문장 길이는 반드시 CEFR ${level} 기준을 철저히 지키십시오. 뜬구름 잡는 추상적 소설이나 난해한 문학적 묘사를 금지합니다.
 
 반드시 다음 형식의 JSON 객체만 반환해 주세요 (마크다운 기호 없이 JSON만 반환):
 {
-  "title": "텍스트 제목 (100% 순수 한글, 참신하고 매력적인 제목)",
-  "content": "전체 텍스트 내용 (한국어 원어민이 쓴 것처럼 극히 자연스럽고 유려하며, 문단 구분이 잘 된 100% 순수 한글)",
+  "title": "텍스트 제목 (100% 순수 한글, 학습자의 흥미를 끄는 명료한 제목)",
+  "content": "전체 텍스트 내용 (선정된 목표 문법과 핵심 어휘가 2회 이상 반복되며 유기적으로 연결된 100% 순수 한글)",
   "summary": "${langNote}로 작성된 한 문장의 본문 요약",
   "topicCategory": "${topic}",
   "level": "${level}",
   "estimatedMinutes": 2, // 텍스트 난이도와 길이에 따라 예상 소요 시간(분)을 정수(예: 1, 2, 3, 4)로 동적 예측
   "keyVocabulary": ["핵심단어1", "핵심단어2", "핵심단어3", "핵심단어4", "핵심단어5"],
   "imagePrompts": [
-    "A vivid and beautiful English prompt describing the overall setting, atmosphere, and mood of the story. Warm lighting, modern Korean educational storybook illustration, clean composition, absolutely NO text or letters.",
-    "A detailed and expressive English prompt describing a specific key action, character, or object from the middle of the story. Colorful Korean editorial illustration, clean background, absolutely NO text or letters."
+    "A clear, educational textbook illustration showing the main scene of this story: [describe the specific situational scene and characters doing the action in Korea], clear composition, bright pleasant lighting, modern Korean language textbook graphic style, absolutely NO text or letters",
+    "A close-up educational visual dictionary illustration focusing clearly on [describe the specific object or core hand action of 1-2 key vocabulary words], clearly demonstrating the item, uncluttered background, educational vector art style, absolutely NO text or words"
   ]
 }`;
 
-      // 글의 창의성과 어휘 다양성을 극대화하기 위해 온도를 0.8로 설정합니다.
-      const genConfig = { temperature: 0.8, responseMimeType: 'application/json' as const };
+      // 교육적 일관성과 엄격한 어휘 통제를 위해 최적의 교육용 온도인 0.45로 설정합니다.
+      const genConfig = { temperature: 0.45, responseMimeType: 'application/json' as const };
       
       // 사용자 브라우저 모달에 처리 경과 로그를 실시간 중계하기 위해 배열에 이력을 담아둡니다.
       const logs: string[] = [];
@@ -308,7 +309,7 @@ ${duplicateAvoidanceInstruction}
               },
               body: JSON.stringify({
                 model: gm.id,
-                temperature: 0.8,
+                temperature: 0.45,
                 messages: [
                   { role: 'system', content: systemInstruction },
                   { role: 'user', content: prompt }
@@ -371,19 +372,26 @@ ${duplicateAvoidanceInstruction}
         try {
           const parsed = JSON.parse(resultText);
 
-          // 🎨 글의 주제와 문맥에 정확히 일치하는 고품질 AI 삽화 2종 URL 자동 조합 (Pollinations.ai / FLUX.1)
+          // 🎨 글의 주제와 문맥에 1:1로 직관 매칭되는 교재형 AI 삽화 2종 URL 자동 조합 (Pollinations.ai / FLUX.1)
+          // 1. imagePrompts[0]: 대표 상황도 (본문의 장소, 인물 행동, 전체 맥락 시각화)
+          // 2. imagePrompts[1]: 핵심 어휘 도해 (본문 keyVocabulary 사물 또는 핵심 동작 클로즈업)
           const prompts = Array.isArray(parsed.imagePrompts) && parsed.imagePrompts.length > 0
             ? parsed.imagePrompts
             : [];
           const seedBase = Math.floor(Math.random() * 900000) + 100000;
 
-          const prompt1 = prompts[0] && typeof prompts[0] === 'string' && prompts[0].trim()
-            ? `${prompts[0].trim()}, modern Korean educational storybook illustration, warm cinematic colors, studio ghibli aesthetic, clean composition, no text, no words, no watermark`
-            : `A warm, artistic illustration depicting Korean culture and everyday life: ${topicLabel}, ${parsed.summary || ''}, modern Korean storybook art, cozy atmosphere, clean lighting, no text, no watermark`;
+          const rawPrompt1 = prompts[0] && typeof prompts[0] === 'string' ? prompts[0].trim().replace(/[\r\n]+/g, ' ') : '';
+          const prompt1 = rawPrompt1
+            ? `${rawPrompt1}, modern Korean educational textbook illustration, bright and pleasant lighting, clean vector lines, highly detailed, no text, no words, no watermark`
+            : `A modern Korean language textbook illustration showing a clear situational scene of ${topicLabel}: ${parsed.summary || ''}, bright lighting, clean educational illustration, no text, no words, no watermark`;
 
-          const prompt2 = prompts[1] && typeof prompts[1] === 'string' && prompts[1].trim()
-            ? `${prompts[1].trim()}, modern Korean editorial illustration, colorful storybook scene, clean composition, no text, no words, no watermark`
-            : `A detailed, charming illustration showing a key moment in Korean reading story: ${topicLabel}, expressive characters, vibrant colors, clean background, no text, no watermark`;
+          const rawPrompt2 = prompts[1] && typeof prompts[1] === 'string' ? prompts[1].trim().replace(/[\r\n]+/g, ' ') : '';
+          const vocabSample = Array.isArray(parsed.keyVocabulary) && parsed.keyVocabulary.length > 0
+            ? parsed.keyVocabulary.slice(0, 2).join(', ')
+            : topicLabel;
+          const prompt2 = rawPrompt2
+            ? `${rawPrompt2}, educational visual dictionary illustration, close-up focal point, vibrant colors, clean uncluttered background, no text, no words, no watermark`
+            : `An educational visual dictionary close-up illustration clearly depicting ${vocabSample} in Korean daily life, sharp focus, clean background, educational graphic art, no text, no words, no watermark`;
 
           const imageUrls = [
             `https://image.pollinations.ai/prompt/${encodeURIComponent(prompt1)}?width=960&height=540&seed=${seedBase}&nologo=true`,

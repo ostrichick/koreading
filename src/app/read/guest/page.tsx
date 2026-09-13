@@ -673,8 +673,8 @@ export default function GuestReadPage() {
         {article.imageUrls?.[0] && (
           <ArticleIllustration
             src={article.imageUrls[0]}
-            alt={`${article.title} - 대표 삽화`}
-            badgeText="🎨 AI 대표 삽화"
+            alt={`${article.title} - 본문 상황도`}
+            badgeText="🖼️ 본문 상황도 (Scene)"
             style={{ marginBottom: '24px', marginTop: '0px' }}
           />
         )}
@@ -848,12 +848,12 @@ export default function GuestReadPage() {
                   </span>
                 </p>
 
-                {/* 🎨 본문 중간 문맥 삽화 (In-text Scene Illustration) */}
+                {/* 🎨 본문 중간 시각 보조자료 삽화 (In-text Vocabulary Visual Aid) */}
                 {article.imageUrls?.[1] && pIdx === midIdx && (
                   <ArticleIllustration
                     src={article.imageUrls[1]}
-                    alt={`${article.title} - 문맥 삽화`}
-                    badgeText="🎨 AI 문맥 삽화"
+                    alt={`${article.title} - 핵심 어휘 시각 자료`}
+                    badgeText="🔍 핵심 어휘 시각 자료 (Visual Aid)"
                     style={{ margin: '20px 0 28px 0' }}
                   />
                 )}

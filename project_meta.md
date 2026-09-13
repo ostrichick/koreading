@@ -52,6 +52,7 @@ Conq/
 │       ├── db.ts                # Firestore 데이터베이스 CRUD 함수 정의
 │       ├── firebase.ts          # Firebase Client SDK 초기화 (Auth, Firestore)
 │       ├── gemini.ts            # Gemini API 기본 설정, 상수(주제, 레벨), 타입 정의
+│       ├── koreanCurriculum.ts  # [NEW] 국립국어원 표준 CEFR 교육과정 커리큘럼 & 교재형 시각보조자료 디렉터
 │       ├── storage.ts           # 로컬 스토리지 헬퍼 (게스트 유저 모국어/레벨 캐싱)
 │       ├── topicSeeds.ts        # [NEW] 8대 주제별 100종 서브토픽 풀 & 5대 장르 서술 지침
 │       └── utils.ts             # 공통 유틸리티 (한글 토크나이저, 한글 판단, Fisher-Yates 셔플)
@@ -78,6 +79,7 @@ Conq/
 | adminConfig.ts | 운영 관리자 계정 이메일 목록(ADMIN_EMAILS) 및 관리자 권한 검증(isAdminEmail) 헬퍼를 제공합니다. |
 | db.ts | Firestore DB와 상호작용하는 모든 비즈니스 로직이 포함된 모듈입니다. 트랜잭션을 통한 리뷰 평점 동시성 보장 및 계정 탈퇴/삭제를 처리합니다. |
 | gemini.ts | CEFR 등급(A1~C2), 모국어 목록(en/es/ja/zh), 8대 학습 주제 등 상수와 타입 정의, AI 기사 생성 API 호출 헬퍼를 포함합니다. |
+| koreanCurriculum.ts | [NEW] 국립국어원 한국어 표준 교육과정 및 국제 통용 한국어 교육과정(CEFR A1~C2)에 입각하여 레벨별 목표 문법 목록, 어휘 재활용(Vocabulary Recycling: 5대 핵심 단어 본문 내 2회 이상 반복) 규칙, 문장 호흡 및 교재형 시각 보조자료(Visual Aid: 상황도 및 어휘 클로즈업 도해) 디렉팅을 공급하는 KFL 전문 교육 커리큘럼 모듈입니다. |
 | storage.ts | 비로그인 게스트 사용자용 브라우저 로컬 저장소(localStorage) 이용한 선호 언어 및 레벨 임시 저장 유틸입니다. |
 | topicSeeds.ts | [NEW] 8대 학습 토픽별 100종 이상의 동적 서브토픽 풀과 5가지 글 스타일/장르(수필, 대화, 칼럼, 스토리, 무작위) 가이드라인을 정의하는 모듈입니다. |
 | utils.ts | 문장 단어 분리 토크나이저(tokenizeKorean), 한글 식별 기능(isKoreanWord), Fisher-Yates 배열 셔플(shuffleArray)을 포함한 공통 유틸리티 모듈입니다. |

@@ -29,9 +29,9 @@
 | **Styling** | **Pure CSS (`globals.css`)** | CSS 변수 기반 디자인 시스템 토큰, 다크 모드 테마, 무(無) 라이브러리 경량화 |
 | **Authentication** | **Firebase Auth** | Google OAuth 간편 로그인 (팝업 및 모바일 리다이렉트 대응) |
 | **Database** | **Cloud Firestore** | NoSQL 문서 데이터베이스 (아티클, 단어장, 읽음 기록, 리뷰, 사용자 프로필) |
-| **Main AI Model (창작)** | **Google Gemini 2.5 Flash** | 한국어 어휘력 및 문장 유려도가 가장 뛰어난 고품질 주력 모델 (`temperature: 0.8`) |
+| **Main AI Model (창작)** | **Google Gemini 2.5 Flash** | 국립국어원 표준 CEFR 커리큘럼 기반 한국어 교육 전담 주력 모델 (`temperature: 0.45`) |
 | **Speed AI Model (사전)** | **Google Gemini 3.5 Flash Lite** | 800ms대 초고속 응답 속도를 자랑하는 미니 팝업 사전 전용 모델 (`temperature: 0.1`) |
-| **Fallback & Alternative**| **Groq Qwen 3.8 27B / Gemini 3.5 Flash** | 구글 쿼터 초과 시 동작하는 Groq 오픈소스 모델 및 최신 플래시 폴백 체인 |
+| **Fallback & Alternative**| **Groq Qwen 3.8 27B / Gemini 3.5 Flash** | 구글 쿼터 초과 시 동작하는 Groq 오픈소스 모델 및 최신 플래시 폴백 체인 (`temperature: 0.45`) |
 | **Cron & Autonomous Ops** | **Vercel Cron Jobs (3종)** | ① 일일 모델 헬스체크, ② 월간 모델 벤치마크 오딧, ③ 주간 4대 시스템 감사 |
 | **Client Storage** | **localStorage & sessionStorage** | 게스트 세션 데이터 및 사전 조회 2단계 영속 캐시 |
 
@@ -39,9 +39,15 @@
 
 ## 🏗️ 3. 핵심 아키텍처 & 비즈니스 로직 (Core Systems)
 
-### 3.1 맞춤형 글 생성 시스템 (`action === 'generateArticle'`)
+### 3.1 맞춤형 KFL 한국어 교육 지문 생성 시스템 (`action === 'generateArticle'`)
 - **엔드포인트**: `POST /api/ai`
-- **Temperature**: **`0.8`** (사전 검색의 `0.1`과 분리하여 어휘와 서술의 창의성/다양성 극대화)
+- **Temperature**: **`0.45`** (과도한 상상력이나 난해한 문학적 표현을 방지하고, 레벨별 어휘 및 문법 제약 조건을 엄격히 준수하도록 최적화)
+- **KFL(외국어로서의 한국어) 전문 커리큘럼 엔진 (`src/lib/koreanCurriculum.ts`)**:
+  - 국립국어원 한국어 표준 교육과정 및 국제 통용 한국어 교육과정(CEFR A1~C2) 표준 반영.
+  - **크라센(Krashen)의 i+1 원리**: 전체 문맥의 90%는 직관적으로 이해 가능한 친숙한 어휘, 10%는 신규 습득 목표 문법과 핵심 어휘로 구성.
+  - **어휘 재활용(Vocabulary Recycling)**: 선별된 5개의 핵심 어휘(`keyVocabulary`)를 본문에서 각각 **최소 2회 이상 자연스럽게 반복(Recycled)** 노출시켜 자동 암기 유도.
+  - **필수 목표 문법 내재화**: 레벨별 필수 문법(예: A1 `-아요/어요`, `-에 가요` / A2 `-(으)러 가다`, `-(으)면`, `-아/어서` / B1 `-(으)ㄴ 적이 있다`, `-기 때문에` 등) 중 2~3개를 본문에 의무 사용.
+  - **실생활 상황 중심**: 뜬구름 잡는 소설 대신 편의점, 식당, 교통, 약속, 여행 등 외국인이 실제 한국 생활에서 마주치는 생생한 대화와 에피소드로 전개.
 - **동적 서브토픽 풀 (`src/lib/topicSeeds.ts`)**:
   - 8개 주제마다 10~15개 이상의 구체적이고 트렌디한 세부 소재(총 100종 이상) 구축.
   - 사용자가 키워드를 입력하지 않아도 매번 무작위 세부 소재가 프롬프트에 강제 주입되어 뻔한 글 방지.
@@ -76,14 +82,14 @@
 - **API 보호**:
   - Content-Type(`application/json`) 강제 검증, action 허용 목록 검증, 입력 파라미터 길이 제한(프롬프트 인젝션 방어), IP 기반 Rate Limiting (분당 20회).
 
-### 3.4 주제 맞춤형 AI 일러스트 시스템 (Pollinations.ai / FLUX.1)
+### 3.4 교재형 시각 보조자료(Visual Aid) 일러스트 시스템 (Pollinations.ai / FLUX.1)
 - **비용**: 100% 완전 무료 (오픈소스 FLUX.1/SDXL 기반 CDN 인프라 `image.pollinations.ai` 활용)
-- **이중 삽화 구성**:
-  1. **대표 커버 배너 (Hero Cover)**: 글 전체의 시간대, 날씨, 전경, 분위기를 담은 16:9 와이드 일러스트 (도서관 카드 썸네일로도 동시 활용)
-  2. **문맥 삽화 (In-text Scene)**: 글 중반부의 핵심 행동이나 전환점, 주요 사물을 묘사하는 클로즈업 일러스트
-- **프롬프트 파이프라인**:
-  - Gemini 2.5 Flash가 글을 쓸 때 본문 내용을 기반으로 영문 `imagePrompts` 2종을 직접 도출.
-  - 일러스트 품질 통일 및 외계어 방지: `modern Korean educational storybook illustration, warm lighting, no text, no words, no watermark` 강제 결합.
+- **교육 맞춤형 1:1 직관 삽화 구성**:
+  1. **대표 상황도 (Situational Scene - Hero Cover)**: 글의 전체적인 한국 배경 장소, 주인공의 구체적인 행동과 표정을 한눈에 보여주는 상황도. 텍스트를 읽기 전/후 상황 파악을 즉시 돕습니다.
+  2. **핵심 어휘 시각 자료 (Key Vocabulary Visual Aid - In-text)**: 본문의 핵심 어휘(`keyVocabulary`) 중 1~2개 주요 사물이나 손동작을 클로즈업한 시각 사전형 도해. 단어 뜻을 이미지로 즉각 유추 가능.
+- **디렉팅 파이프라인 (`koreanCurriculum.ts`)**:
+  - AI가 글을 쓸 때 위 교육학적 공식에 맞춰 영문 `imagePrompts` 2종을 정밀 설계.
+  - 교재 화풍 고정 및 외계어 방지: `modern Korean educational textbook illustration / educational visual dictionary illustration style, no text, no words, no watermark` 강제 결합.
 - **비동기 UX (`ArticleIllustration.tsx`)**:
   - 텍스트가 먼저 2~3초 만에 렌더링되고, 이미지는 브라우저 백그라운드에서 스켈레톤 쉬머 애니메이션과 함께 로딩되어 사용자 대기 시간이 0초.
   - 네트워크 오류 시 레이아웃을 해치지 않고 부드럽게 숨김 처리(Graceful Fallback).
@@ -135,6 +141,7 @@ Conq/
 │       ├── db.ts                 # Firestore CRUD 모듈 (아티클, 단어, 리뷰, 프로필)
 │       ├── firebase.ts           # Firebase Client SDK 초기화 (Auth, Firestore)
 │       ├── gemini.ts             # 클라이언트 AI 래퍼, CEFR/주제 상수, GenerateArticleOptions
+│       ├── koreanCurriculum.ts   # [NEW] 국립국어원 표준 CEFR 교육과정 커리큘럼 & 교재형 시각보조자료 디렉터
 │       ├── storage.ts            # 게스트 로컬 저장소 헬퍼 (모국어/레벨 캐싱)
 │       ├── topicSeeds.ts         # [NEW] 8개 주제별 100종 서브토픽 풀 & 5대 장르 서술 지침
 │       └── utils.ts              # 한글 토크나이저, 한글 판별, 셔플 유틸리티
@@ -146,6 +153,7 @@ Conq/
 
 | 일자 | 구분 | 주요 구현 및 변경 내역 |
 | :--- | :--- | :--- |
+| **2026-09-13** | **KFL 한국어 교육 커리큘럼 & 교재 삽화 개편** | - **국립국어원 표준 CEFR 커리큘럼 엔진 (`koreanCurriculum.ts`)**: 레벨별 필수 목표 문법 2~3개 내재화 강제, 5대 핵심 단어 본문 내 최소 2회 이상 자연스러운 반복(Vocabulary Recycling), 실생활 상황 중심 텍스트 제어.<br>- **교재형 시각 보조자료(Visual Aid) 1:1 매핑**: 예술적 추상화 대신 '대표 상황도(Situational Scene)'와 '핵심 어휘 클로즈업 도해(Visual Vocabulary Aid)'로 영문 프롬프트 디렉팅 전면 개편.<br>- **교육 최적화 Temperature**: 0.8 ➜ 0.45로 조정하여 어휘 난이도 통제 및 문법 일관성 보장. |
 | **2026-09-13** | **주제 맞춤 AI 삽화 연동** | - **Pollinations.ai (FLUX.1) 연동**: 글 생성 시 본문의 구체적 사건/배경을 반영한 영문 프롬프트 기반 16:9 고화질 삽화 2종(커버 + 본문 중간) 자동 조합.<br>- **비동기 스켈레톤 뷰어 (`ArticleIllustration.tsx`)**: 텍스트 우선 로딩 후 백그라운드 쉬머 로딩, 오류 시 부드러운 자동 숨김.<br>- **도서관 카드 매거진 뷰**: 도서관 목록 카드 상단에 썸네일 배너 노출. |
 | **2026-09-13** | **4대 정기 점검 & SEO 동적 색인** | - **동적 사이트맵 연동**: `sitemap.ts`에 Firestore 공개 아티클 쿼리를 결합하여 `/read/[id]`를 검색엔진에 자동 색인 등록.<br>- **자율 모니터링 크론 3종 구축**: 일일 모델 헬스체크(`/api/cron/check-models`), 월간 모델 벤치마크 오딧(`/api/cron/monthly-model-audit`), 주간 4대 시스템 감사(`/api/cron/system-audit`).<br>- **폐기 모델 복구**: 가동 중단된 레거시 모델을 `gemini-2.5-flash`, `gemini-3.5-flash-lite`, `qwen/qwen3.8-27b`로 완전 교체. |
 | **2026-09-13** | **글 생성 고도화** | - **1·2·3단계 통합 구현**: 아티클 생성 temperature `0.8` 상향, 100여 종 서브토픽 풀 신설(`topicSeeds.ts`), AI 상투어 금지 규칙(Anti-Cliche), 5대 장르 셔플, 도서관 최근 글 중복 방지(`recentTitles`), 도서관 모달에 맞춤 키워드 인풋 및 장르 칩 UI 연동. |
@@ -162,7 +170,8 @@ Conq/
 
 1. **AI 프롬프트 작성 시 규칙**:
    - 한국어 텍스트 생성 필드(`content`, `title`, `definition`, `structure` 등)에는 **절대 외국어나 한자(漢字)를 섞지 말 것**. 100% 순수 한글만 출력되도록 시스템 지침을 엄격히 유지해야 합니다.
-   - 단어 사전 조회(`lookupWord`)는 사실성과 정확성이 생명이므로 `temperature: 0.1`을 유지하고, 아티클 창작(`generateArticle`)은 창의성과 문체 다양성을 위해 `temperature: 0.8`을 유지하십시오.
+   - 단어 사전 조회(`lookupWord`)는 사실성과 정확성이 생명이므로 `temperature: 0.1`을 유지하고, 아티클 창작(`generateArticle`)은 레벨별 어휘 통제와 문법 제약을 철저히 준수하기 위해 `temperature: 0.45`를 유지하십시오.
+   - 글 생성 시 `src/lib/koreanCurriculum.ts`의 커리큘럼 지침(목표 문법 2~3개, 5대 어휘 2회 이상 반복, 상황도/어휘도해 프롬프트)을 프롬프트에 지속적으로 공급해야 합니다.
 2. **Edge Runtime 주의사항**:
    - `src/app/api/ai/route.ts`는 Vercel Edge Runtime에서 구동됩니다. Node.js 전용 내장 모듈(`fs`, `child_process`, `path` 등)을 import하지 마십시오.
 3. **Firestore 수정 시 주의사항**:
