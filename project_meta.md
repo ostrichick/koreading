@@ -16,6 +16,8 @@ Conq/
 │   ├── app/                # Next.js App Router 페이지 및 API 라우트
 │   │   ├── api/ai/
 │   │   │   └── route.ts         # AI 처리 라우트 (기사 생성, 단어 분석, 테스트 출제)
+│   │   ├── api/cron/check-models/
+│   │   │   └── route.ts         # [Cron] 하루 1회 AI 모델 가용성 자동 점검 헬스체크 라우트
 │   │   ├── about/
 │   │   │   └── page.tsx         # [AdSense 필수] 서비스 소개 / 개발자 정보 / 기술 스택
 │   │   ├── privacy/
