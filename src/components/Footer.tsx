@@ -25,7 +25,7 @@ export default function Footer() {
 
   return (
     <footer style={{
-      background: 'rgba(10,14,26,0.9)',
+      background: 'var(--bg-secondary)',
       borderTop: '1px solid var(--border-subtle)',
       padding: '40px 24px 28px',
       marginTop: 'auto',

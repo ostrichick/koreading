@@ -396,7 +396,7 @@ export default function VocabularyPage() {
       const examplesHtml = entry.examples && entry.examples.length > 0 
         ? `<hr>${entry.examples.map(ex => `• ${ex.korean} : ${ex.translation}`).join('<br>')}`
         : '';
-      const back = `${entry.definition}<br><em style="color: #6366f1; font-weight: 600;">${entry.translation}</em>${examplesHtml}`;
+      const back = `${entry.definition}<br><em style="color: var(--accent-primary); font-weight: 600;">${entry.translation}</em>${examplesHtml}`;
       csvContent += `${escapeCsv(front)},${escapeCsv(back)}\r\n`;
     });
 
@@ -584,7 +584,7 @@ export default function VocabularyPage() {
                       <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
                         <span className={`level-badge level-${entry.level}`}>{entry.level}</span>
                         {entry.topic && customCategories.includes(entry.topic) && (
-                          <span style={{ fontSize: '0.75rem', background: 'rgba(99,102,241,0.1)', border: '1px solid var(--border-subtle)', padding: '2px 8px', borderRadius: '4px', color: 'var(--accent-primary)', fontWeight: 600 }}>📁 {entry.topic}</span>
+                          <span style={{ fontSize: '0.75rem', background: 'rgba(217,119,6,0.1)', border: '1px solid var(--border-subtle)', padding: '2px 8px', borderRadius: '4px', color: 'var(--accent-primary)', fontWeight: 600 }}>📁 {entry.topic}</span>
                         )}
                       </div>
                       <button
@@ -680,7 +680,7 @@ export default function VocabularyPage() {
                     <button
                       onClick={(e) => { e.stopPropagation(); speakWord(shuffledVocab[cardIdx].word); }}
                       style={{
-                        background: 'rgba(99,102,241,0.1)', border: 'none', color: 'var(--accent-primary)',
+                        background: 'rgba(217,119,6,0.1)', border: 'none', color: 'var(--accent-primary)',
                         width: '44px', height: '44px', borderRadius: '50%', display: 'flex',
                         alignItems: 'center', justifyContent: 'center', cursor: 'pointer', fontSize: '1.2rem'
                       }}
@@ -957,7 +957,7 @@ export default function VocabularyPage() {
                   <button
                     onClick={() => speakWord(selectedEntry.word)}
                     style={{
-                      background: 'rgba(99,102,241,0.1)',
+                      background: 'rgba(217,119,6,0.1)',
                       border: 'none',
                       color: 'var(--accent-primary)',
                       borderRadius: '50%',

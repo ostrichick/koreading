@@ -68,10 +68,10 @@ export default function AboutPage() {
     <div style={{ minHeight: '100vh' }}>
       {/* ── Hero Section ── */}
       <section style={{ padding: '80px 24px 60px', textAlign: 'center', position: 'relative', overflow: 'hidden' }}>
-        <div style={{ position: 'absolute', top: '20%', left: '50%', transform: 'translateX(-50%)', width: '600px', height: '300px', background: 'radial-gradient(ellipse, rgba(99,102,241,0.12) 0%, transparent 70%)', pointerEvents: 'none' }} />
+        <div style={{ position: 'absolute', top: '20%', left: '50%', transform: 'translateX(-50%)', width: '600px', height: '300px', background: 'radial-gradient(ellipse, rgba(217,119,6,0.1) 0%, transparent 70%)', pointerEvents: 'none' }} />
         <div className="container" style={{ position: 'relative', zIndex: 1, maxWidth: '760px' }}>
           <div style={{ display: 'flex', justifyContent: 'center', marginBottom: '24px' }}>
-            <div style={{ width: '72px', height: '72px', borderRadius: '18px', overflow: 'hidden', boxShadow: '0 0 40px rgba(99,102,241,0.4)', border: '1px solid var(--border-medium)' }}>
+            <div style={{ width: '72px', height: '72px', borderRadius: '18px', overflow: 'hidden', boxShadow: '0 0 30px rgba(217,119,6,0.25)', border: '1px solid var(--border-medium)' }}>
               <Image src="/logo.png" alt="Koreading logo" width={72} height={72} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
             </div>
           </div>
@@ -95,9 +95,9 @@ export default function AboutPage() {
       </section>
 
       {/* ── Mission Section ── */}
-      <section style={{ padding: '60px 24px', background: 'rgba(15,22,41,0.6)' }}>
+      <section style={{ padding: '60px 24px', background: 'var(--bg-secondary)' }}>
         <div className="container" style={{ maxWidth: '760px' }}>
-          <div className="card" style={{ padding: '40px', borderColor: 'rgba(99,102,241,0.3)', background: 'rgba(99,102,241,0.04)' }}>
+          <div className="card" style={{ padding: '40px' }}>
             <h2 style={{ fontSize: '1.5rem', fontWeight: 800, marginBottom: '16px', display: 'flex', alignItems: 'center', gap: '10px' }}>
               🌱 Our Mission
             </h2>
@@ -135,7 +135,7 @@ export default function AboutPage() {
       </section>
 
       {/* ── Who It's For ── */}
-      <section style={{ padding: '60px 24px', background: 'rgba(15,22,41,0.6)' }}>
+      <section style={{ padding: '60px 24px', background: 'var(--bg-secondary)' }}>
         <div className="container" style={{ maxWidth: '760px' }}>
           <h2 style={{ fontSize: '1.75rem', fontWeight: 900, marginBottom: '24px', textAlign: 'center' }}>Who Is Koreading For?</h2>
           <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
@@ -155,14 +155,14 @@ export default function AboutPage() {
           <h2 style={{ fontSize: '1.5rem', fontWeight: 800, marginBottom: '24px', textAlign: 'center' }}>Built With</h2>
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: '10px', justifyContent: 'center' }}>
             {['Next.js 15 (App Router)', 'Firebase Auth', 'Cloud Firestore', 'Google Gemini AI', 'Groq LPU (Llama/Gemma)', 'Vercel', 'TypeScript'].map(tech => (
-              <span key={tech} style={{ padding: '8px 18px', background: 'rgba(99,102,241,0.08)', border: '1px solid rgba(99,102,241,0.2)', borderRadius: '100px', fontSize: '0.85rem', color: 'var(--text-secondary)' }}>{tech}</span>
+              <span key={tech} style={{ padding: '8px 18px', background: 'rgba(217,119,6,0.08)', border: '1px solid rgba(217,119,6,0.2)', borderRadius: '100px', fontSize: '0.85rem', color: 'var(--text-secondary)' }}>{tech}</span>
             ))}
           </div>
         </div>
       </section>
 
       {/* ── Developer Info ── */}
-      <section style={{ padding: '60px 24px', background: 'rgba(15,22,41,0.6)' }}>
+      <section style={{ padding: '60px 24px', background: 'var(--bg-secondary)' }}>
         <div className="container" style={{ maxWidth: '640px' }}>
           <div className="card" style={{ padding: '36px', textAlign: 'center' }}>
             <div style={{ fontSize: '2.5rem', marginBottom: '16px' }}>👨‍💻</div>

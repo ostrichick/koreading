@@ -79,8 +79,8 @@ export default function HomePage() {
       icon: '🎯',
       en: 'Level Test',
       ko: '레벨 테스트',
-      descEn: 'Find your exact level from A1 to C2 with an AI-generated reading test.',
-      descKo: 'AI가 생성한 읽기 테스트로 A1부터 C2까지 정확한 레벨을 파악해요.',
+      descEn: 'Find a suggested starting level with an AI-generated reading practice test.',
+      descKo: 'AI 읽기 연습 문제로 시작 난이도를 추천받아요. 공인 평가가 아닙니다.',
     },
     {
       icon: '📚',
@@ -123,21 +123,21 @@ export default function HomePage() {
     <div style={{ minHeight: '100vh', display: 'flex', flexDirection: 'column' }}>
       {/* ── 히어로 배너 섹션 ── */}
       <section style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '80px 24px', position: 'relative', overflow: 'hidden' }}>
-        {/* 장식용 은은한 네온 빛 무리 백그라운드 효과 */}
-        <div style={{ position: 'absolute', top: '20%', left: '50%', transform: 'translateX(-50%)', width: '800px', height: '400px', background: 'radial-gradient(ellipse, rgba(99,102,241,0.15) 0%, transparent 70%)', pointerEvents: 'none' }} />
-        <div style={{ position: 'absolute', bottom: '10%', left: '5%', width: '300px', height: '300px', background: 'radial-gradient(circle, rgba(139,92,246,0.1) 0%, transparent 70%)', pointerEvents: 'none' }} />
-        <div style={{ position: 'absolute', top: '30%', right: '5%', width: '200px', height: '200px', background: 'radial-gradient(circle, rgba(6,182,212,0.1) 0%, transparent 70%)', pointerEvents: 'none' }} />
+        {/* 장식용 은은한 웜 앰버 빛 무리 백그라운드 효과 */}
+        <div style={{ position: 'absolute', top: '20%', left: '50%', transform: 'translateX(-50%)', width: '800px', height: '400px', background: 'radial-gradient(ellipse, rgba(217,119,6,0.08) 0%, transparent 70%)', pointerEvents: 'none' }} />
+        <div style={{ position: 'absolute', bottom: '10%', left: '5%', width: '300px', height: '300px', background: 'radial-gradient(circle, rgba(245,158,11,0.06) 0%, transparent 70%)', pointerEvents: 'none' }} />
+        <div style={{ position: 'absolute', top: '30%', right: '5%', width: '200px', height: '200px', background: 'radial-gradient(circle, rgba(13,148,136,0.05) 0%, transparent 70%)', pointerEvents: 'none' }} />
 
         <div className="container" style={{ textAlign: 'center', position: 'relative', zIndex: 1 }}>
           {/* Koreading 로고 마크 */}
           <div style={{ display: 'flex', justifyContent: 'center', marginBottom: '28px' }}>
-            <div style={{ width: '80px', height: '80px', borderRadius: '20px', overflow: 'hidden', boxShadow: '0 0 40px rgba(99,102,241,0.4)', border: '1px solid var(--border-medium)' }}>
+            <div style={{ width: '80px', height: '80px', borderRadius: '20px', overflow: 'hidden', boxShadow: '0 8px 30px rgba(217,119,6,0.2)', border: '1px solid var(--border-medium)' }}>
               <Image src="/logo.png" alt="Koreading logo" width={80} height={80} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
             </div>
           </div>
 
           {/* 서브 설명 뱃지 */}
-          <div style={{ display: 'inline-flex', alignItems: 'center', gap: '8px', padding: '6px 16px', background: 'rgba(99,102,241,0.1)', border: '1px solid var(--border-medium)', borderRadius: '100px', fontSize: '0.8rem', color: 'var(--accent-primary)', marginBottom: '28px', fontWeight: 600 }}>
+          <div style={{ display: 'inline-flex', alignItems: 'center', gap: '8px', padding: '6px 16px', background: 'rgba(217,119,6,0.08)', border: '1px solid var(--border-medium)', borderRadius: '100px', fontSize: '0.8rem', color: 'var(--accent-primary)', marginBottom: '28px', fontWeight: 600 }}>
             ✨ i+1 Principle · Korean Reading
           </div>
 
@@ -194,7 +194,7 @@ export default function HomePage() {
       </section>
 
       {/* ── 서비스 상세 기능 리스트 섹션 ── */}
-      <section style={{ padding: '80px 24px', background: 'rgba(15,22,41,0.5)' }}>
+      <section style={{ padding: '80px 24px', background: 'var(--bg-secondary)' }}>
         <div className="container">
           <h2 style={{ textAlign: 'center', fontSize: '2rem', marginBottom: '12px' }}>
             Everything you need to read Korean

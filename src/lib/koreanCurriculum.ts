@@ -40,7 +40,7 @@ export const KOREAN_CURRICULUM: Record<CEFRLevel, LevelCurriculum> = {
       '-고 싶어요 (희망/소망 표현)',
       '-(으)세요 (정중한 권유/명령)',
     ],
-    sentenceConstraint: '한 문장당 단어 4~6개의 매우 짧고 명료한 단문(SVO 구조). 복잡한 접속사 금지. 1개의 옹골찬 문단 또는 2개의 짧은 문단.',
+    sentenceConstraint: '한 문장당 단어 4~6개의 매우 짧고 명료한 단문(SOV 구조). 복잡한 접속사 금지. 1개의 옹골찬 문단 또는 2개의 짧은 문단.',
     lengthConstraint: '약 350~450자 내외. 절대 불필요하게 길거나 복잡하지 않게 작성.',
     situationalFocus: '기본 인사, 자기소개, 식당에서 음식 주문하기, 물건 사기, 장소 묻기, 좋아하는 것 말하기 등 실생활 생존 한국어 상황.',
   },

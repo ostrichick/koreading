@@ -57,7 +57,7 @@ export default function AlertModal({
       case 'error': return 'rgba(239, 68, 68, 0.3)';
       case 'warning': return 'rgba(245, 158, 11, 0.3)';
       case 'success': return 'rgba(16, 185, 129, 0.3)';
-      default: return 'rgba(99, 102, 241, 0.3)';
+      default: return 'rgba(217, 119, 6, 0.35)';
     }
   };
 

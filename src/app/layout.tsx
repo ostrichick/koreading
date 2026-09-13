@@ -62,14 +62,6 @@ export const metadata: Metadata = {
   },
 
   // ── Canonical URL ──
-  alternates: {
-    canonical: SITE_URL,
-    languages: {
-      'ko-KR': SITE_URL,
-      'en-US': SITE_URL,
-      'x-default': SITE_URL,
-    },
-  },
 
   // ── Open Graph (SNS 공유 미리보기) ──
   // 영어 우선 설정으로 국제 SNS 공유 시 외국인에게 의미 전달

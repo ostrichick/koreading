@@ -1,19 +1,19 @@
-/**
- * @file route.ts (api/ai)
- * @description Next.js Edge-ready 서버 사이드 AI API 라우트입니다.
- * 1순위로 Groq (Gemma 2, Llama 3 등) 엔진을 호출하며, 2순위 비상망으로 Gemini 2.5/2.0/1.5 Flash 폴백망을 가동합니다.
- * 텍스트 생성, 레벨 테스트 출제, 정밀 문법 형태소 분석 및 예문 사전 검색을 처리합니다.
- * @why AI 서비스들의 API 키 유출을 방지하고 백엔드 서버 단에서 쿼터 초과(429) 시 지능적으로 우회 및 교차 이중화 네트워크를 완성하기 위해 안전한 단일 엔드포인트 게이트웨이로 설계되었습니다.
- * @perf Edge Runtime으로 배포되어 Vercel의 엣지 네트워크에서 콜드 스타트 없이 즉시 실행됩니다.
- */
+import { createHmac } from 'node:crypto';
+import { aiRequestSchema, articleSchema, basicWordSchema, advancedWordSchema, placementSchema, parseModelJson } from '@/lib/schemas';
+import { validateArticleQuality, ArticleQualityError } from '@/lib/articleQuality';
+import { ZodError } from 'zod';
+import { reserveAiQuota } from '@/lib/server/aiQuota';
+import { apiError, HttpError, readJson } from '@/lib/server/http';
+/** Server AI gateway: validation, shared quotas, bounded provider attempts. */
 
-// Edge Runtime: Vercel 엣지 네트워크에서 직접 실행 → 콜드 스타트 제거, 응답 지연 최소화
-export const runtime = 'edge';
+// Node.js runtime supports verified Firebase identities and shared Firestore quotas.
+export const runtime = 'nodejs';
+export const maxDuration = 180;
 
 import { NextRequest, NextResponse } from 'next/server';
 import { GoogleGenerativeAI } from '@google/generative-ai';
 import type { CEFRLevel, NativeLanguage } from '@/lib/gemini';
-import { TOPICS } from '@/lib/gemini';
+import { TOPICS } from '@/lib/contentConfig';
 import { getRandomSubTopic, getGenreInstruction } from '@/lib/topicSeeds';
 import { getPedagogicalInstruction, getVisualAidDirectingInstruction } from '@/lib/koreanCurriculum';
 
@@ -22,79 +22,17 @@ if (!process.env.GEMINI_API_KEY) {
   console.error('❌ GEMINI_API_KEY is not set!');
 }
 
-// IP 기반 간단 Rate Limiting (Edge 인메모리 맵: IP당 1분 내 20회 제한)
-const rateLimitMap = new Map<string, { count: number; resetTime: number }>();
-const MAX_REQUESTS_PER_MINUTE = 20;
-
-function isRateLimited(ip: string): boolean {
-  const now = Date.now();
-  const entry = rateLimitMap.get(ip);
-  if (!entry || now > entry.resetTime) {
-    rateLimitMap.set(ip, { count: 1, resetTime: now + 60 * 1000 });
-    return false;
-  }
-  if (entry.count >= MAX_REQUESTS_PER_MINUTE) {
-    return true;
-  }
-  entry.count++;
-  return false;
-}
-
-/**
- * 클라이언트로부터 요청을 받아 AI 처리를 수행하는 메인 POST 핸들러 함수입니다.
- * 
- * @param req NextRequest 객체 (요청 바디에 action, level, topic, nativeLang, word, sentence, customApiKey 등이 포함되어 있음)
- * @returns 응답 JSON 객체
- */
 export async function POST(req: NextRequest) {
   try {
-    // ── 보안 체크 0: Rate Limiting ──
-    const clientIp = req.headers.get('x-forwarded-for')?.split(',')[0] || req.headers.get('x-real-ip') || 'unknown';
-    if (isRateLimited(clientIp)) {
-      return NextResponse.json(
-        { error: '요청 한도를 초과했습니다. 1분 후 다시 시도해 주세요. (Too Many Requests)' },
-        { status: 429 }
-      );
-    }
-
-    // ── 보안 체크 1: Content-Type 검증 ──
-    // application/json 외의 요청은 거부하여 CSRF 및 폼 기반 공격을 차단합니다.
-    const contentType = req.headers.get('content-type') || '';
-    if (!contentType.includes('application/json')) {
-      return NextResponse.json({ error: 'Invalid Content-Type' }, { status: 415 });
-    }
-
-    // 요청 바디에서 필요한 매개변수를 추출합니다.
-    const body = await req.json();
-    const { action, level, topic, nativeLang, word, sentence, customApiKey, paragraph, userMessage, chatHistory, customKeyword, genre, recentTitles } = body;
-
-    // ── 보안 체크 2: action 허용 목록 검증 ──
-    // 알 수 없는 action으로 서버 리소스를 소모하는 것을 방지합니다.
-    const ALLOWED_ACTIONS = ['generateArticle', 'lookupWord', 'generateTest', 'tutorChat'] as const;
-    if (!action || !ALLOWED_ACTIONS.includes(action)) {
-      return NextResponse.json({ error: 'Invalid action' }, { status: 400 });
-    }
-
-    // ── 보안 체크 3: 입력값 길이 제한 (프롬프트 인젝션 방지) ──
-    if (word && word.length > 50) {
-      return NextResponse.json({ error: 'word too long' }, { status: 400 });
-    }
-    if (sentence && sentence.length > 500) {
-      return NextResponse.json({ error: 'sentence too long' }, { status: 400 });
-    }
-    if (userMessage && userMessage.length > 1000) {
-      return NextResponse.json({ error: 'message too long' }, { status: 400 });
-    }
-    if (paragraph && paragraph.length > 5000) {
-      return NextResponse.json({ error: 'paragraph too long' }, { status: 400 });
-    }
-    if (chatHistory && chatHistory.length > 20) {
-      return NextResponse.json({ error: 'chat history too long' }, { status: 400 });
-    }
-
+    const checked = aiRequestSchema.safeParse(await readJson(req));
+    if (!checked.success) throw new HttpError(400, 'Invalid AI request');
+    const body = checked.data;
+    await reserveAiQuota(req, body.action);
+    // Fields have already been validated by the action-specific schema.
+    const { action, level, topic, nativeLang, word, sentence, customApiKey, paragraph, userMessage, chatHistory, customKeyword, genre, recentTitles } = body as any;
     // 사용자가 직접 입력한 개인 API Key가 있다면 이를 최우선으로 사용하고, 없으면 서버 환경변수 키를 사용합니다.
     const activeApiKey = (customApiKey && customApiKey.trim()) || process.env.GEMINI_API_KEY || '';
-    if (!activeApiKey) {
+    if (!activeApiKey && !process.env.GROQ_API_KEY) {
       return NextResponse.json(
         { error: 'Gemini API Key가 누락되었습니다. 도서관 설정에서 개인 API Key를 등록해 주세요.' },
         { status: 400 }
@@ -107,12 +45,18 @@ export async function POST(req: NextRequest) {
     
     // API 키를 주입하여 GoogleGenerativeAI 인스턴스를 초기화합니다.
     const genAI = new GoogleGenerativeAI(activeApiKey);
+    const validateResult = (value: string, variant?: 'basic' | 'advanced') => {
+      if (action === 'tutorChat') { if (!value.trim() || value.length > 10000) throw new Error('Invalid tutor response'); return; }
+      const parsed = parseModelJson(value);
+      if (action === 'generateTest') placementSchema.parse(parsed);
+      if (action === 'lookupWord') (variant === 'advanced' ? advancedWordSchema : basicWordSchema).parse(parsed);
+    };
     
-    // 2026년 현재 100% 가동 검증된 최신 고속 Gemini 모델 인스턴스들을 생성합니다.
-    const model25 = genAI.getGenerativeModel({ model: 'gemini-2.5-flash', systemInstruction });
-    const model35 = genAI.getGenerativeModel({ model: 'gemini-3.5-flash', systemInstruction });
-    const model35lite = genAI.getGenerativeModel({ model: 'gemini-3.5-flash-lite', systemInstruction });
-    const modelFlashLiteLatest = genAI.getGenerativeModel({ model: 'gemini-flash-lite-latest', systemInstruction });
+    // 설정된 Gemini 모델 인스턴스들을 생성합니다.
+    const model25 = genAI.getGenerativeModel({ model: 'gemini-2.5-flash', systemInstruction }, { timeout: 25000 });
+    const model35 = genAI.getGenerativeModel({ model: 'gemini-3.5-flash', systemInstruction }, { timeout: 25000 });
+    const model35lite = genAI.getGenerativeModel({ model: 'gemini-3.5-flash-lite', systemInstruction }, { timeout: 25000 });
+    const modelFlashLiteLatest = genAI.getGenerativeModel({ model: 'gemini-flash-lite-latest', systemInstruction }, { timeout: 25000 });
 
     // 폴백 대기용 헬퍼 함수
     const sleep = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
@@ -130,9 +74,9 @@ export async function POST(req: NextRequest) {
      * @param prompt AI에 보낼 프롬프트 텍스트
      * @param responseMimeType 반환 데이터 타입 (예: 'application/json')
      */
-    const generateWithFallback = async (prompt: string, responseMimeType?: string): Promise<{ text: string; modelUsed: string }> => {
+    const generateWithFallback = async (prompt: string, responseMimeType?: string, variant?: 'basic' | 'advanced'): Promise<{ text: string; modelUsed: string }> => {
       // 1. Groq 시도 (최대 3초 타임아웃으로 지연 방지)
-      if (process.env.GROQ_API_KEY) {
+      if (process.env.GROQ_API_KEY && !customApiKey) {
         try {
           const controller = new AbortController();
           const timeoutId = setTimeout(() => controller.abort(), 3000);
@@ -156,6 +100,7 @@ export async function POST(req: NextRequest) {
           clearTimeout(timeoutId);
           if (res.ok) {
             const data = await res.json();
+            validateResult(data.choices[0].message.content, variant);
             return { text: data.choices[0].message.content, modelUsed: 'Groq Qwen 3.8 27B' };
           }
         } catch (groqErr) {
@@ -180,8 +125,9 @@ export async function POST(req: NextRequest) {
         try {
           const result = await m.generateContent({
             contents: [{ role: 'user', parts: [{ text: prompt }] }],
-            generationConfig: config
+            generationConfig: { ...config, maxOutputTokens: 6000 }
           });
+          validateResult(result.response.text(), variant);
           return { text: result.response.text(), modelUsed: name };
         } catch (err: any) {
           const msg = err?.message || String(err);
@@ -198,21 +144,12 @@ export async function POST(req: NextRequest) {
 
     // ═══════════════════════════════════════════════════
     // 📰 1. 맞춤형 한국어 읽기 아티클 생성 (generateArticle)
-    //      Groq 3종 + Gemini 5종 = 최대 8중 폴백 및 실시간 로깅 지원
+    //      Groq 2종 + Gemini 4종 = 최대 6중 폴백 및 응답 완료 후 로깅 지원
     //      (1단계: Temperature 0.8 + 100종 동적 소재 풀 + 상투어 금지)
     //      (2단계: 장르/시점 다변화 + 기존 글 중복 방지)
     // ═══════════════════════════════════════════════════
     if (action === 'generateArticle') {
       // CEFR 레벨별 가이드라인 매핑
-      const levelConfig: Record<CEFRLevel, string> = {
-        A1: '가장 기초적인 한국어 어휘만 사용하십시오. 단순한 문장 구조 (문장당 4~6개 단어). 쉬운 현재 시제 위주. 텍스트 전체 길이는 약 400~500자 크기로 서술하십시오. 한 문장마다 끊어 쓰지 말고, 4~6개의 문장이 뭉친 하나의 탄탄한 문단으로 구성하십시오.',
-        A2: '기초 한국어 어휘를 사용하십시오. 문장당 6~10개 단어로 구성된 명료한 문장. 현재, 과거 및 기초 미래 시제 사용. 전체 길이는 약 600~800자 크기로 상세히 서술하고, 2~3개의 정돈된 문단으로 구성하십시오.',
-        B1: '중급 한국어 어휘를 사용하십시오. 다양한 연결어미와 문장 구조를 혼합하고 형용사와 부사를 다채롭게 사용하십시오. 전체 길이는 약 900~1100자 크기로 읽을거리가 많게 서술하고, 3~4개의 명확한 문단으로 구성하십시오.',
-        B2: '중상급 한국어 어휘를 사용하십시오. 복잡한 문장 구조와 다양한 문법 패턴을 자유롭게 사용하십시오. 전체 길이는 약 1200~1400자 크기로 상세하고 깊이 있는 내용을 담아 3~4개의 문단으로 구성하십시오.',
-        C1: '고급 한국어 어휘 및 일부 관용구, 숙어를 세련되게 활용하십시오. 복잡하고 품격 있는 문장 구조를 보여주십시오. 전체 길이는 약 1500~1700자 크기로 깊이 있고 포괄적인 전개를 보이며 4~5개의 문단으로 구성하십시오.',
-        C2: '원어민 수준의 고급 학술, 문학, 언론 문체를 자유롭게 활용하십시오. 지극히 정교하고 심도 있는 문장을 구사하십시오. 전체 길이는 약 1800~2000자 크기로 매끄럽고 가치가 풍부하게 서술하고 4~5개의 문단으로 구성하십시오.',
-      };
-
       const topicLabel = TOPICS.find((t: { id: string; label: string }) => t.id === topic)?.label || topic;
       const langMap: Record<string, string> = { en: 'English', es: 'Spanish', ja: 'Japanese', zh: 'Chinese' };
       const langNote = langMap[nativeLang] || 'English';
@@ -260,7 +197,7 @@ ${visualAidGuide}
 2. 절대 본문("content")이나 제목("title")에 영어, 한자(漢字/简繁体字), 일본어, 외국어 번역 괄호 표기(예: '공부(study)하다', '건강(健康)')를 단 한 글자도 넣지 마십시오. 모든 단어는 100% 순수한 한글 단어로만 문장 속에 자연스럽게 녹여내야 합니다. 번역 설명용 외래 문자는 절대 금지입니다.
 3. 한국어 교육학적 완성도:
    - 본문에 이번 레벨(${level})의 필수 목표 문법이 2~3개 이상 자연스럽게 사용되어야 합니다.
-   - 5개의 핵심 어휘(keyVocabulary)는 본문 속에서 각각 최소 2회 이상 자연스럽게 반복(Recycled)되어야 합니다.
+   - 5개의 핵심 어휘(keyVocabulary)는 본문에 실제로 쓰인 동일한 표기 형태로 골라 각각 최소 2회 이상 자연스럽게 반복하십시오. 활용형이 다르면 반복으로 세지 않습니다.
    - 어휘 난이도와 문장 길이는 반드시 CEFR ${level} 기준을 철저히 지키십시오. 뜬구름 잡는 추상적 소설이나 난해한 문학적 묘사를 금지합니다.
 
 반드시 다음 형식의 JSON 객체만 반환해 주세요 (마크다운 기호 없이 JSON만 반환):
@@ -268,10 +205,12 @@ ${visualAidGuide}
   "title": "텍스트 제목 (100% 순수 한글, 학습자의 흥미를 끄는 명료한 제목)",
   "content": "전체 텍스트 내용 (선정된 목표 문법과 핵심 어휘가 2회 이상 반복되며 유기적으로 연결된 100% 순수 한글)",
   "summary": "${langNote}로 작성된 한 문장의 본문 요약",
+  "summaries": {"en":"English summary", "es":"Resumen en español", "ja":"日本語の要約", "zh":"中文摘要"},
   "topicCategory": "${topic}",
   "level": "${level}",
-  "estimatedMinutes": 2, // 텍스트 난이도와 길이에 따라 예상 소요 시간(분)을 정수(예: 1, 2, 3, 4)로 동적 예측
+  "estimatedMinutes": 2,
   "keyVocabulary": ["핵심단어1", "핵심단어2", "핵심단어3", "핵심단어4", "핵심단어5"],
+  "grammarEvidence": [{"pattern":"위 목표 문법 목록의 항목을 설명까지 그대로 복사", "quote":"해당 문법이 사용된 본문의 실제 문장 그대로"}, {"pattern":"서로 다른 두 번째 목표 문법 항목", "quote":"해당 문법이 사용된 본문의 실제 문장 그대로"}],
   "imagePrompts": [
     "A clear, educational textbook illustration showing the main scene of this story: [describe the specific situational scene and characters doing the action in Korea], clear composition, bright pleasant lighting, modern Korean language textbook graphic style, absolutely NO text or letters",
     "A close-up educational visual dictionary illustration focusing clearly on [describe the specific object or core hand action of 1-2 key vocabulary words], clearly demonstrating the item, uncluttered background, educational vector art style, absolutely NO text or words"
@@ -281,14 +220,14 @@ ${visualAidGuide}
       // 교육적 일관성과 엄격한 어휘 통제를 위해 최적의 교육용 온도인 0.45로 설정합니다.
       const genConfig = { temperature: 0.45, responseMimeType: 'application/json' as const };
       
-      // 사용자 브라우저 모달에 처리 경과 로그를 실시간 중계하기 위해 배열에 이력을 담아둡니다.
+      // 사용자 브라우저 모달에 처리 경과 로그를 응답 완료 후 중계하기 위해 배열에 이력을 담아둡니다.
       const logs: string[] = [];
       let resultText: string | null = null;
       let modelUsed = '';
 
       // ── (1단계) Groq 다중 모델 시도 ──
       // Google API 서버와 완전 별도 인프라이므로, 구글 측 429나 503 에러 발생 시 최상의 즉시 대체 경로입니다.
-      if (process.env.GROQ_API_KEY) {
+      if (process.env.GROQ_API_KEY && !customApiKey) {
         const groqModels = [
           { id: 'qwen/qwen3.8-27b', name: 'Groq Qwen 3.8 27B' },
           { id: 'openai/gpt-oss-120b', name: 'Groq GPT-OSS 120B' },
@@ -321,20 +260,22 @@ ${visualAidGuide}
             
             if (res.ok) {
               const data = await res.json();
+              validateArticleQuality(articleSchema.parse(parseModelJson(data.choices[0].message.content)), level, topic);
               resultText = data.choices[0].message.content;
               modelUsed = gm.name;
               logs.push(`✅ ${gm.name} 모델로 생성 성공!`);
             } else {
               const errText = (await res.text()).substring(0, 100);
-              logs.push(`⚠️ ${gm.name} 상태 (HTTP ${res.status}): ${errText}`);
+              logs.push(`⚠️ ${gm.name} 상태 (HTTP ${res.status}): 응답 오류`);
             }
           } catch (e: any) {
-            logs.push(`⚠️ ${gm.name} 전환: ${(e?.message || '').substring(0, 80)}`);
+            console.warn('Article attempt failed', e instanceof ArticleQualityError ? e.message : e instanceof ZodError ? e.issues.map(i => i.path.join('.') + ':' + i.code) : 'Provider request failed');
+            logs.push(`⚠️ ${gm.name} 전환: 요청 실패`);
           }
         }
       }
 
-      // ── (2단계) Gemini 5종 순차 폴백 체인 시도 ──
+      // ── (2단계) Gemini 4종 순차 폴백 체인 시도 ──
       // Groq가 없거나 모두 연결 실패 시 작동하며, 최신 활성 Gemini 모델들로 순차 전환합니다.
       if (!resultText) {
         const geminiChain = [
@@ -350,18 +291,20 @@ ${visualAidGuide}
           try {
             const r = await m.generateContent({
               contents: [{ role: 'user', parts: [{ text: prompt }] }],
-              generationConfig: genConfig
+              generationConfig: { ...genConfig, maxOutputTokens: 7000 }
             });
+            validateArticleQuality(articleSchema.parse(parseModelJson(r.response.text())), level, topic);
             resultText = r.response.text();
             modelUsed = name;
             logs.push(`✅ ${name} 모델로 생성 성공!`);
           } catch (err: any) {
+            console.warn('Article attempt failed', err instanceof ArticleQualityError ? err.message : err instanceof ZodError ? err.issues.map(i => i.path.join('.') + ':' + i.code) : 'Provider request failed');
             const msg = err?.message || String(err);
             if (isRetryableError(msg)) {
               logs.push(`⏳ ${name} 서버 과부하 (503/429). 다음 모델로 전환...`);
               await sleep(500);
             } else {
-              logs.push(`⚠️ ${name} 오류: ${msg.substring(0, 100)}`);
+              logs.push(`⚠️ ${name} 응답 실패`);
             }
           }
         }
@@ -370,7 +313,7 @@ ${visualAidGuide}
       // 최종 결과를 가공하여 응답합니다.
       if (resultText) {
         try {
-          const parsed = JSON.parse(resultText);
+          const parsed = articleSchema.parse(parseModelJson(resultText));
 
           // 🎨 글의 주제와 문맥에 1:1로 직관 매칭되는 교재형 AI 삽화 2종 URL 자동 조합 (Pollinations.ai / FLUX.1)
           // 1. imagePrompts[0]: 대표 상황도 (본문의 장소, 인물 행동, 전체 맥락 시각화)
@@ -398,20 +341,17 @@ ${visualAidGuide}
             `https://image.pollinations.ai/prompt/${encodeURIComponent(prompt2)}?width=960&height=540&seed=${seedBase + 17}&nologo=true`
           ];
 
-          return NextResponse.json({
-            ...parsed,
-            imageUrls,
-            imagePrompts: [prompt1, prompt2],
-            generatorModel: modelUsed,
-            _logs: logs
-          });
+          const article = articleSchema.parse({ ...parsed, summaryLanguage: nativeLang, imageUrls, imagePrompts: [prompt1, prompt2], generatorModel: modelUsed });
+          const expires = Date.now() + 24 * 60 * 60 * 1000;
+          const signature = createHmac('sha256', process.env.AI_GUEST_SECRET!).update(JSON.stringify(article) + expires).digest('hex');
+          return NextResponse.json({ ...article, _expires: expires, _signature: signature, _logs: logs });
         } catch {
           return NextResponse.json({ error: 'AI 응답 JSON 파싱 실패', _logs: logs }, { status: 500 });
         }
       } else {
-        logs.push('💀 모든 AI 모델(Groq 3종 + Gemini 5종) 호출이 실패했습니다.');
+        logs.push('💀 모든 AI 모델(Groq 2종 + Gemini 4종) 호출이 실패했습니다.');
         return NextResponse.json(
-          { error: '현재 모든 AI 서버가 과부하 상태입니다. 1~2분 후에 다시 시도해 주세요.\n\n💡 개인 Gemini API Key를 등록하면 개인 쿼터를 사용하므로 성공률이 크게 높아집니다!', _logs: logs },
+          { error: '요청한 조건을 충족하는 AI 응답을 받지 못했습니다. 제공사 오류 또는 출력 검증 실패입니다. 잠시 후 다시 시도해 주세요.', _logs: logs },
           { status: 503 }
         );
       }
@@ -420,7 +360,7 @@ ${visualAidGuide}
     // 🔍 2. 독해 본문 단어 사전 검색 및 분석 (lookupWord)
     // ═══════════════════════════════════════════════════
     } else if (action === 'lookupWord') {
-      const { type } = body;
+      const type = body.action === 'lookupWord' ? body.type : 'all';
       const langMap: Record<string, string> = { en: 'English', es: 'Spanish', ja: 'Japanese', zh: 'Chinese' };
       const langName = langMap[nativeLang] || 'English';
 
@@ -481,21 +421,21 @@ ${visualAidGuide}
       if (type === 'all') {
         const [basicResult, advancedResult] = await Promise.all([
           generateWithFallback(basicPrompt, 'application/json'),
-          generateWithFallback(advancedPrompt, 'application/json'),
+          generateWithFallback(advancedPrompt, 'application/json', 'advanced'),
         ]);
         let basic, advanced;
         try {
-          basic = JSON.parse(basicResult.text);
+          basic = parseModelJson(basicResult.text);
         } catch {
           // JSON이 코드블록으로 감싸져 있을 수 있으므로 추출 시도
           const match = basicResult.text.match(/```(?:json)?\s*([\s\S]*?)```/);
-          basic = JSON.parse(match ? match[1].trim() : basicResult.text);
+          basic = parseModelJson(match ? match[1].trim() : basicResult.text);
         }
         try {
-          advanced = JSON.parse(advancedResult.text);
+          advanced = parseModelJson(advancedResult.text);
         } catch {
           const match = advancedResult.text.match(/```(?:json)?\s*([\s\S]*?)```/);
-          advanced = JSON.parse(match ? match[1].trim() : advancedResult.text);
+          advanced = parseModelJson(match ? match[1].trim() : advancedResult.text);
         }
         return NextResponse.json({ ...basic, ...advanced, _modelBasic: basicResult.modelUsed, _modelAdv: advancedResult.modelUsed });
       }
@@ -504,18 +444,18 @@ ${visualAidGuide}
       if (type === 'basic') {
         const { text } = await generateWithFallback(basicPrompt, 'application/json');
         try {
-          return NextResponse.json(JSON.parse(text));
+          return NextResponse.json(parseModelJson(text));
         } catch {
           const match = text.match(/```(?:json)?\s*([\s\S]*?)```/);
-          return NextResponse.json(JSON.parse(match ? match[1].trim() : text));
+          return NextResponse.json(parseModelJson(match ? match[1].trim() : text));
         }
       } else {
-        const { text } = await generateWithFallback(advancedPrompt, 'application/json');
+        const { text } = await generateWithFallback(advancedPrompt, 'application/json', 'advanced');
         try {
-          return NextResponse.json(JSON.parse(text));
+          return NextResponse.json(parseModelJson(text));
         } catch {
           const match = text.match(/```(?:json)?\s*([\s\S]*?)```/);
-          return NextResponse.json(JSON.parse(match ? match[1].trim() : text));
+          return NextResponse.json(parseModelJson(match ? match[1].trim() : text));
         }
       }
 
@@ -523,11 +463,11 @@ ${visualAidGuide}
     // 📝 3. 독해 능력 측정용 다지선다 레벨 테스트 출제 (generateTest)
     // ═══════════════════════════════════════════════════
     } else if (action === 'generateTest') {
-      const prompt = `5개 레벨의 한국어 독해 레벨 테스트 지문과 문제를 출제해 주세요.
+      const prompt = `6개 레벨의 한국어 독해 레벨 테스트 지문과 문제를 출제해 주세요.
 
 [절대 준수해야 하는 강한 제약 조건]:
 1. 각 레벨의 "text" field는 반드시 100% 순수한 한국어 한글로만 작성되어야 합니다. 절대 다른 외국어 문자나 한자가 포함되어서는 안 됩니다.
-2. 질문("question")과 보기("options")는 영어로 작성해 주세요.
+2. 질문("question")과 보기("options")는 ${{ en: "English", es: "Spanish", ja: "Japanese", zh: "Chinese" }[nativeLang as NativeLanguage]}로 작성해 주세요.
 
 반드시 다음 형식의 JSON 객체만 반환해 주세요 (마크다운 기호 없이 JSON만 반환):
 {
@@ -536,17 +476,17 @@ ${visualAidGuide}
       "level": "A1",
       "text": "짧은 한국어 지문 (50~100자 내외, 100% 순수 한글)",
       "questions": [
-        {"question": "영어 질문", "options": ["보기A","보기B","보기C","보기D"], "correct": 0},
-        {"question": "영어 질문 2", "options": ["보기A","보기B","보기C","보기D"], "correct": 1}
+        {"question": "선택 언어 질문", "options": ["보기A","보기B","보기C","보기D"], "correct": 0},
+        {"question": "선택 언어 질문 2", "options": ["보기A","보기B","보기C","보기D"], "correct": 1}
       ]
     }
   ]
 }
 
-A1, A2, B1, B2, C1 레벨을 모두 포함해 주세요.`;
+A1, A2, B1, B2, C1, C2 레벨을 이 순서대로 모두 포함하고 레벨마다 정확히 두 문제를 제공하세요.`;
 
       const { text } = await generateWithFallback(prompt, 'application/json');
-      return NextResponse.json(JSON.parse(text));
+      return NextResponse.json(parseModelJson(text));
 
     // ═══════════════════════════════════════════════════
     // 💬 4. 1:1 AI 튜터 문단별 코칭 대화 (tutorChat)
@@ -596,11 +536,6 @@ ${historyText || "(이전 대화 없음)"}
 
     return NextResponse.json({ error: 'Unknown action' }, { status: 400 });
   } catch (err: any) {
-    const message = err?.message || String(err);
-    console.error('Gemini API error:', message);
-    return NextResponse.json(
-      { error: 'AI request failed', detail: message },
-      { status: 500 }
-    );
+    return apiError(err);
   }
 }

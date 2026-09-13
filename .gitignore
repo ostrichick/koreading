@@ -5,3 +5,12 @@ node_modules/
 *.log
 tsconfig.tsbuildinfo
 android-app/
+
+.verification/
+playwright-report/
+test-results/
+.firebase/
+.env
+.env.*
+!.env.local.example
+design_samples/

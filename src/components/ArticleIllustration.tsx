@@ -10,7 +10,7 @@
  * - 16:9 비율 유지, 라운드 모서리, 은은한 보더 및 AI 삽화 배지 제공
  */
 
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 
 interface ArticleIllustrationProps {
   src: string;
@@ -31,6 +31,8 @@ export default function ArticleIllustration({
 }: ArticleIllustrationProps) {
   const [loaded, setLoaded] = useState(false);
   const [hasError, setHasError] = useState(false);
+
+  useEffect(() => { setLoaded(false); setHasError(false); }, [src]);
 
   // 로드 실패 시(네트워크 문제 등) 사용자 경험을 해치지 않도록 조용히 렌더링을 생략합니다.
   if (hasError || !src) {
@@ -108,9 +110,9 @@ export default function ArticleIllustration({
             position: 'absolute',
             bottom: '10px',
             right: '12px',
-            background: 'rgba(15, 23, 42, 0.75)',
+            background: 'rgba(28, 25, 23, 0.75)',
             backdropFilter: 'blur(8px)',
-            color: '#f8fafc',
+            color: '#fbfaf8',
             fontSize: '0.72rem',
             fontWeight: 600,
             padding: '4px 10px',
@@ -132,9 +134,9 @@ export default function ArticleIllustration({
             position: 'absolute',
             bottom: '10px',
             left: '12px',
-            background: 'rgba(15, 23, 0.75)',
+            background: 'rgba(28, 25, 23, 0.75)',
             backdropFilter: 'blur(8px)',
-            color: '#cbd5e1',
+            color: '#f4f1ea',
             fontSize: '0.75rem',
             padding: '4px 12px',
             borderRadius: '6px',

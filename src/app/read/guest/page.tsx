@@ -6,30 +6,20 @@
  * @why 신규 유저가 복잡한 구글 로그인이나 가입 절차 없이도 코레딩의 초속 독해 및 사전 조회의 매끄러움을 온전히 경험하고 자연스럽게 정식 회원으로 유입되게 돕는 강력한 랜딩 버퍼로 작동하기 위해 존재합니다.
  */
 
-import { useState, useEffect, useCallback, useRef, Fragment } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/contexts/AuthContext';
-import { lookupWordAll, TOPICS } from '@/lib/gemini';
+import { TOPICS } from '@/lib/gemini';
 import { getGuestArticle, getGuestLang, getGuestLevel, incrementGuestReadCount } from '@/lib/storage';
 import { saveVocabulary, getCustomCategories } from '@/lib/db';
 import ArticleIllustration from '@/components/ArticleIllustration';
-import { tokenizeKorean, isKoreanWord } from '@/lib/utils';
+import { isKoreanWord } from '@/lib/utils';
+import { useWordLookup } from '@/hooks/useWordLookup';
+import ReaderBody from '@/components/reader/ReaderBody';
+import TutorPanel, { type TutorSelection } from '@/components/reader/TutorPanel';
+import { articleSummary } from '@/lib/learning';
 
 // 단어 상세 사전 데이터를 보관할 인터페이스 정의
-interface WordData {
-  word: string;
-  dictionaryForm?: string;
-  pronunciation: string;
-  partOfSpeech: string;
-  structure?: string;
-  definition: string;
-  translation: string;
-  examples?: { korean: string; translation: string }[];
-  level: string;
-}
-
-
-
 // 다국어 번역 사전 정의
 const TRANSLATIONS = {
   ko: {
@@ -122,11 +112,12 @@ const TRANSLATIONS = {
 export default function GuestReadPage() {
   const { user, profile, signInWithGoogle } = useAuth();
   const router = useRouter();
+  const [guestNativeLang, setGuestNativeLang] = useState<import('@/lib/gemini').NativeLanguage>('en');
+  useEffect(() => setGuestNativeLang(getGuestLang()), []);
+  const { wordData, loadingWord, loadingAdvanced, lookupError, fetchWordData, clearWord } = useWordLookup(profile?.nativeLanguage || guestNativeLang);
+
 
   const [article, setArticle] = useState<any>(null);                        // 읽고 있는 임시 아티클 객체
-  const [wordData, setWordData] = useState<WordData | null>(null);          // 현재 조회 중인 사전 데이터
-  const [loadingWord, setLoadingWord] = useState(false);                     // 기본 사전 조회 중 로딩 상태
-  const [loadingAdvanced, setLoadingAdvanced] = useState(false);             // 상세 정보(예문/구조) 백그라운드 로딩 상태
   const [savedWords, setSavedWords] = useState<Set<string>>(new Set());      // 단어장 저장이 완료된 단어들 목록
   const [showLoginModal, setShowLoginModal] = useState(false);               // 구글 로그인 유도 모달 노출 제어
   const [readingDone, setReadingDone] = useState(false);                     // 다 읽기 완료 처리 상태
@@ -137,98 +128,24 @@ export default function GuestReadPage() {
   const [showAdvancedModal, setShowAdvancedModal] = useState<boolean>(false);
   const [fontSize, setFontSize] = useState<string>('normal');
   const [lineHeight, setLineHeight] = useState<number>(2.2);
-  const [readerTheme, setReaderTheme] = useState<string>('dark');
+  const [readerTheme, setReaderTheme] = useState<string>('light');
   const [showSettings, setShowSettings] = useState<boolean>(false);
 
   // 마우스 오버 즉시 검색 옵션 관련 Ref 및 상태 값
   const [hoverLookup, setHoverLookup] = useState(false);
   const hoverTimeoutRef = useRef<NodeJS.Timeout | null>(null);
-  const wordCacheRef = useRef<Record<string, { basic: any; advanced: any }>>({});
 
   // [신규 기능] 커스텀 카테고리 상태 및 단어 저장 시 선택된 카테고리
   const [customCategories, setCustomCategories] = useState<string[]>([]);
   const [selectedSaveCategory, setSelectedSaveCategory] = useState<string>('');
 
-  // 💬 AI 튜터 코칭 사이드바 관련 상태 변수들
-  interface ChatMessage {
-    role: 'user' | 'model';
-    parts: { text: string }[];
-  }
-  const [tutorOpen, setTutorOpen] = useState(false);
-  const [tutorParaIdx, setTutorParaIdx] = useState<number | null>(null);
-  const [tutorParagraph, setTutorParagraph] = useState('');
-  const [tutorInput, setTutorInput] = useState('');
-  const [tutorLoading, setTutorLoading] = useState(false);
-  const [paraChats, setParaChats] = useState<Record<number, ChatMessage[]>>({});
-  const tutorMsgEndRef = useRef<HTMLDivElement | null>(null);
-
-  useEffect(() => {
-    if (tutorMsgEndRef.current) {
-      tutorMsgEndRef.current.scrollIntoView({ behavior: 'smooth' });
-    }
-  }, [paraChats, tutorOpen, tutorParaIdx]);
-
-  const handleOpenTutor = (pIdx: number, pText: string) => {
-    setTutorParaIdx(pIdx);
-    setTutorParagraph(pText);
-    setTutorOpen(true);
-  };
-
-  const handleSendTutorMessage = async (e?: React.FormEvent, customMsg?: string) => {
-    if (e) e.preventDefault();
-    const msgToSend = (customMsg || tutorInput).trim();
-    if (!msgToSend || tutorParaIdx === null) return;
-
-    if (!customMsg) setTutorInput('');
-
-    const currentHistory = paraChats[tutorParaIdx] || [];
-    const newUserMessage: ChatMessage = { role: 'user', parts: [{ text: msgToSend }] };
-    const updatedHistory = [...currentHistory, newUserMessage];
-
-    setParaChats(prev => ({ ...prev, [tutorParaIdx]: updatedHistory }));
-    setTutorLoading(true);
-
-    try {
-      const nativeLang = user ? (profile?.nativeLanguage || 'en') : getGuestLang();
-      const level = getGuestLevel() || 'A1';
-      let customApiKey = '';
-      if (typeof window !== 'undefined') {
-        customApiKey = localStorage.getItem('koreading_custom_api_key') || '';
-      }
-
-      const res = await fetch('/api/ai', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          action: 'tutorChat',
-          level,
-          nativeLang,
-          paragraph: tutorParagraph,
-          userMessage: msgToSend,
-          chatHistory: currentHistory,
-          customApiKey
-        })
-      });
-
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || 'Failed to connect to AI Tutor');
-
-      const modelReply: ChatMessage = { role: 'model', parts: [{ text: data.text }] };
-      setParaChats(prev => ({
-        ...prev,
-        [tutorParaIdx]: [...updatedHistory, modelReply]
-      }));
-    } catch (err: any) {
-      console.error(err);
-      const errorReply: ChatMessage = { role: 'model', parts: [{ text: `❌ 에러가 발생했습니다: ${err.message || 'AI 튜터 호출에 실패했습니다.'}` }] };
-      setParaChats(prev => ({
-        ...prev,
-        [tutorParaIdx]: [...updatedHistory, errorReply]
-      }));
-    } finally {
-      setTutorLoading(false);
-    }
-  };
+  const [tutorSelection, setTutorSelection] = useState<TutorSelection | null>(null);
+  const handleOpenTutor = (index: number, text: string) => setTutorSelection({ index, text });
+  const closePopup = useCallback(() => {
+    clearWord();
+    setTooltipPosition(null);
+    setShowAdvancedModal(false);
+  }, [clearWord]);
 
   // 🎙️ 발음 연습 및 채점 상태 변수들
   const [recordingParaIdx, setRecordingParaIdx] = useState<number | null>(null);
@@ -390,7 +307,7 @@ export default function GuestReadPage() {
       if (hoverTimeoutRef.current) clearTimeout(hoverTimeoutRef.current);
       document.removeEventListener('click', handleGlobalClick);
     };
-  }, [router]);
+  }, [router, closePopup]);
 
   // [신규 기능] 독서 뷰어 커스텀 설정 갱신 헬퍼 함수
   const updateFontSize = (size: string) => {
@@ -417,64 +334,6 @@ export default function GuestReadPage() {
   };
 
   // 백그라운드 단어 사전 조회 비동기 코어 함수
-  const fetchWordData = useCallback(async (word: string, sentence: string) => {
-    try {
-      const nativeLang = profile?.nativeLanguage || getGuestLang() || 'en';
-      if (!nativeLang) return;
-
-      const cacheKey = `${word}_${nativeLang}`;
-      const sessionKey = `koreading_word_${cacheKey}`;
-
-      // 1순위: 인메모리 캐시 히트 시 0ms 즉시 반환
-      if (wordCacheRef.current[cacheKey]) {
-        const cached = wordCacheRef.current[cacheKey];
-        setWordData(cached.basic);
-        setLoadingWord(false);
-        setLoadingAdvanced(false);
-        if (cached.advanced) {
-          setWordData(prev => prev ? { ...prev, ...cached.advanced } : null);
-        }
-        return;
-      }
-
-      // 2순위: sessionStorage 영속 캐시 (페이지 이동 후 재방문 시에도 즉시 반환)
-      try {
-        const stored = sessionStorage.getItem(sessionKey);
-        if (stored) {
-          const parsed = JSON.parse(stored);
-          wordCacheRef.current[cacheKey] = { basic: parsed, advanced: parsed };
-          setWordData(parsed);
-          setLoadingWord(false);
-          setLoadingAdvanced(false);
-          return;
-        }
-      } catch { /* sessionStorage 접근 불가 환경 무시 */ }
-
-      setWordData(null);
-      setLoadingWord(true);
-      setLoadingAdvanced(false);
-
-      // ⚡ 단일 API 호출: 서버에서 basic + advanced를 Promise.all로 병렬 실행 후 합산 반환
-      const allData = await lookupWordAll(word, sentence, nativeLang);
-      setWordData(allData);
-      setLoadingWord(false);
-      setLoadingAdvanced(false);
-
-      // 인메모리 캐시 저장
-      wordCacheRef.current[cacheKey] = { basic: allData, advanced: allData };
-
-      // sessionStorage 영속 캐시 저장
-      try {
-        sessionStorage.setItem(sessionKey, JSON.stringify(allData));
-      } catch { /* sessionStorage 용량 초과 등 무시 */ }
-
-    } catch (err) {
-      console.error(err);
-      setLoadingWord(false);
-    } finally {
-      setLoadingAdvanced(false);
-    }
-  }, [profile]);
 
   /**
    * 한국어 단어를 클릭하거나 마우스 오버했을 때 동작하는 사전 조회 핵심 로직입니다.
@@ -518,20 +377,14 @@ export default function GuestReadPage() {
   };
 
   // 팝업 오버레이 닫기
-  const closePopup = () => {
-    setWordData(null);
-    setLoadingWord(false);
-    setLoadingAdvanced(false);
-    setTooltipPosition(null);
-    setShowAdvancedModal(false);
-  };
+
 
   // 단어 저장 버튼 클릭 이벤트
   const handleSaveWord = async () => {
     if (!wordData) return;
     // 비로그인 상태이므로 단어를 저장할 수 없음을 안내하고 가입 모달 노출
     if (!user) {
-      setWordData(null);
+      clearWord();
       setShowLoginModal(true);
       return;
     }
@@ -589,7 +442,7 @@ export default function GuestReadPage() {
 
   const topicInfo = TOPICS.find(t => t.id === article.topicCategory);
   const paragraphs = article.content?.split('\n').filter((p: string) => p.trim()) || [];
-  const activeNativeLang = profile?.nativeLanguage || getGuestLang() || 'en';
+  const activeNativeLang = profile?.nativeLanguage || guestNativeLang || 'en';
 
   // 사용자의 로그인 여부 및 레벨에 따른 UI 언어 선택
   const getUiLang = (): 'en' | 'es' | 'ja' | 'zh' | 'ko' => {
@@ -609,7 +462,7 @@ export default function GuestReadPage() {
 
   return (
     <div 
-      className={readerTheme === 'light' ? 'reader-theme-light' : readerTheme === 'sepia' ? 'reader-theme-sepia' : ''} 
+      className={readerTheme === 'light' ? 'reader-theme-light' : readerTheme === 'sepia' ? 'reader-theme-sepia' : readerTheme === 'dark' ? 'reader-theme-dark' : ''} 
       style={{ 
         minHeight: '100vh', 
         padding: '40px 24px', 
@@ -658,7 +511,7 @@ export default function GuestReadPage() {
             )}
             <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>⏱ {article.estimatedMinutes}분</span>
             {article.generatorModel && (
-              <span style={{ fontSize: '0.75rem', background: 'rgba(99,102,241,0.1)', color: 'var(--accent-primary)', padding: '3px 10px', borderRadius: '100px', border: '1px solid rgba(99,102,241,0.3)', fontWeight: 600 }}>
+              <span style={{ fontSize: '0.75rem', background: 'rgba(217,119,6,0.1)', color: 'var(--accent-primary)', padding: '3px 10px', borderRadius: '100px', border: '1px solid rgba(217,119,6,0.3)', fontWeight: 600 }}>
                 🤖 {article.generatorModel}
               </span>
             )}
@@ -666,7 +519,7 @@ export default function GuestReadPage() {
           <h1 style={{ fontSize: '1.8rem', fontWeight: 900, fontFamily: 'Noto Sans KR, sans-serif', marginBottom: '12px', lineHeight: 1.4 }}>
             {article.title}
           </h1>
-          <p style={{ color: 'var(--text-secondary)', fontSize: '0.875rem', fontStyle: 'italic' }}>{article.summary}</p>
+          <p style={{ color: 'var(--text-secondary)', fontSize: '0.875rem', fontStyle: 'italic' }}>{articleSummary(article, profile?.nativeLanguage || guestNativeLang)}</p>
         </div>
 
         {/* 🎨 대표 커버 맞춤 삽화 (Hero Cover Illustration) */}
@@ -763,104 +616,8 @@ export default function GuestReadPage() {
         )}
 
         {/* 독해 지문 본문 카드 (각 한국어 어휘에 인터랙티브 클릭 이벤트 및 바인딩 완료) */}
-        <div className="card" style={{ padding: '36px', marginBottom: '32px' }}>
-          {paragraphs.map((paragraph: string, pIdx: number) => {
-            const tokens = tokenizeKorean(paragraph);
-            const cleanText = paragraph.replace(/[^\w\sㄱ-ㅎㅏ-ㅣ가-힣.,!?'"~]/g, '');
-            const midIdx = Math.max(0, Math.floor(paragraphs.length / 2) - 1);
-            return (
-              <Fragment key={pIdx}>
-                <p style={{
-                  fontFamily: 'Noto Sans KR, sans-serif',
-                  fontSize: fontSize === 'small' ? '0.95rem' : fontSize === 'large' ? '1.3rem' : fontSize === 'xlarge' ? '1.5rem' : '1.1rem',
-                  lineHeight: lineHeight,
-                  marginBottom: '20px',
-                  color: 'var(--text-primary)',
-                  display: 'flex',
-                  alignItems: 'flex-start',
-                }}>
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', marginRight: '8px', marginTop: '4px' }}>
-                    <button
-                      onClick={() => speakText(cleanText)}
-                      className="reader-para-play-btn"
-                      title="이 문단 발음 듣기"
-                      style={{ margin: 0 }}
-                    >
-                      🔊
-                    </button>
-                    <button
-                      onClick={() => handleOpenTutor(pIdx, paragraph)}
-                      className="reader-para-tutor-btn"
-                      title="이 문단 1:1 AI 코칭"
-                      style={{ margin: 0 }}
-                    >
-                      💬
-                    </button>
-                    <button
-                      onClick={() => handleMicClick(pIdx, cleanText)}
-                      className={`reader-para-mic-btn ${recordingParaIdx === pIdx ? 'recording' : ''}`}
-                      title={recordingParaIdx === pIdx ? "녹음 중지" : "이 문단 따라 읽고 발음 채점"}
-                      style={{ margin: 0 }}
-                    >
-                      🎙️
-                    </button>
-                  </div>
-                  <span style={{ flex: 1 }}>
-                    {tokens.map((token, tIdx) =>
-                      isKoreanWord(token) ? (
-                        <span
-                          key={tIdx}
-                          className={`reading-word ${savedWords.has(token) ? 'saved' : ''}`}
-                          onClick={(e) => handleWordClick(e, token, paragraph)}
-                          onMouseEnter={(e) => handleWordMouseEnter(e, token, paragraph)}
-                          onMouseLeave={handleWordMouseLeave}
-                          title="클릭/오버하여 뜻 보기"
-                        >
-                          {token}
-                        </span>
-                      ) : (
-                        <span key={tIdx}>{token}</span>
-                      )
-                    )}
-                    {paraScores[pIdx] && (
-                      <div style={{
-                        marginTop: '10px',
-                        fontSize: '0.85rem',
-                        display: 'flex',
-                        alignItems: 'center',
-                        flexWrap: 'wrap',
-                        gap: '8px',
-                        background: 'var(--bg-secondary)',
-                        padding: '8px 12px',
-                        borderRadius: 'var(--radius-sm)',
-                        borderLeft: `4px solid ${paraScores[pIdx].score >= 80 ? '#10b981' : paraScores[pIdx].score >= 50 ? '#f59e0b' : '#ef4444'}`,
-                        animation: 'fadeIn 200ms ease',
-                        width: 'fit-content'
-                      }}>
-                        <span style={{ fontWeight: 700, color: 'var(--text-primary)' }}>
-                          🎯 발음 일치도: {paraScores[pIdx].score}%
-                        </span>
-                        <span style={{ color: 'var(--text-muted)', fontSize: '0.775rem' }}>
-                          (인식: &quot;{paraScores[pIdx].text}&quot;)
-                        </span>
-                      </div>
-                    )}
-                  </span>
-                </p>
-
-                {/* 🎨 본문 중간 시각 보조자료 삽화 (In-text Vocabulary Visual Aid) */}
-                {article.imageUrls?.[1] && pIdx === midIdx && (
-                  <ArticleIllustration
-                    src={article.imageUrls[1]}
-                    alt={`${article.title} - 핵심 어휘 시각 자료`}
-                    badgeText="🔍 핵심 어휘 시각 자료 (Visual Aid)"
-                    style={{ margin: '20px 0 28px 0' }}
-                  />
-                )}
-              </Fragment>
-            );
-          })}
-        </div>
+        {lookupError && <p role="alert">{lookupError}</p>}
+        <ReaderBody paragraphs={paragraphs} article={article} fontSize={fontSize} lineHeight={lineHeight} savedWords={savedWords} recordingParaIdx={recordingParaIdx} paraScores={paraScores} onWordClick={handleWordClick} onWordEnter={handleWordMouseEnter} onWordLeave={handleWordMouseLeave} onSpeak={speakText} onTutor={handleOpenTutor} onMic={handleMicClick} />
 
         {/* 독해 완료 유도 버튼 툴바 영역 */}
         {!readingDone && (
@@ -1022,12 +779,12 @@ export default function GuestReadPage() {
 
               {/* 2단계 백그라운드 Advanced 분석 호출 대기 중에는 미세 실선 박스로 안내 처리 */}
               {loadingAdvanced && !wordData.structure ? (
-                <div style={{ marginBottom: '20px', background: 'rgba(99,102,241,0.02)', borderRadius: 'var(--radius-sm)', padding: '12px 16px', border: '1px dotted var(--border-subtle)' }}>
+                <div style={{ marginBottom: '20px', background: 'var(--bg-secondary)', borderRadius: 'var(--radius-sm)', padding: '12px 16px', border: '1px dotted var(--border-subtle)' }}>
                   <div className="skeleton" style={{ width: '45%', height: '12px', marginBottom: '10px', borderRadius: '4px' }} />
                   <div className="skeleton" style={{ width: '85%', height: '16px', borderRadius: '4px' }} />
                 </div>
               ) : wordData.structure ? (
-                <div className="word-popup-section" style={{ background: 'rgba(99,102,241,0.05)', borderRadius: 'var(--radius-sm)', padding: '12px 16px', border: '1px solid rgba(99,102,241,0.1)', marginBottom: '20px' }}>
+                <div className="word-popup-section" style={{ background: 'rgba(217,119,6,0.06)', borderRadius: 'var(--radius-sm)', padding: '12px 16px', border: '1px solid rgba(217,119,6,0.15)', marginBottom: '20px' }}>
                   <div className="word-popup-section-title" style={{ color: 'var(--accent-primary)', display: 'flex', alignItems: 'center', gap: '6px', fontWeight: 700 }}>
                     🧱 단어 구조 분석 (Word Structure)
                   </div>
@@ -1186,9 +943,9 @@ export default function GuestReadPage() {
             <div style={{ fontSize: '0.75rem', fontWeight: 700, color: 'var(--text-muted)', marginBottom: '8px' }}>리더 배경 테마</div>
             <div style={{ display: 'flex', gap: '8px' }}>
               {[
-                { id: 'dark', label: 'Dark', bg: '#0a0e1a', color: '#f8fafc' },
-                { id: 'light', label: 'Light', bg: '#f8fafc', color: '#0f172a' },
+                { id: 'light', label: 'Paper', bg: '#fbfaf8', color: '#1c1917' },
                 { id: 'sepia', label: 'Sepia', bg: '#fdf6e3', color: '#5c4326' },
+                { id: 'dark', label: 'Dark', bg: '#1c1917', color: '#fbfaf8' },
               ].map(theme => (
                 <button
                   key={theme.id}
@@ -1274,139 +1031,7 @@ export default function GuestReadPage() {
         </div>
       )}
 
-      {/* 💬 AI 튜터 1:1 코칭 사이드바 */}
-      <div className={`reader-tutor-sidebar ${tutorOpen ? 'open' : ''}`}>
-        <div className="tutor-header">
-          <div style={{ display: 'flex', flexDirection: 'column' }}>
-            <h3 style={{ margin: 0, fontSize: '1.1rem', fontWeight: 800, color: 'var(--text-primary)' }}>
-              {t.tutorTitle}
-            </h3>
-            <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
-              {tutorParaIdx !== null ? `${tutorParaIdx + 1}번째 문단 코칭 중` : ''}
-            </span>
-          </div>
-          <button
-            onClick={() => setTutorOpen(false)}
-            style={{
-              background: 'none',
-              border: 'none',
-              color: 'var(--text-muted)',
-              cursor: 'pointer',
-              fontSize: '1.2rem',
-              fontWeight: 'bold',
-              padding: '4px'
-            }}
-          >
-            ✕
-          </button>
-        </div>
-
-        {tutorParagraph && (
-          <div className="tutor-content-para" title="질문 대상 문단">
-            {tutorParagraph}
-          </div>
-        )}
-
-        <div className="tutor-message-list">
-          {tutorParaIdx !== null && (paraChats[tutorParaIdx] || []).length === 0 && (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-              <div style={{ fontSize: '0.875rem', color: 'var(--text-secondary)', textAlign: 'center', marginBottom: '8px', lineHeight: 1.5 }}>
-                {t.tutorIntro}
-              </div>
-              <button
-                onClick={() => handleSendTutorMessage(undefined, t.qTranslate)}
-                className="tutor-quick-badge"
-              >
-                {t.qTranslate}
-              </button>
-              <button
-                onClick={() => handleSendTutorMessage(undefined, t.qGrammar)}
-                className="tutor-quick-badge"
-              >
-                {t.qGrammar}
-              </button>
-              <button
-                onClick={() => handleSendTutorMessage(undefined, t.qVocab)}
-                className="tutor-quick-badge"
-              >
-                {t.qVocab}
-              </button>
-              <button
-                onClick={() => handleSendTutorMessage(undefined, t.qNuance)}
-                className="tutor-quick-badge"
-              >
-                {t.qNuance}
-              </button>
-            </div>
-          )}
-
-          {tutorParaIdx !== null && (paraChats[tutorParaIdx] || []).map((msg, idx) => (
-            <div key={idx} className={`tutor-bubble-wrapper ${msg.role === 'user' ? 'user' : 'tutor'}`}>
-              <span className="tutor-bubble-sender">
-                {msg.role === 'user' ? 'Me' : 'AI Tutor'}
-              </span>
-              <div className={`tutor-bubble ${msg.role === 'user' ? 'user' : 'tutor'}`}>
-                {msg.role === 'user' ? (
-                  msg.parts[0].text
-                ) : (
-                  msg.parts[0].text.split('\n').map((line, lIdx) => {
-                    const parts = line.split(/(\*\*[^*]+\*\*)/g);
-                    return (
-                      <p key={lIdx} style={{ margin: line === '' ? '8px 0' : '0 0 6px 0', lineHeight: 1.5 }}>
-                        {parts.map((part, pIdx) => {
-                          if (part.startsWith('**') && part.endsWith('**')) {
-                            return <strong key={pIdx} style={{ color: 'var(--accent-primary)', fontWeight: 700 }}>{part.slice(2, -2)}</strong>;
-                          }
-                          return part;
-                        })}
-                      </p>
-                    );
-                  })
-                )}
-              </div>
-            </div>
-          ))}
-
-          {tutorLoading && (
-            <div className="tutor-bubble-wrapper tutor">
-              <span className="tutor-bubble-sender">AI Tutor</span>
-              <div className="tutor-bubble tutor" style={{ display: 'flex', alignItems: 'center' }}>
-                <div className="tutor-loading-dots">
-                  <div className="tutor-loading-dot" />
-                  <div className="tutor-loading-dot" />
-                  <div className="tutor-loading-dot" />
-                </div>
-              </div>
-            </div>
-          )}
-          <div ref={tutorMsgEndRef} />
-        </div>
-
-        <div className="tutor-input-area">
-          <form onSubmit={(e) => handleSendTutorMessage(e)} className="tutor-input-form">
-            <textarea
-              value={tutorInput}
-              onChange={(e) => setTutorInput(e.target.value)}
-              placeholder={t.tutorPlaceholder}
-              className="tutor-textarea"
-              onKeyDown={(e) => {
-                if (e.key === 'Enter' && !e.shiftKey) {
-                  e.preventDefault();
-                  handleSendTutorMessage(e);
-                }
-              }}
-            />
-            <button
-              type="submit"
-              disabled={tutorLoading || !tutorInput.trim()}
-              className="tutor-send-btn"
-              title="질문 보내기"
-            >
-              ✈️
-            </button>
-          </form>
-        </div>
-      </div>
+      <TutorPanel selected={tutorSelection} onClose={() => setTutorSelection(null)} language={profile?.nativeLanguage || guestNativeLang} level={profile?.level || article?.level || 'A1'} labels={t} />
     </div>
   );
 }

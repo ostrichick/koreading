@@ -429,7 +429,7 @@ export default function ProfilePage() {
                         <div className="chart-bar-tooltip">
                           <div style={{ fontWeight: 700, marginBottom: '2px' }}>{day.dateKey}</div>
                           <div style={{ color: '#10b981' }}>• 독서: {day.readCount}회</div>
-                          <div style={{ color: '#6366f1' }}>• 단어 저장: {day.vocabCount}개</div>
+                          <div style={{ color: '#d97706' }}>• 단어 저장: {day.vocabCount}개</div>
                         </div>
 
                         {/* 그래프 막대 묶음 */}
@@ -460,7 +460,7 @@ export default function ProfilePage() {
                     <span>독서 지문</span>
                   </div>
                   <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
-                    <div style={{ width: '12px', height: '8px', background: '#6366f1', borderRadius: '2px' }} />
+                    <div style={{ width: '12px', height: '8px', background: '#d97706', borderRadius: '2px' }} />
                     <span>어휘 저장</span>
                   </div>
                 </div>
@@ -520,7 +520,7 @@ export default function ProfilePage() {
                   borderRadius: 'var(--radius-md)',
                   border: '2px solid',
                   borderColor: selectedLang === lang.value ? 'var(--accent-primary)' : 'var(--border-subtle)',
-                  background: selectedLang === lang.value ? 'rgba(99,102,241,0.1)' : 'var(--bg-secondary)',
+                  background: selectedLang === lang.value ? 'rgba(217,119,6,0.1)' : 'var(--bg-secondary)',
                   cursor: 'pointer',
                   textAlign: 'left',
                   transition: 'all 150ms ease',
@@ -557,7 +557,7 @@ export default function ProfilePage() {
                   borderRadius: 'var(--radius-md)',
                   border: '2px solid',
                   borderColor: selectedLevel === level.value ? 'var(--accent-primary)' : 'var(--border-subtle)',
-                  background: selectedLevel === level.value ? 'rgba(99,102,241,0.1)' : 'var(--bg-secondary)',
+                  background: selectedLevel === level.value ? 'rgba(217,119,6,0.1)' : 'var(--bg-secondary)',
                   cursor: 'pointer',
                   textAlign: 'left',
                   transition: 'all 150ms ease',

@@ -1,3 +1,4 @@
+import { isAuthorizedCron } from '@/lib/cronAuth';
 /**
  * @file route.ts (api/cron/monthly-model-audit)
  * @description 매월 1일 Google AI Studio의 최신 활성 모델 목록을 전수 조사하고,
@@ -9,7 +10,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 
 export const dynamic = 'force-dynamic';
-export const runtime = 'edge';
+export const runtime = 'nodejs';
+export const maxDuration = 180;
 
 interface BenchmarkScore {
   modelId: string;
@@ -24,6 +26,7 @@ interface BenchmarkScore {
 }
 
 export async function GET(req: NextRequest) {
+  if (!isAuthorizedCron(req.headers, process.env.CRON_SECRET)) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   const auditStart = Date.now();
   const geminiKey = process.env.GEMINI_API_KEY;
 
@@ -118,15 +121,18 @@ CEFR A2 수준의 한국 음식 주제로 짧은 글을 작성하세요.
       
       // 검증 1: JSON 유효성
       let parsedOk = false;
+      let koreanText = ''; 
       try {
-        JSON.parse(text);
+        const parsed = JSON.parse(text);
+        if (!['title', 'content', 'korean'].every(k => typeof parsed[k] === 'string' && parsed[k].trim())) throw new Error('Invalid benchmark');
+        koreanText = [parsed.title, parsed.content, parsed.korean].join(' ');
         parsedOk = true;
       } catch {
         parsedOk = false;
       }
 
       // 검증 2: 한글 순수도 (영어/한자 혼입 체크)
-      const foreignCharMatch = text.match(/[\u4E00-\u9FFF\u3040-\u30FFa-zA-Z]/g);
+      const foreignCharMatch = koreanText.match(/[\u4E00-\u9FFF\u3040-\u30FFa-zA-Z]/g);
       const foreignCount = foreignCharMatch ? foreignCharMatch.length : 0;
       const purityScore = Math.max(0, 100 - foreignCount * 5);
 
@@ -166,13 +172,13 @@ CEFR A2 수준의 한국 음식 주제로 짧은 글을 작성하세요.
   // ═══════════════════════════════════════════════════
   // 글 생성용 (품질, 한글 순수도 및 정규 Flash 체급 위주)
   const topForArticles = benchmarkResults
-    .filter(r => r.status === 'SUCCESS' && !r.modelId.includes('lite'))
+    .filter(r => r.status === 'SUCCESS' && r.jsonValid && r.koreanPurityScore > 0 && !r.modelId.includes('lite'))
     .sort((a, b) => b.totalScore - a.totalScore)
     .slice(0, 3);
 
   // 사전 검색용 (지연 시간 최우선, Lite 체급 우선)
   const topForDictionary = benchmarkResults
-    .filter(r => r.status === 'SUCCESS')
+    .filter(r => r.status === 'SUCCESS' && r.jsonValid && r.koreanPurityScore > 0)
     .sort((a, b) => a.latencyMs - b.latencyMs)
     .slice(0, 3);
 

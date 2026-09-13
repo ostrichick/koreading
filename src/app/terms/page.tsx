@@ -131,7 +131,7 @@ export default function TermsPage() {
           </section>
 
           {/* 문의 */}
-          <section className="card" style={{ padding: '28px', borderColor: 'rgba(99,102,241,0.3)' }}>
+          <section className="card" style={{ padding: '28px', borderColor: 'rgba(217,119,6,0.3)' }}>
             <h2 style={{ fontSize: '1.1rem', fontWeight: 700, marginBottom: '14px', color: 'var(--accent-primary)' }}>문의</h2>
             <div style={{ color: 'var(--text-secondary)', fontSize: '0.875rem', lineHeight: 1.9 }}>
               <p><strong style={{ color: 'var(--text-primary)' }}>운영자:</strong> {operatorName}</p>

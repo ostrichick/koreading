@@ -40,7 +40,7 @@ export default function LoginPage() {
       <div style={{
         position: 'absolute',
         inset: 0,
-        background: 'radial-gradient(ellipse 80% 60% at 50% 50%, rgba(99,102,241,0.12) 0%, transparent 70%)',
+        background: 'radial-gradient(ellipse 80% 60% at 50% 50%, rgba(217,119,6,0.1) 0%, transparent 70%)',
         pointerEvents: 'none',
       }} />
 

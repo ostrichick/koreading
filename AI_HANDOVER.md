@@ -26,7 +26,7 @@
 | :--- | :--- | :--- |
 | **Frontend Framework** | **Next.js 15+ (App Router)** | React 19, Turbopack, TypeScript 기반 |
 | **Runtime & Deploy** | **Vercel (Edge Network)** | `/api/ai` 라우트는 **Edge Runtime (`export const runtime = 'edge'`)** 적용으로 콜드 스타트 없음 |
-| **Styling** | **Pure CSS (`globals.css`)** | CSS 변수 기반 디자인 시스템 토큰, 다크 모드 테마, 무(無) 라이브러리 경량화 |
+| **Styling** | **Pure CSS (`globals.css`)** | CSS 변수 기반 에디토리얼 웜(Warm Paper & Charcoal) 디자인 시스템, 미디엄/브런치 감성의 가독성 중심 테마 |
 | **Authentication** | **Firebase Auth** | Google OAuth 간편 로그인 (팝업 및 모바일 리다이렉트 대응) |
 | **Database** | **Cloud Firestore** | NoSQL 문서 데이터베이스 (아티클, 단어장, 읽음 기록, 리뷰, 사용자 프로필) |
 | **Main AI Model (창작)** | **Google Gemini 2.5 Flash** | 국립국어원 표준 CEFR 커리큘럼 기반 한국어 교육 전담 주력 모델 (`temperature: 0.45`) |
@@ -153,6 +153,7 @@ Conq/
 
 | 일자 | 구분 | 주요 구현 및 변경 내역 |
 | :--- | :--- | :--- |
+| **2026-09-13** | **에디토리얼 웜 (Editorial Warm Paper & Charcoal) 전면 개편** | - **눈이 편안한 종이책 감성 UI 적용**: 어두운 딥블루/네이비 테마를 전면 탈피하고 웜 페이퍼 크림(`--bg-primary: #fbfaf8`), 웜 아이보리(`--bg-secondary: #f4f1ea`), 딥 차콜 잉크(`--text-primary: #1c1917`), 웜 앰버 포인트(`--accent-primary: #d97706`)로 구성된 에디토리얼 테마 전역 적용.<br>- **리더기 3단 테마 시스템 개편**: Paper(기본), Sepia, Dark(웜 차콜) 모드 완비.<br>- **하드코딩 인디고/슬레이트 컬러 완전 정비**: 도서관 모달, 사전 팝업, 어휘 차트, 게스트 배너, 삽화 오버레이 등 모든 컴포넌트의 인라인 컬러를 신규 테마 토큰과 완벽하게 동기화.<br>- **Next.js 16 빌드 & ESLint 무결성 검증 완료**. |
 | **2026-09-13** | **KFL 한국어 교육 커리큘럼 & 교재 삽화 개편** | - **국립국어원 표준 CEFR 커리큘럼 엔진 (`koreanCurriculum.ts`)**: 레벨별 필수 목표 문법 2~3개 내재화 강제, 5대 핵심 단어 본문 내 최소 2회 이상 자연스러운 반복(Vocabulary Recycling), 실생활 상황 중심 텍스트 제어.<br>- **교재형 시각 보조자료(Visual Aid) 1:1 매핑**: 예술적 추상화 대신 '대표 상황도(Situational Scene)'와 '핵심 어휘 클로즈업 도해(Visual Vocabulary Aid)'로 영문 프롬프트 디렉팅 전면 개편.<br>- **교육 최적화 Temperature**: 0.8 ➜ 0.45로 조정하여 어휘 난이도 통제 및 문법 일관성 보장. |
 | **2026-09-13** | **주제 맞춤 AI 삽화 연동** | - **Pollinations.ai (FLUX.1) 연동**: 글 생성 시 본문의 구체적 사건/배경을 반영한 영문 프롬프트 기반 16:9 고화질 삽화 2종(커버 + 본문 중간) 자동 조합.<br>- **비동기 스켈레톤 뷰어 (`ArticleIllustration.tsx`)**: 텍스트 우선 로딩 후 백그라운드 쉬머 로딩, 오류 시 부드러운 자동 숨김.<br>- **도서관 카드 매거진 뷰**: 도서관 목록 카드 상단에 썸네일 배너 노출. |
 | **2026-09-13** | **4대 정기 점검 & SEO 동적 색인** | - **동적 사이트맵 연동**: `sitemap.ts`에 Firestore 공개 아티클 쿼리를 결합하여 `/read/[id]`를 검색엔진에 자동 색인 등록.<br>- **자율 모니터링 크론 3종 구축**: 일일 모델 헬스체크(`/api/cron/check-models`), 월간 모델 벤치마크 오딧(`/api/cron/monthly-model-audit`), 주간 4대 시스템 감사(`/api/cron/system-audit`).<br>- **폐기 모델 복구**: 가동 중단된 레거시 모델을 `gemini-2.5-flash`, `gemini-3.5-flash-lite`, `qwen/qwen3.8-27b`로 완전 교체. |
