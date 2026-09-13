@@ -1,17 +1,19 @@
 /**
  * @file sitemap.ts (app)
- * @description Next.js App Router의 빌트인 사이트맵 생성기입니다.
- * 이 파일은 `/sitemap.xml` 경로로 Google 및 기타 검색엔진이 사이트의 모든 공개 페이지를 색인할 수 있도록 사이트맵을 자동 생성합니다.
- * 애드센스 심사 및 검색 노출(SEO) 향상에 필수입니다.
+ * @description Next.js App Router의 빌트인 동적 사이트맵 생성기입니다.
+ * 이 파일은 `/sitemap.xml` 경로로 Google, Bing 등 검색엔진 크롤러가 사이트의 모든 공개 페이지와
+ * 도서관의 모든 개별 한국어 읽기 아티클(/read/[id])을 색인(Index)할 수 있도록 동적으로 사이트맵을 자동 생성합니다.
+ * 외국인 학습자의 오가닉 검색 유입(SEO) 및 구글 애드센스 심사에 필수적인 핵심 인프라입니다.
  */
 
 import { MetadataRoute } from 'next';
+import { getAllArticles } from '@/lib/db';
 
-// 사이트의 실제 도메인 주소 (배포 후 정확한 도메인으로 변경 필요)
 const BASE_URL = 'https://koreading.vercel.app';
 
-export default function sitemap(): MetadataRoute.Sitemap {
-  return [
+export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
+  // 1. 핵심 정적 서비스 및 법적 필수 페이지 목록
+  const staticRoutes: MetadataRoute.Sitemap = [
     {
       url: BASE_URL,
       lastModified: new Date(),
@@ -55,4 +57,22 @@ export default function sitemap(): MetadataRoute.Sitemap {
       priority: 0.5, // 이용약관
     },
   ];
+
+  // 2. Firestore DB에서 모든 공개 독해 아티클을 쿼리하여 동적 URL 등록
+  try {
+    const articles = await getAllArticles();
+    const articleRoutes: MetadataRoute.Sitemap = articles.map(article => ({
+      url: `${BASE_URL}/read/${article.id}`,
+      lastModified: article.createdAt?.seconds 
+        ? new Date(article.createdAt.seconds * 1000) 
+        : new Date(),
+      changeFrequency: 'weekly',
+      priority: 0.8, // 개별 한국어 읽기 자료
+    }));
+
+    return [...staticRoutes, ...articleRoutes];
+  } catch (err) {
+    console.error('Failed to load dynamic articles for sitemap, returning static routes fallback:', err);
+    return staticRoutes;
+  }
 }

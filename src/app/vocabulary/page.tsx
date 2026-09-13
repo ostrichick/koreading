@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/contexts/AuthContext';
 import { 
@@ -13,6 +13,7 @@ import {
 } from '@/lib/db';
 import { TOPICS } from '@/lib/gemini';
 import { getGuestLang, getGuestLevel } from '@/lib/storage';
+import { shuffleArray } from '@/lib/utils';
 
 // 다국어 번역 사전 정의
 const TRANSLATIONS = {
@@ -312,30 +313,64 @@ export default function VocabularyPage() {
   };
 
 
-  const isUncategorized = (topic: string) => {
+  const isUncategorized = useCallback((topic: string) => {
     return !topic || !customCategories.includes(topic);
-  };
+  }, [customCategories]);
 
   // 사용자가 고른 상단 토픽 카테고리 필터에 맞추어 단어장 데이터를 필터링합니다.
-  const filteredVocab = vocab.filter(entry => {
-    if (selectedTopic === 'all') return true;
-    if (selectedTopic === '') return isUncategorized(entry.topic);
-    return entry.topic === selectedTopic;
-  });
+  const filteredVocab = useMemo(() => {
+    return vocab.filter(entry => {
+      if (selectedTopic === 'all') return true;
+      if (selectedTopic === '') return isUncategorized(entry.topic);
+      return entry.topic === selectedTopic;
+    });
+  }, [vocab, selectedTopic, isUncategorized]);
+
+  // 플래시카드 무작위 셔플 기능 (Fisher-Yates 셔플)
+  const handleShuffleCards = () => {
+    setShuffledVocab(shuffleArray(shuffledVocab));
+    setCardIdx(0);
+    setIsFlipped(false);
+  };
+
+  // 🧩 미니 퀴즈 문제 자동 생성기 (4지선다, Fisher-Yates 셔플)
+  const generateQuiz = useCallback(() => {
+    if (filteredVocab.length < 4) return;
+    
+    // 현재 필터링된 단어 중 정답 단어를 무작위 지정
+    const answer = filteredVocab[Math.floor(Math.random() * filteredVocab.length)];
+    
+    // 오답용 풀 구성 (정답을 제외한 전체 단어 목록)
+    const others = vocab.filter(v => v.id !== answer.id);
+    const shuffledOthers = shuffleArray(others);
+    
+    const options = [answer.translation];
+    for (let i = 0; i < Math.min(3, shuffledOthers.length); i++) {
+      options.push(shuffledOthers[i].translation);
+    }
+
+    // 4개 선택지 무작위 셔플
+    const shuffledOptions = shuffleArray(options);
+
+    setQuizQuestion(answer);
+    setQuizOptions(shuffledOptions);
+    setSelectedAnswer(null);
+    setIsCorrect(null);
+  }, [filteredVocab, vocab]);
 
   // 플래시카드 학습을 위해 필터링된 단어 목록을 초기화합니다.
   useEffect(() => {
     setShuffledVocab(filteredVocab);
     setCardIdx(0);
     setIsFlipped(false);
-  }, [vocab, selectedTopic, activeTab]);
+  }, [filteredVocab, activeTab]);
 
   // 플래시카드 활성화 시 퀴즈 초기화 및 탭 전환 대응
   useEffect(() => {
     if (activeTab === 'quiz' && filteredVocab.length >= 4) {
       generateQuiz();
     }
-  }, [activeTab, selectedTopic]);
+  }, [activeTab, filteredVocab.length, generateQuiz]);
 
   // 단어장의 카테고리 리스트 (전체, 미분류, 유저 커스텀 카테고리)
   const topicsWithWords = ['all', '', ...customCategories];
@@ -374,39 +409,6 @@ export default function VocabularyPage() {
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
-  };
-
-  // 🎴 플래시카드 무작위 셔플 기능
-  const handleShuffleCards = () => {
-    const shuffled = [...shuffledVocab].sort(() => Math.random() - 0.5);
-    setShuffledVocab(shuffled);
-    setCardIdx(0);
-    setIsFlipped(false);
-  };
-
-  // 🧩 미니 퀴즈 문제 자동 생성기 (4지선다)
-  const generateQuiz = () => {
-    if (filteredVocab.length < 4) return;
-    
-    // 현재 필터링된 단어 중 정답 단어를 무작위 지정
-    const answer = filteredVocab[Math.floor(Math.random() * filteredVocab.length)];
-    
-    // 오답용 풀 구성 (정답을 제외한 전체 단어 목록)
-    const others = vocab.filter(v => v.id !== answer.id);
-    const shuffledOthers = [...others].sort(() => Math.random() - 0.5);
-    
-    const options = [answer.translation];
-    for (let i = 0; i < Math.min(3, shuffledOthers.length); i++) {
-      options.push(shuffledOthers[i].translation);
-    }
-
-    // 4개 선택지 무작위 셔플
-    const shuffledOptions = options.sort(() => Math.random() - 0.5);
-
-    setQuizQuestion(answer);
-    setQuizOptions(shuffledOptions);
-    setSelectedAnswer(null);
-    setIsCorrect(null);
   };
 
   // 🧩 퀴즈 정답 제출 이벤트 핸들러

@@ -37,8 +37,13 @@ export default function NavBar() {
     setMenuOpen(false);  // 메뉴 닫기
   };
 
-  // 게스트(비로그인)가 브라우저에 저장한 임시 학습 레벨 정보를 가져옵니다.
-  const guestLevel = typeof window !== 'undefined' ? localStorage.getItem('koreading_level') : null;
+  const [guestLevel, setGuestLevel] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      setGuestLevel(localStorage.getItem('koreading_level'));
+    }
+  }, []);
 
   // 로그인 및 게스트 상태에 따라서 상단 네비게이션 메뉴 목록을 다이나믹하게 필터링합니다.
   // About 링크는 항상 표시하여 신뢰성 있는 사이트임을 Google 크롤러에게 보여줍니다.

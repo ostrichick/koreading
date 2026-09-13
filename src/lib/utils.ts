@@ -24,3 +24,19 @@ export function tokenizeKorean(text: string): string[] {
 export function isKoreanWord(token: string): boolean {
   return /[\uAC00-\uD7AF\u1100-\u11FF\u3130-\u318F]/.test(token);
 }
+
+/**
+ * 배열 요소를 Fisher-Yates 알고리즘으로 무작위 편향 없이 균일하게 셔플하는 유틸리티 함수입니다.
+ * 
+ * @param array 셔플할 원본 배열
+ * @returns 무작위로 재배열된 새로운 배열
+ */
+export function shuffleArray<T>(array: T[]): T[] {
+  const result = [...array];
+  for (let i = result.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [result[i], result[j]] = [result[j], result[i]];
+  }
+  return result;
+}
+

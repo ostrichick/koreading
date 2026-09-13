@@ -11,6 +11,7 @@ import {
   serverTimestamp,
   Timestamp,
   deleteDoc,
+  runTransaction,
 } from 'firebase/firestore';
 import { db } from './firebase';
 import { isAdminEmail } from './adminConfig';
@@ -186,21 +187,22 @@ export async function saveReview(articleId: string, review: Omit<Review, 'id' | 
   const reviewsRef = collection(db, 'articles', articleId, 'reviews');
   await addDoc(reviewsRef, { ...review, createdAt: serverTimestamp() });
 
-  // 상위 아티클 문서의 리뷰 카운트와 평균 별점을 업데이트합니다.
+  // 트랜잭션으로 상위 아티클 문서의 리뷰 카운트와 평균 별점을 원자적으로 업데이트합니다.
   const articleRef = doc(db, 'articles', articleId);
-  const snap = await getDoc(articleRef);
-  if (snap.exists()) {
+  await runTransaction(db, async (transaction) => {
+    const snap = await transaction.get(articleRef);
+    if (!snap.exists()) return;
     const articleData = snap.data();
     const oldCount = articleData.ratingCount || 0;
     const oldAverage = articleData.averageRating || 0;
     const newCount = oldCount + 1;
     const newAverage = (oldAverage * oldCount + review.rating) / newCount;
-    
-    await setDoc(articleRef, {
+
+    transaction.update(articleRef, {
       ratingCount: newCount,
       averageRating: Number(newAverage.toFixed(1)),
-    }, { merge: true });
-  }
+    });
+  });
 }
 
 /**
@@ -281,6 +283,20 @@ export async function deleteCustomCategory(uid: string, name: string): Promise<v
   for (const d of snap.docs) {
     await deleteDoc(doc(db, 'users', uid, 'customCategories', d.id));
   }
+}
+
+/**
+ * 사용자의 회원 탈퇴를 처리합니다.
+ * 안전성을 위해 Firebase Auth 계정을 먼저 삭제한 후 Firestore 문서를 삭제합니다.
+ * (Auth 삭제 시 재인증(requires-recent-login) 에러가 발생하더라도 Firestore 데이터가 유실되지 않도록 보장)
+ */
+export async function deleteUserAccount(user: any): Promise<void> {
+  const uid = user.uid;
+  // 1. Firebase Auth 계정 삭제 (최근 로그인 필요할 수 있음)
+  await user.delete();
+  // 2. Auth 삭제 성공 시 Firestore 유저 프로필 문서 삭제
+  const ref = doc(db, 'users', uid);
+  await deleteDoc(ref);
 }
 
 

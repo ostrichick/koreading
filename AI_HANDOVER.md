@@ -29,9 +29,10 @@
 | **Styling** | **Pure CSS (`globals.css`)** | CSS 변수 기반 디자인 시스템 토큰, 다크 모드 테마, 무(無) 라이브러리 경량화 |
 | **Authentication** | **Firebase Auth** | Google OAuth 간편 로그인 (팝업 및 모바일 리다이렉트 대응) |
 | **Database** | **Cloud Firestore** | NoSQL 문서 데이터베이스 (아티클, 단어장, 읽음 기록, 리뷰, 사용자 프로필) |
-| **Primary AI Engine** | **Groq LPU API** | Gemma 2 9B, Llama 3.3 70B, Llama 3.1 8B (초고속 추론) |
-| **Secondary AI Engine**| **Google Gemini API** | Gemini 2.5 Flash, 2.0 Flash, 1.5 Flash, 2.0 Flash Lite, 1.5 Flash 8B |
-| **Fallback System** | **8단계 지능형 폴백** | Groq 3종 실패 시 Gemini 5종 계단식 자동 전환, 429/503 시 1초 대기 후 폴백 |
+| **Main AI Model (창작)** | **Google Gemini 2.5 Flash** | 한국어 어휘력 및 문장 유려도가 가장 뛰어난 고품질 주력 모델 (`temperature: 0.8`) |
+| **Speed AI Model (사전)** | **Google Gemini 3.5 Flash Lite** | 800ms대 초고속 응답 속도를 자랑하는 미니 팝업 사전 전용 모델 (`temperature: 0.1`) |
+| **Fallback & Alternative**| **Groq Qwen 3.8 27B / Gemini 3.5 Flash** | 구글 쿼터 초과 시 동작하는 Groq 오픈소스 모델 및 최신 플래시 폴백 체인 |
+| **Cron & Autonomous Ops** | **Vercel Cron Jobs (3종)** | ① 일일 모델 헬스체크, ② 월간 모델 벤치마크 오딧, ③ 주간 4대 시스템 감사 |
 | **Client Storage** | **localStorage & sessionStorage** | 게스트 세션 데이터 및 사전 조회 2단계 영속 캐시 |
 
 ---
@@ -91,7 +92,10 @@ Conq/
 │   └── google*.html         # 구글 서치 콘솔 소유권 확인 파일
 ├── src/
 │   ├── app/
-│   │   ├── api/ai/route.ts       # [코어 백엔드] Edge AI 라우트 (글 생성, 사전, 테스트, 8단계 폴백)
+│   │   ├── api/ai/route.ts       # [코어 백엔드] Edge AI 라우트 (글 생성, 사전, 테스트, 폴백)
+│   │   ├── api/cron/check-models/route.ts        # [일일 크론] AI 모델 가용성 자동 헬스체크
+│   │   ├── api/cron/monthly-model-audit/route.ts # [월간 크론] 최신 모델 벤치마크 평가 및 Top 3 추천
+│   │   ├── api/cron/system-audit/route.ts        # [주간 크론] 도서관 아티클 품질/법적페이지/SEO/쿼터 4대 감사
 │   │   ├── about/page.tsx        # [SEO/AdSense] 서비스 소개 및 기능 안내 (영문 중심 서버 컴포넌트)
 │   │   ├── privacy/page.tsx      # [법적 필수] 개인정보처리방침
 │   │   ├── terms/page.tsx        # [법적 필수] 서비스 이용약관
@@ -105,7 +109,7 @@ Conq/
 │   │   ├── globals.css           # 전역 스타일 및 다크 테마 변수
 │   │   ├── layout.tsx            # 루트 레이아웃 (SEO 메타태그, JSON-LD, Footer, SeoTextBlock)
 │   │   ├── page.tsx              # 서비스 소개 메인 랜딩 페이지
-│   │   └── sitemap.ts            # 동적 sitemap.xml 생성기
+│   │   └── sitemap.ts            # [SEO 핵심] Firestore 전체 독해 아티클(/read/[id]) 포함 동적 사이트맵 생성기
 │   ├── components/
 │   │   ├── AlertModal.tsx        # 알림/에러 모달 및 AI 생성 진행 로그 터미널
 │   │   ├── Footer.tsx            # 공통 푸터 (약관, 개인정보, About 링크)
@@ -129,6 +133,7 @@ Conq/
 
 | 일자 | 구분 | 주요 구현 및 변경 내역 |
 | :--- | :--- | :--- |
+| **2026-09-13** | **4대 정기 점검 & SEO 동적 색인** | - **동적 사이트맵 연동**: `sitemap.ts`에 Firestore 공개 아티클 쿼리를 결합하여 `/read/[id]`를 검색엔진에 자동 색인 등록.<br>- **자율 모니터링 크론 3종 구축**: 일일 모델 헬스체크(`/api/cron/check-models`), 월간 모델 벤치마크 오딧(`/api/cron/monthly-model-audit`), 주간 4대 시스템 감사(`/api/cron/system-audit`).<br>- **폐기 모델 복구**: 가동 중단된 레거시 모델을 `gemini-2.5-flash`, `gemini-3.5-flash-lite`, `qwen/qwen3.8-27b`로 완전 교체. |
 | **2026-09-13** | **글 생성 고도화** | - **1·2·3단계 통합 구현**: 아티클 생성 temperature `0.8` 상향, 100여 종 서브토픽 풀 신설(`topicSeeds.ts`), AI 상투어 금지 규칙(Anti-Cliche), 5대 장르 셔플, 도서관 최근 글 중복 방지(`recentTitles`), 도서관 모달에 맞춤 키워드 인풋 및 장르 칩 UI 연동. |
 | **2026-07-07** | **관리자 UI 강화** | - `xilencist@gmail.com` 관리자 권한 추가, 관리자 로그인 시 상단 보라색 그라디언트 배너, 로고 배지, 아바타 테두리, 드롭다운 테두리 등 4단 비주얼 인디케이터 적용. |
 | **2026-07-06** | **보안 전수 감사** | - 아티클 삭제 권한 검증 3중 방어선 구축, 게스트 페이지 삭제 기능 완전 제거, `firestore.rules` 보안 규칙 파일 신설, `/api/ai` 요청 유효성 검증 강화. |

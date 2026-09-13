@@ -97,7 +97,7 @@ const TRANSLATIONS = {
     qTranslate: 'この段落を翻訳して',
     qGrammar: '重要な文法表現を説明して',
     qVocab: '主要な単語と品詞を教えて',
-    qNuance: 'ここでの自然なニュ앙스は何ですか？',
+    qNuance: 'ここでの自然なニュアンスは何ですか？',
   },
   zh: {
     deleteArticle: '🗑️ 删除文本 (质量低下)',
@@ -828,7 +828,7 @@ export default function GuestReadPage() {
                         🎯 발음 일치도: {paraScores[pIdx].score}%
                       </span>
                       <span style={{ color: 'var(--text-muted)', fontSize: '0.775rem' }}>
-                        (인식: "{paraScores[pIdx].text}")
+                        (인식: &quot;{paraScores[pIdx].text}&quot;)
                       </span>
                     </div>
                   )}

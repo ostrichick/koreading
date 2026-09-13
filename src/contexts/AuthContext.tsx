@@ -55,38 +55,44 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   // 컴포넌트가 마운트될 때 Firebase의 인증 상태 변화 감지 리스너를 실행합니다.
   useEffect(() => {
     const unsub = onAuthStateChanged(auth, async (firebaseUser) => {
-      setUser(firebaseUser);
-      if (firebaseUser) {
-        // Firebase Auth 로그인 성공 시, Firestore에 사용자 프로필 정보가 등록되어 있는지 조회합니다.
-        const existing = await getUserProfile(firebaseUser.uid);
-        if (!existing) {
-          // 가입 정보가 없는 최초 로그인 유저라면 기본 설정을 바탕으로 DB에 새 유저 문서를 생성합니다.
-          const newProfile: UserProfile = {
-            uid: firebaseUser.uid,
-            email: firebaseUser.email || '',
-            displayName: firebaseUser.displayName || '',
-            photoURL: firebaseUser.photoURL || '',
-            nativeLanguage: getGuestLang() || 'en', // 게스트 설정이 있다면 계승, 기본은 영어
-            level: getGuestLevel() || null,          // 게스트 설정이 있다면 계승, 기본은 null
-            createdAt: Timestamp.now(), // DB에는 serverTimestamp()를 쓰되 로컬 상태는 현재 시간으로 즉시 주입
-          };
+      try {
+        setUser(firebaseUser);
+        if (firebaseUser) {
+          // Firebase Auth 로그인 성공 시, Firestore에 사용자 프로필 정보가 등록되어 있는지 조회합니다.
+          const existing = await getUserProfile(firebaseUser.uid);
+          if (!existing) {
+            // 가입 정보가 없는 최초 로그인 유저라면 기본 설정을 바탕으로 DB에 새 유저 문서를 생성합니다.
+            const newProfile: UserProfile = {
+              uid: firebaseUser.uid,
+              email: firebaseUser.email || '',
+              displayName: firebaseUser.displayName || '',
+              photoURL: firebaseUser.photoURL || '',
+              nativeLanguage: getGuestLang() || 'en', // 게스트 설정이 있다면 계승, 기본은 영어
+              level: getGuestLevel() || null,          // 게스트 설정이 있다면 계승, 기본은 null
+              createdAt: Timestamp.now(), // DB에는 serverTimestamp()를 쓰되 로컬 상태는 현재 시간으로 즉시 주입
+            };
 
-          await createOrUpdateUser(firebaseUser.uid, {
-            ...newProfile,
-            createdAt: serverTimestamp() as any,
-          });
+            await createOrUpdateUser(firebaseUser.uid, {
+              ...newProfile,
+              createdAt: serverTimestamp() as any,
+            });
 
-          // 데이터베이스 재조회 쿼리 없이 즉시 프로필 상태값으로 설정하여 1회 쿼리 비용을 절약합니다.
-          setProfile(newProfile);
+            // 데이터베이스 재조회 쿼리 없이 즉시 프로필 상태값으로 설정하여 1회 쿼리 비용을 절약합니다.
+            setProfile(newProfile);
+          } else {
+            // 기존 유저인 경우 조회된 프로필을 상태로 설정합니다.
+            setProfile(existing);
+          }
         } else {
-          // 기존 유저인 경우 조회된 프로필을 상태로 설정합니다.
-          setProfile(existing);
+          // 비로그인 상태일 때는 프로필 값을 비워둡니다.
+          setProfile(null);
         }
-      } else {
-        // 비로그인 상태일 때는 프로필 값을 비워둡니다.
+      } catch (err) {
+        console.error('❌ Auth state change error:', err);
         setProfile(null);
+      } finally {
+        setLoading(false); // 인증 상태 감지가 완료되었으므로 로딩을 비활성화합니다.
       }
-      setLoading(false); // 인증 상태 감지가 완료되었으므로 로딩을 비활성화합니다.
     });
     // 언마운트 시 리스너 구독을 해제합니다.
     return unsub;

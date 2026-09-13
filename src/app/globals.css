@@ -30,6 +30,7 @@
   --shadow-sm: 0 2px 8px rgba(0,0,0,0.3);
   --shadow-md: 0 4px 20px rgba(0,0,0,0.4);
   --shadow-lg: 0 8px 40px rgba(0,0,0,0.5);
+  --shadow-xl: 0 16px 48px rgba(0,0,0,0.6);
   --shadow-glow: 0 0 30px rgba(99,102,241,0.3);
 
   --radius-sm: 8px;
@@ -989,7 +990,7 @@ h1, h2, h3, h4, h5, h6 {
   40% { transform: scale(1.0); }
 }
 
-@keyframes fadeIn {
+@keyframes fadeInSlideUp {
   from { opacity: 0; transform: translateY(4px); }
   to { opacity: 1; transform: translateY(0); }
 }

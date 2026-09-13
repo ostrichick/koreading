@@ -224,14 +224,6 @@ export default function HomePage() {
           </Link>
         </div>
       </section>
-
-      {/* ── 최하단 푸터 ── */}
-      <footer style={{ padding: '28px 24px', borderTop: '1px solid var(--border-subtle)', textAlign: 'center', color: 'var(--text-muted)', fontSize: '0.8rem' }}>
-        <div className="container" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px' }}>
-          <Image src="/logo.png" alt="Koreading logo" width={20} height={20} style={{ borderRadius: '4px', opacity: 0.6 }} />
-          Koreading — Korean Reading for Every Level
-        </div>
-      </footer>
     </div>
   );
 }

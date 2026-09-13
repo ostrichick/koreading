@@ -9,7 +9,7 @@
 export default function SeoTextBlock() {
   return (
     <div
-      aria-hidden="false"
+      aria-hidden="true"
       style={{
         position: 'absolute',
         width: '1px',
@@ -23,7 +23,7 @@ export default function SeoTextBlock() {
       }}
     >
       {/* 이 텍스트는 구글 봇 크롤링용입니다. 화면에는 보이지 않습니다. */}
-      <h1>Koreading — Free AI-Powered Korean Reading Practice</h1>
+      <h2>Koreading — Free AI-Powered Korean Reading Practice</h2>
       <p>
         Koreading is a free AI-powered Korean reading platform for language learners of all levels.
         Practice reading authentic Korean texts matched to your CEFR level from A1 (beginner) to C2 (mastery).

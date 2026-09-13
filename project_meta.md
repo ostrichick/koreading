@@ -20,6 +20,8 @@ Conq/
 │   │   │   └── route.ts         # [Cron] 하루 1회 AI 모델 가용성 자동 점검 헬스체크 라우트
 │   │   ├── api/cron/monthly-model-audit/
 │   │   │   └── route.ts         # [Cron] 매월 1일 최신 모델 벤치마크 평가 및 Top 3 추천 스케줄러
+│   │   ├── api/cron/system-audit/
+│   │   │   └── route.ts         # [Cron] 주간 4대 시스템 감사 (아티클 품질 전수검사, 법적페이지 가용성, SEO 동적 색인, 쿼터 진단)
 │   │   ├── about/
 │   │   │   └── page.tsx         # [AdSense 필수] 서비스 소개 / 개발자 정보 / 기술 스택
 │   │   ├── privacy/
@@ -94,7 +96,7 @@ Conq/
 | 파일명/경로 | 기능 및 역할 |
 | :--- | :--- |
 | layout.tsx | [SEO 핵심] Open Graph, Twitter Card, JSON-LD 구조화 데이터(WebSite + EducationalApplication), keywords, robots, canonical URL 등 전체 SEO 메타데이터를 담당합니다. Footer 컴포넌트를 삽입하여 모든 페이지에 법적 링크가 표시됩니다. |
-| sitemap.ts | [SEO] Next.js 내장 기능으로 /sitemap.xml을 자동 생성합니다. 모든 공개 페이지 경로와 우선순위를 담아 구글/빙 등 검색엔진에 제공합니다. |
+| sitemap.ts | [SEO 핵심] Next.js 내장 기능으로 /sitemap.xml을 비동기 자동 생성합니다. 정적 서비스/법적 페이지 7개뿐만 아니라 Firestore에서 모든 공개 독해 아티클(/read/[id])을 동적으로 쿼리하여 구글 및 글로벌 검색엔진에 자동 색인합니다. |
 | about/page.tsx | [AdSense 필수] 서비스 목적/미션, 주요 6가지 기능, 기술 스택, 개발자(Munseong Choi) 정보를 소개하는 About 페이지입니다. |
 | privacy/page.tsx | [AdSense 필수] 개인정보처리방침 페이지. Firebase, Gemini, Groq, Vercel, AdSense 사용 사실을 모두 명시하고 사용자 권리 행사 방법을 안내합니다. |
 | terms/page.tsx | [AdSense 필수] 이용약관 페이지. AI 생성 콘텐츠 면책 조항, 광고 게재 고지, 금지 행위, 준거법 등을 포함합니다. |
@@ -107,11 +109,14 @@ Conq/
 | read/[id]/page.tsx | 회원 전용 독해 페이지입니다. 단어를 터치하여 미니 팝업 사전(단어 뜻, 번역, 문법 구조 분석, 예문 제공)을 띄웁니다. 단어장 추가, 다 읽음 표시, 기사 삭제 기능을 제공합니다. |
 | read/guest/page.tsx | 비로그인 게스트 전용 독해 페이지입니다. 단어 및 아티클 캐시를 브라우저 세션 스토리지(sessionStorage)에 보관하여 휘발성 세션으로 운영됩니다. |
 
-### 4. `src/app/api/` - 서버사이드 AI 라우트
+### 4. `src/app/api/` - 백엔드 AI 및 정기 점검 크론 라우트
 
 | 파일명/경로 | 기능 및 역할 |
 | :--- | :--- |
-| api/ai/route.ts | 백엔드 AI 추론 코어입니다. action에 따라 1) generateArticle: 난이도별 한글 기사 생성, 2) lookupWord: 미니 팝업 사전용 단어 분석, 3) generateTest: 레벨 테스트 지문/질문 생성을 조율합니다. Groq(1순위) 및 Gemini 5개 모델 계단식 폴백 네트워크로 안정성을 극대화합니다. |
+| api/ai/route.ts | 백엔드 AI 추론 코어입니다. action에 따라 1) generateArticle: 난이도별 한글 기사 생성, 2) lookupWord: 미니 팝업 사전용 단어 분석, 3) generateTest: 레벨 테스트 지문/질문 생성을 조율합니다. Groq 및 Gemini 2.5 Flash / 3.5 Flash Lite 계단식 폴백 네트워크로 가동됩니다. |
+| api/cron/check-models/route.ts | [일일 크론] 매일 00:00 UTC에 설정된 모든 AI 모델(Gemini 2.5 Flash, 3.5 Flash Lite, Groq Qwen 등)의 실제 API 핑을 테스트하여 모델 중단/폐기(Decommission)를 선제적으로 감지하는 헬스체크 라우트입니다. |
+| api/cron/monthly-model-audit/route.ts | [월간 크론] 매월 1일 Google 공식 최신 활성 모델 목록을 조회하고, 실제 한국어 작문 벤치마크를 수행하여 글 생성 및 사전 검색용 Top 3 모델을 추천·평가하는 모델 오딧 라우트입니다. |
+| api/cron/system-audit/route.ts | [주간 크론] 매주 일요일 00:00 UTC에 실행되는 4대 시스템 정기 감사 라우트입니다. 1) 도서관 아티클 품질 전수 감사(본문 길이 미달, 괄호 영단어 번역 유출 감지), 2) 애드센스 법적/핵심 페이지 200 OK 핑, 3) 구글 검색 색인(SEO) 및 sitemap.xml 동적 독해 URL 수 검증, 4) Firestore 쿼터 및 안전 가용치 진단을 수행합니다. |
 
 ---
 
@@ -125,9 +130,7 @@ Conq/
 
 ## 최근 주요 변경 이력
 
-| 날짜 | 변경 내용 |
-| :--- | :--- |
-| 2026-09-13 | - **글 생성 품질 및 다양성 전면 개편 (1·2·3단계 완료)**<br>• 백엔드 AI 생성 temperature `0.8` 상향 (사전 검색 `0.1` 유지)<br>• 8개 주제별 100종 이상의 동적 서브토픽 풀 신설 (`topicSeeds.ts`)<br>• AI 상투어/클리셰 원천 금지 규칙(Anti-Cliche) 및 100% 순수 한글 제약 강화<br>• 5가지 글 스타일(수필, 대화, 칼럼, 스토리, 무작위) 지원<br>• 도서관 최근 글 제목 10개 기반 중복 방지(Negative Prompting) 연동<br>• 도서관 모달 UI에 맞춤 관심사/키워드 직접 입력창 및 글 스타일 선택 칩 추가<br>- 타 AI(ChatGPT/Claude) 협업 및 온보딩을 위한 종합 가이드 문서 `AI_HANDOVER.md` 신설 |
+| 2026-09-13 | - **글 생성 품질 및 다양성 전면 개편 (1·2·3단계 완료)**<br>• 백엔드 AI 생성 temperature `0.8` 상향 (사전 검색 `0.1` 유지)<br>• 8개 주제별 100종 이상의 동적 서브토픽 풀 신설 (`topicSeeds.ts`)<br>• AI 상투어/클리셰 원천 금지 규칙(Anti-Cliche) 및 100% 순수 한글 제약 강화<br>• 5가지 글 스타일(수필, 대화, 칼럼, 스토리, 무작위) 지원<br>• 도서관 최근 글 제목 10개 기반 중복 방지(Negative Prompting) 연동<br>• 도서관 모달 UI에 맞춤 관심사/키워드 직접 입력창 및 글 스타일 선택 칩 추가<br>- **4대 정기 점검 및 SEO 사이트맵 동적 색인 자동화 완료**<br>• `sitemap.ts`: Firestore 내 모든 공개 아티클 동적 쿼리 연동 (`/read/[id]` 자동 색인 등록)<br>• `check-models`: 일일 AI 모델 가용성 자동 헬스체크 (`0 0 * * *`)<br>• `monthly-model-audit`: 월간 AI 모델 벤치마크 및 Top 3 추천 스케줄러 (`0 0 1 * *`)<br>• `system-audit`: 주간 도서관 아티클 품질 전수 감사, 애드센스 법적 페이지 200 OK 핑, SEO 색인 검증, Firestore 쿼터 진단 (`0 0 * * 0`)<br>- 타 AI(ChatGPT/Claude) 협업 및 온보딩을 위한 종합 가이드 문서 `AI_HANDOVER.md` 신설 |
 | 2026-09-09 | - ESLint 린터 설정(`.eslintrc.json`) 구축 및 Next.js 16 CLI 호환 lint 스크립트 수정 (`npm run lint` 통과)<br>- JSX unescaped entity (`&quot;`, `&apos;`) 오류 및 React hook dependency 경고 전면 해결<br>- Fisher-Yates 무작위 셔플 알고리즘(`shuffleArray`) 유틸 신설 및 어휘 퀴즈/플래시카드 적용<br>- profile 페이지 `<a>` 태그를 `Link` 컴포넌트로 전환하여 클라이언트 네비게이션 최적화<br>- layout.tsx 내 schema.org `SearchAction` 구조화 데이터 표준 스키마 적용 |
 | 2026-07-23 | - AI API Route (`/api/ai`) Edge IP 기반 Rate Limiting (분당 20회) 및 파라미터(paragraph, chatHistory) 길이 제한 추가<br>- `saveReview()` Firestore 트랜잭션(`runTransaction`) 적용으로 평점 집계 동시성 충돌 해결<br>- `deleteUserAccount` Auth 선삭제 후 DB 삭제 순서 보장 및 안전 탈퇴 UI 연동<br>- `AuthContext.tsx` onAuthStateChanged 에러 핸들링(`try/catch/finally`)으로 무한 로딩 해결<br>- 랜딩 페이지 중복 푸터 제거 및 일본어 번역 오타(`カスタム`, `ニュアンス`, `保存中`) 수정<br>- `NavBar.tsx` SSR hydration mismatch 방지 로직 적용 및 CSS 토큰 보완 |
 | 2026-06-08 | APK 빌드(PWABuilder) 및 PWA 설치를 지원하기 위해 manifest.json 및 sw.js(서비스 워커) 추가, Footer.tsx에 서비스 워커 등록 연동 |

@@ -2,9 +2,10 @@
 
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
+import Link from 'next/link';
 import Image from 'next/image';
 import { useAuth } from '@/contexts/AuthContext';
-import { createOrUpdateUser, getReadArticlesWithDates, getVocabulary } from '@/lib/db';
+import { createOrUpdateUser, getReadArticlesWithDates, getVocabulary, deleteUserAccount } from '@/lib/db';
 import { TOPICS } from '@/lib/gemini';
 import type { CEFRLevel, NativeLanguage } from '@/lib/gemini';
 
@@ -20,7 +21,7 @@ const LEVELS: { value: CEFRLevel; label: string; desc: string }[] = [
 
 // 사용자의 개인 설정을 편집할 수 있는 ProfilePage 컴포넌트입니다.
 export default function ProfilePage() {
-  const { user, profile, refreshProfile } = useAuth(); // AuthContext 인증 데이터 연동
+  const { user, profile, loading, refreshProfile } = useAuth(); // AuthContext 인증 데이터 연동
   const router = useRouter();
 
   const [selectedLevel, setSelectedLevel] = useState<CEFRLevel | null>(null); // 선택된 한국어 레벨
@@ -39,6 +40,7 @@ export default function ProfilePage() {
 
   // 비로그인 상태일 때는 로그인 유도 화면으로 넘기고, 로그인 유저라면 DB에서 가져온 초기 프로필 세팅을 채워 넣습니다.
   useEffect(() => {
+    if (loading) return; // 인증 상태 확인 중에는 리다이렉트하지 않음
     if (!user) { router.push('/login'); return; }
     if (profile) {
       setSelectedLevel(profile.level);
@@ -165,22 +167,28 @@ export default function ProfilePage() {
     };
 
     loadStats();
-  }, [user, profile, router]);
+  }, [user, profile, loading, router]);
 
   // "설정 저장하기" 버튼을 클릭했을 때 구동하는 핸들러입니다.
   const handleSave = async () => {
     if (!user) return;
     setSaving(true);
-    // Firestore DB에 변경사항 영구 갱신
-    await createOrUpdateUser(user.uid, {
-      level: selectedLevel || undefined,
-      nativeLanguage: selectedLang,
-    });
-    // 최신 DB 레코드로 AuthContext profile 데이터 갱신
-    await refreshProfile();
-    setSaving(false);
-    setSaved(true);
-    setTimeout(() => setSaved(false), 2000); // 2초 뒤 저장완료 문구 비활성화
+    try {
+      // Firestore DB에 변경사항 영구 갱신
+      await createOrUpdateUser(user.uid, {
+        level: selectedLevel || undefined,
+        nativeLanguage: selectedLang,
+      });
+      // 최신 DB 레코드로 AuthContext profile 데이터 갱신
+      await refreshProfile();
+      setSaved(true);
+      setTimeout(() => setSaved(false), 2000);
+    } catch (err) {
+      console.error('❌ 프로필 저장 실패:', err);
+      alert('설정 저장에 실패했습니다. 다시 시도해 주세요.');
+    } finally {
+      setSaving(false);
+    }
   };
 
   // 사용자 세션이 완전히 판별될 때까지 임시 로딩 로직 제공
@@ -189,6 +197,26 @@ export default function ProfilePage() {
       <div className="loading-spinner" />
     </div>
   );
+
+  // 회원 탈퇴 핸들러 (Auth 먼저 삭제 후 DB 문서 삭제)
+  const handleDeleteAccount = async () => {
+    if (!user) return;
+    const confirmed = window.confirm('정말로 계정을 탈퇴하시겠습니까? 저장된 모든 학습 데이터가 삭제되며 이 작업은 복구할 수 없습니다.');
+    if (!confirmed) return;
+
+    try {
+      await deleteUserAccount(user);
+      alert('회원 탈퇴가 완료되었습니다.');
+      router.push('/');
+    } catch (err: any) {
+      console.error('❌ 회원 탈퇴 실패:', err);
+      if (err?.code === 'auth/requires-recent-login') {
+        alert('보안을 위해 다시 로그인한 후 회원 탈퇴를 시도해 주세요.');
+      } else {
+        alert('회원 탈퇴 처리 중 오류가 발생했습니다: ' + (err?.message || '알 수 없는 오류'));
+      }
+    }
+  };
 
   return (
     <div style={{ minHeight: '100vh', padding: '40px 24px' }}>
@@ -512,12 +540,12 @@ export default function ProfilePage() {
         <div className="card" style={{ marginBottom: '32px' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
             <div style={{ fontSize: '1rem', fontWeight: 700 }}>🎯 한국어 레벨</div>
-            <a
+            <Link
               href="/test"
               style={{ fontSize: '0.8rem', color: 'var(--accent-primary)', textDecoration: 'none' }}
             >
               레벨 재테스트 →
-            </a>
+            </Link>
           </div>
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '8px' }}>
             {LEVELS.map(level => (
@@ -545,17 +573,44 @@ export default function ProfilePage() {
           </div>
         </div>
 
-        {/* 저장 제출 단추 (E2E 테스트 연동용 save-profile-btn ID 탑재) */}
+        {/* 저장 제출 단추 */}
         <button
           id="save-profile-btn"
           onClick={handleSave}
           disabled={saving}
           className="btn btn-primary"
-          style={{ width: '100%', justifyContent: 'center', fontSize: '1rem', padding: '16px' }}
+          style={{ width: '100%', justifyContent: 'center', fontSize: '1rem', padding: '16px', marginBottom: '24px' }}
         >
           {saving ? '저장 중...' : saved ? '✅ 저장 완료!' : '설정 저장하기'}
         </button>
+
+        {/* 계정 관리 / 회원 탈퇴 섹션 */}
+        <div className="card" style={{ border: '1px solid rgba(239, 68, 68, 0.2)', background: 'rgba(239, 68, 68, 0.05)' }}>
+          <div style={{ fontSize: '1rem', fontWeight: 700, color: '#ef4444', marginBottom: '8px' }}>
+            ⚠️ 위험 지역 (계정 관리)
+          </div>
+          <p style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', marginBottom: '16px', lineHeight: 1.5 }}>
+            회원 탈퇴 시 저장된 어휘, 학습 기록 및 개인 설정이 모두 완전히 영구 삭제되며 복구할 수 없습니다.
+          </p>
+          <button
+            onClick={handleDeleteAccount}
+            style={{
+              padding: '10px 16px',
+              borderRadius: 'var(--radius-md)',
+              border: '1px solid #ef4444',
+              background: 'transparent',
+              color: '#ef4444',
+              fontSize: '0.875rem',
+              fontWeight: 600,
+              cursor: 'pointer',
+              transition: 'all 150ms ease'
+            }}
+          >
+            회원 탈퇴하기
+          </button>
+        </div>
       </div>
     </div>
   );
 }
+

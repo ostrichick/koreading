@@ -106,7 +106,7 @@ const TRANSLATIONS = {
     markRead: '✅ 既読にする',
     markingRead: '保存中...',
     save: '📚 保存',
-    saving: '保存중...',
+    saving: '保存中...',
     saved: '✓ 保存済み',
     details: '🔍 詳細',
     saveToVocab: '📚 単語帳に保存',
@@ -976,7 +976,7 @@ export default function ReadPage({ params }: { params: Promise<{ id: string }> }
                         🎯 발음 일치도: {paraScores[pIdx].score}%
                       </span>
                       <span style={{ color: 'var(--text-muted)', fontSize: '0.775rem' }}>
-                        (인식: "{paraScores[pIdx].text}")
+                        (인식: &quot;{paraScores[pIdx].text}&quot;)
                       </span>
                     </div>
                   )}
