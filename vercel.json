@@ -4,6 +4,10 @@
     {
       "path": "/api/cron/check-models",
       "schedule": "0 0 * * *"
+    },
+    {
+      "path": "/api/cron/monthly-model-audit",
+      "schedule": "0 0 1 * *"
     }
   ]
 }
