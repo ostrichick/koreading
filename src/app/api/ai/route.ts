@@ -16,6 +16,7 @@ import type { CEFRLevel, NativeLanguage } from '@/lib/gemini';
 import { TOPICS } from '@/lib/gemini';
 import { getRandomSubTopic, getGenreInstruction } from '@/lib/topicSeeds';
 import { getPedagogicalInstruction, getVisualAidDirectingInstruction } from '@/lib/koreanCurriculum';
+import { getRealKoreanPhoto, get2DTextbookVectorIllustration } from '@/lib/koreanVisuals';
 
 // 서버 환경변수에 GEMINI_API_KEY가 설정되어 있지 않으면 에러 로그를 남깁니다.
 if (!process.env.GEMINI_API_KEY) {
@@ -372,36 +373,30 @@ ${visualAidGuide}
         try {
           const parsed = JSON.parse(resultText);
 
-          // 🎨 글의 주제와 문맥에 1:1로 직관 매칭되는 교재형 AI 삽화 2종 URL 자동 조합 (Pollinations.ai / FLUX.1)
-          // 1. imagePrompts[0]: 대표 상황도 (본문의 장소, 인물 행동, 전체 맥락 시각화)
-          // 2. imagePrompts[1]: 핵심 어휘 도해 (본문 keyVocabulary 사물 또는 핵심 동작 클로즈업)
+          // 🎨 하이브리드 시각 자료 매칭 및 생성 (1번 고화질 4K 실사 + 2번 2D 교재 벡터 일러스트)
+          // - imageUrls[0]: 4K 초고화질 실제 한국 현장 사진 (Unsplash / 실물 100% 선명도, 왜곡 0%, 즉시 로드)
+          // - imageUrls[1]: 선명한 2D 교재 플랫 벡터 일러스트 (실사 금지, 선명한 외곽선, 귀여운 교재풍 그래픽)
           const prompts = Array.isArray(parsed.imagePrompts) && parsed.imagePrompts.length > 0
             ? parsed.imagePrompts
             : [];
-          const seedBase = Math.floor(Math.random() * 900000) + 100000;
 
-          const rawPrompt1 = prompts[0] && typeof prompts[0] === 'string' ? prompts[0].trim().replace(/[\r\n]+/g, ' ') : '';
-          const prompt1 = rawPrompt1
-            ? `${rawPrompt1}, modern Korean educational textbook illustration, bright and pleasant lighting, clean vector lines, highly detailed, no text, no words, no watermark`
-            : `A modern Korean language textbook illustration showing a clear situational scene of ${topicLabel}: ${parsed.summary || ''}, bright lighting, clean educational illustration, no text, no words, no watermark`;
+          const realPhoto = await getRealKoreanPhoto(topic, parsed.title || '', parsed.keyVocabulary || [], customKeyword);
+          const rawPrompt2 = prompts[1] || prompts[0] || '';
+          const vectorArt = get2DTextbookVectorIllustration(
+            parsed.title || '',
+            topic,
+            parsed.keyVocabulary || [],
+            parsed.summary || '',
+            rawPrompt2
+          );
 
-          const rawPrompt2 = prompts[1] && typeof prompts[1] === 'string' ? prompts[1].trim().replace(/[\r\n]+/g, ' ') : '';
-          const vocabSample = Array.isArray(parsed.keyVocabulary) && parsed.keyVocabulary.length > 0
-            ? parsed.keyVocabulary.slice(0, 2).join(', ')
-            : topicLabel;
-          const prompt2 = rawPrompt2
-            ? `${rawPrompt2}, educational visual dictionary illustration, close-up focal point, vibrant colors, clean uncluttered background, no text, no words, no watermark`
-            : `An educational visual dictionary close-up illustration clearly depicting ${vocabSample} in Korean daily life, sharp focus, clean background, educational graphic art, no text, no words, no watermark`;
-
-          const imageUrls = [
-            `https://image.pollinations.ai/prompt/${encodeURIComponent(prompt1)}?width=960&height=540&seed=${seedBase}&nologo=true`,
-            `https://image.pollinations.ai/prompt/${encodeURIComponent(prompt2)}?width=960&height=540&seed=${seedBase + 17}&nologo=true`
-          ];
+          const imageUrls = [realPhoto.url, vectorArt.url];
+          const imagePrompts = [realPhoto.description, vectorArt.prompt];
 
           return NextResponse.json({
             ...parsed,
             imageUrls,
-            imagePrompts: [prompt1, prompt2],
+            imagePrompts,
             generatorModel: modelUsed,
             _logs: logs
           });

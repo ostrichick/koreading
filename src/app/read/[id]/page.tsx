@@ -814,12 +814,12 @@ export default function ReadPage({ params }: { params: Promise<{ id: string }> }
           </p>
         </div>
 
-        {/* 🎨 대표 커버 맞춤 삽화 (Hero Cover Illustration) */}
+        {/* 🎨 1번: 4K 초고화질 실제 한국 현장 사진 (Hero Cover Real Photo) */}
         {article.imageUrls?.[0] && (
           <ArticleIllustration
             src={article.imageUrls[0]}
-            alt={`${article.title} - 본문 상황도`}
-            badgeText="🖼️ 본문 상황도 (Scene)"
+            alt={`${article.title} - 실제 한국 현장 사진`}
+            badgeText="📸 실제 한국 현장 사진 (Real Photo)"
             style={{ marginBottom: '24px', marginTop: '0px' }}
           />
         )}
@@ -997,12 +997,12 @@ export default function ReadPage({ params }: { params: Promise<{ id: string }> }
                   </span>
                 </p>
 
-                {/* 🎨 본문 중간 시각 보조자료 삽화 (In-text Vocabulary Visual Aid) */}
+                {/* 🎨 2번: 선명한 2D 교재 벡터 삽화 (In-text 2D Textbook Art) */}
                 {article.imageUrls?.[1] && pIdx === midIdx && (
                   <ArticleIllustration
                     src={article.imageUrls[1]}
-                    alt={`${article.title} - 핵심 어휘 시각 자료`}
-                    badgeText="🔍 핵심 어휘 시각 자료 (Visual Aid)"
+                    alt={`${article.title} - 2D 교재 삽화`}
+                    badgeText="🎨 2D 교재 삽화 (Textbook Art)"
                     style={{ margin: '20px 0 28px 0' }}
                   />
                 )}
