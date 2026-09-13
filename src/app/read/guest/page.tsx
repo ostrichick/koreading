@@ -422,8 +422,9 @@ export default function GuestReadPage() {
       const nativeLang = profile?.nativeLanguage || getGuestLang() || 'en';
       if (!nativeLang) return;
 
-      const cacheKey = `${word}_${nativeLang}`;
-      const sessionKey = `koreading_word_${cacheKey}`;
+      const sentHash = (sentence || '').trim().slice(0, 24);
+      const cacheKey = `${word}_${nativeLang}_${sentHash}`;
+      const sessionKey = `koreading_word_v3_${encodeURIComponent(cacheKey)}`;
 
       // 1순위: 인메모리 캐시 히트 시 0ms 즉시 반환
       if (wordCacheRef.current[cacheKey]) {
