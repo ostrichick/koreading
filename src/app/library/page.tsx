@@ -621,8 +621,40 @@ export default function LibraryPage() {
                 <a key={article.id} href={`/read/${article.id}`} style={{ textDecoration: 'none' }}>
                   <div className="card" style={{ height: '100%', position: 'relative', opacity: isRead ? 0.7 : 1 }}>
                     {isRead && (
-                      <div style={{ position: 'absolute', top: '16px', right: '16px', background: 'rgba(16,185,129,0.15)', color: '#10b981', border: '1px solid rgba(16,185,129,0.3)', borderRadius: '100px', padding: '2px 10px', fontSize: '0.75rem', fontWeight: 700 }}>✓ 읽음</div>
+                      <div style={{ position: 'absolute', top: '16px', right: '16px', background: 'rgba(16,185,129,0.9)', color: 'white', backdropFilter: 'blur(4px)', borderRadius: '100px', padding: '2px 10px', fontSize: '0.75rem', fontWeight: 700, zIndex: 2 }}>✓ 읽음</div>
                     )}
+
+                    {/* 🎨 아티클 대표 썸네일 이미지 (존재 시 카드 상단 배너로 표출) */}
+                    {article.imageUrls?.[0] && (
+                      <div style={{
+                        position: 'relative',
+                        width: '100%',
+                        height: '135px',
+                        borderRadius: 'var(--radius-md, 10px)',
+                        overflow: 'hidden',
+                        marginBottom: '14px',
+                        background: 'var(--bg-secondary)',
+                        border: '1px solid var(--border-subtle)',
+                      }}>
+                        {/* eslint-disable-next-line @next/next/no-img-element */}
+                        <img
+                          src={article.imageUrls[0]}
+                          alt={article.title}
+                          loading="lazy"
+                          decoding="async"
+                          onError={(e) => {
+                            (e.currentTarget.parentElement as HTMLElement)?.style?.setProperty('display', 'none');
+                          }}
+                          style={{
+                            width: '100%',
+                            height: '100%',
+                            objectFit: 'cover',
+                            display: 'block',
+                          }}
+                        />
+                      </div>
+                    )}
+
                     <div style={{ display: 'flex', gap: '8px', alignItems: 'center', marginBottom: '12px' }}>
                       <span className={`level-badge level-${article.level}`}>{article.level}</span>
                       {topicInfo && <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>{topicInfo.emoji} {topicInfo.label}</span>}

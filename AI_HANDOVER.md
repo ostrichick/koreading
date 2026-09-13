@@ -76,6 +76,18 @@
 - **API 보호**:
   - Content-Type(`application/json`) 강제 검증, action 허용 목록 검증, 입력 파라미터 길이 제한(프롬프트 인젝션 방어), IP 기반 Rate Limiting (분당 20회).
 
+### 3.4 주제 맞춤형 AI 일러스트 시스템 (Pollinations.ai / FLUX.1)
+- **비용**: 100% 완전 무료 (오픈소스 FLUX.1/SDXL 기반 CDN 인프라 `image.pollinations.ai` 활용)
+- **이중 삽화 구성**:
+  1. **대표 커버 배너 (Hero Cover)**: 글 전체의 시간대, 날씨, 전경, 분위기를 담은 16:9 와이드 일러스트 (도서관 카드 썸네일로도 동시 활용)
+  2. **문맥 삽화 (In-text Scene)**: 글 중반부의 핵심 행동이나 전환점, 주요 사물을 묘사하는 클로즈업 일러스트
+- **프롬프트 파이프라인**:
+  - Gemini 2.5 Flash가 글을 쓸 때 본문 내용을 기반으로 영문 `imagePrompts` 2종을 직접 도출.
+  - 일러스트 품질 통일 및 외계어 방지: `modern Korean educational storybook illustration, warm lighting, no text, no words, no watermark` 강제 결합.
+- **비동기 UX (`ArticleIllustration.tsx`)**:
+  - 텍스트가 먼저 2~3초 만에 렌더링되고, 이미지는 브라우저 백그라운드에서 스켈레톤 쉬머 애니메이션과 함께 로딩되어 사용자 대기 시간이 0초.
+  - 네트워크 오류 시 레이아웃을 해치지 않고 부드럽게 숨김 처리(Graceful Fallback).
+
 ---
 
 ## 📂 4. 전체 디렉터리 및 파일 맵
@@ -112,6 +124,7 @@ Conq/
 │   │   └── sitemap.ts            # [SEO 핵심] Firestore 전체 독해 아티클(/read/[id]) 포함 동적 사이트맵 생성기
 │   ├── components/
 │   │   ├── AlertModal.tsx        # 알림/에러 모달 및 AI 생성 진행 로그 터미널
+│   │   ├── ArticleIllustration.tsx # [NEW] 아티클 맞춤 AI 일러스트 (스켈레톤 shimmer, 에러 폴백)
 │   │   ├── Footer.tsx            # 공통 푸터 (약관, 개인정보, About 링크)
 │   │   ├── NavBar.tsx            # 상단 내비게이션 바 (관리자 모드 감지 배너/배지 포함)
 │   │   └── SeoTextBlock.tsx      # 검색엔진 크롤러용 비가시적 다국어 SEO 구조화 텍스트
@@ -133,6 +146,7 @@ Conq/
 
 | 일자 | 구분 | 주요 구현 및 변경 내역 |
 | :--- | :--- | :--- |
+| **2026-09-13** | **주제 맞춤 AI 삽화 연동** | - **Pollinations.ai (FLUX.1) 연동**: 글 생성 시 본문의 구체적 사건/배경을 반영한 영문 프롬프트 기반 16:9 고화질 삽화 2종(커버 + 본문 중간) 자동 조합.<br>- **비동기 스켈레톤 뷰어 (`ArticleIllustration.tsx`)**: 텍스트 우선 로딩 후 백그라운드 쉬머 로딩, 오류 시 부드러운 자동 숨김.<br>- **도서관 카드 매거진 뷰**: 도서관 목록 카드 상단에 썸네일 배너 노출. |
 | **2026-09-13** | **4대 정기 점검 & SEO 동적 색인** | - **동적 사이트맵 연동**: `sitemap.ts`에 Firestore 공개 아티클 쿼리를 결합하여 `/read/[id]`를 검색엔진에 자동 색인 등록.<br>- **자율 모니터링 크론 3종 구축**: 일일 모델 헬스체크(`/api/cron/check-models`), 월간 모델 벤치마크 오딧(`/api/cron/monthly-model-audit`), 주간 4대 시스템 감사(`/api/cron/system-audit`).<br>- **폐기 모델 복구**: 가동 중단된 레거시 모델을 `gemini-2.5-flash`, `gemini-3.5-flash-lite`, `qwen/qwen3.8-27b`로 완전 교체. |
 | **2026-09-13** | **글 생성 고도화** | - **1·2·3단계 통합 구현**: 아티클 생성 temperature `0.8` 상향, 100여 종 서브토픽 풀 신설(`topicSeeds.ts`), AI 상투어 금지 규칙(Anti-Cliche), 5대 장르 셔플, 도서관 최근 글 중복 방지(`recentTitles`), 도서관 모달에 맞춤 키워드 인풋 및 장르 칩 UI 연동. |
 | **2026-07-07** | **관리자 UI 강화** | - `xilencist@gmail.com` 관리자 권한 추가, 관리자 로그인 시 상단 보라색 그라디언트 배너, 로고 배지, 아바타 테두리, 드롭다운 테두리 등 4단 비주얼 인디케이터 적용. |

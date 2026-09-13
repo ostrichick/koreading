@@ -270,7 +270,11 @@ ${duplicateAvoidanceInstruction}
   "topicCategory": "${topic}",
   "level": "${level}",
   "estimatedMinutes": 2, // 텍스트 난이도와 길이에 따라 예상 소요 시간(분)을 정수(예: 1, 2, 3, 4)로 동적 예측
-  "keyVocabulary": ["핵심단어1", "핵심단어2", "핵심단어3", "핵심단어4", "핵심단어5"]
+  "keyVocabulary": ["핵심단어1", "핵심단어2", "핵심단어3", "핵심단어4", "핵심단어5"],
+  "imagePrompts": [
+    "A vivid and beautiful English prompt describing the overall setting, atmosphere, and mood of the story. Warm lighting, modern Korean educational storybook illustration, clean composition, absolutely NO text or letters.",
+    "A detailed and expressive English prompt describing a specific key action, character, or object from the middle of the story. Colorful Korean editorial illustration, clean background, absolutely NO text or letters."
+  ]
 }`;
 
       // 글의 창의성과 어휘 다양성을 극대화하기 위해 온도를 0.8로 설정합니다.
@@ -366,7 +370,33 @@ ${duplicateAvoidanceInstruction}
       if (resultText) {
         try {
           const parsed = JSON.parse(resultText);
-          return NextResponse.json({ ...parsed, generatorModel: modelUsed, _logs: logs });
+
+          // 🎨 글의 주제와 문맥에 정확히 일치하는 고품질 AI 삽화 2종 URL 자동 조합 (Pollinations.ai / FLUX.1)
+          const prompts = Array.isArray(parsed.imagePrompts) && parsed.imagePrompts.length > 0
+            ? parsed.imagePrompts
+            : [];
+          const seedBase = Math.floor(Math.random() * 900000) + 100000;
+
+          const prompt1 = prompts[0] && typeof prompts[0] === 'string' && prompts[0].trim()
+            ? `${prompts[0].trim()}, modern Korean educational storybook illustration, warm cinematic colors, studio ghibli aesthetic, clean composition, no text, no words, no watermark`
+            : `A warm, artistic illustration depicting Korean culture and everyday life: ${topicLabel}, ${parsed.summary || ''}, modern Korean storybook art, cozy atmosphere, clean lighting, no text, no watermark`;
+
+          const prompt2 = prompts[1] && typeof prompts[1] === 'string' && prompts[1].trim()
+            ? `${prompts[1].trim()}, modern Korean editorial illustration, colorful storybook scene, clean composition, no text, no words, no watermark`
+            : `A detailed, charming illustration showing a key moment in Korean reading story: ${topicLabel}, expressive characters, vibrant colors, clean background, no text, no watermark`;
+
+          const imageUrls = [
+            `https://image.pollinations.ai/prompt/${encodeURIComponent(prompt1)}?width=960&height=540&seed=${seedBase}&nologo=true`,
+            `https://image.pollinations.ai/prompt/${encodeURIComponent(prompt2)}?width=960&height=540&seed=${seedBase + 17}&nologo=true`
+          ];
+
+          return NextResponse.json({
+            ...parsed,
+            imageUrls,
+            imagePrompts: [prompt1, prompt2],
+            generatorModel: modelUsed,
+            _logs: logs
+          });
         } catch {
           return NextResponse.json({ error: 'AI 응답 JSON 파싱 실패', _logs: logs }, { status: 500 });
         }

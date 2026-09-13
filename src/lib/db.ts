@@ -42,6 +42,8 @@ export interface Article {
   averageRating?: number;      // 아티클의 평균 별점 (리뷰 집계용)
   ratingCount?: number;        // 아티클에 등록된 총 리뷰 수
   generatorModel?: string;     // 해당 아티클을 생성하는 데 사용된 AI 모델 명칭
+  imageUrls?: string[];        // AI가 생성한 맞춤형 삽화 URL 목록 ([0]: 커버 대표 삽화, [1]: 본문 중간 삽화)
+  imagePrompts?: string[];     // 삽화 생성에 사용된 영문 프롬프트 (재생성 및 alt 태그용)
 }
 
 // 아티클 리뷰 데이터 인터페이스 (각 아티클 하위의 'reviews' 서브컬렉션)

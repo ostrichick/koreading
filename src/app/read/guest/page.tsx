@@ -6,12 +6,13 @@
  * @why 신규 유저가 복잡한 구글 로그인이나 가입 절차 없이도 코레딩의 초속 독해 및 사전 조회의 매끄러움을 온전히 경험하고 자연스럽게 정식 회원으로 유입되게 돕는 강력한 랜딩 버퍼로 작동하기 위해 존재합니다.
  */
 
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useCallback, useRef, Fragment } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/contexts/AuthContext';
 import { lookupWordAll, TOPICS } from '@/lib/gemini';
 import { getGuestArticle, getGuestLang, getGuestLevel, incrementGuestReadCount } from '@/lib/storage';
 import { saveVocabulary, getCustomCategories } from '@/lib/db';
+import ArticleIllustration from '@/components/ArticleIllustration';
 import { tokenizeKorean, isKoreanWord } from '@/lib/utils';
 
 // 단어 상세 사전 데이터를 보관할 인터페이스 정의
@@ -668,6 +669,16 @@ export default function GuestReadPage() {
           <p style={{ color: 'var(--text-secondary)', fontSize: '0.875rem', fontStyle: 'italic' }}>{article.summary}</p>
         </div>
 
+        {/* 🎨 대표 커버 맞춤 삽화 (Hero Cover Illustration) */}
+        {article.imageUrls?.[0] && (
+          <ArticleIllustration
+            src={article.imageUrls[0]}
+            alt={`${article.title} - 대표 삽화`}
+            badgeText="🎨 AI 대표 삽화"
+            style={{ marginBottom: '24px', marginTop: '0px' }}
+          />
+        )}
+
         {/* 유저 인터랙션 제어 바 (마우스 호버 검색 On/Off 토글 지원) */}
         <div style={{
           display: 'flex',
@@ -756,84 +767,97 @@ export default function GuestReadPage() {
           {paragraphs.map((paragraph: string, pIdx: number) => {
             const tokens = tokenizeKorean(paragraph);
             const cleanText = paragraph.replace(/[^\w\sㄱ-ㅎㅏ-ㅣ가-힣.,!?'"~]/g, '');
+            const midIdx = Math.max(0, Math.floor(paragraphs.length / 2) - 1);
             return (
-              <p key={pIdx} style={{
-                fontFamily: 'Noto Sans KR, sans-serif',
-                fontSize: fontSize === 'small' ? '0.95rem' : fontSize === 'large' ? '1.3rem' : fontSize === 'xlarge' ? '1.5rem' : '1.1rem',
-                lineHeight: lineHeight,
-                marginBottom: '20px',
-                color: 'var(--text-primary)',
-                display: 'flex',
-                alignItems: 'flex-start',
-              }}>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', marginRight: '8px', marginTop: '4px' }}>
-                  <button
-                    onClick={() => speakText(cleanText)}
-                    className="reader-para-play-btn"
-                    title="이 문단 발음 듣기"
-                    style={{ margin: 0 }}
-                  >
-                    🔊
-                  </button>
-                  <button
-                    onClick={() => handleOpenTutor(pIdx, paragraph)}
-                    className="reader-para-tutor-btn"
-                    title="이 문단 1:1 AI 코칭"
-                    style={{ margin: 0 }}
-                  >
-                    💬
-                  </button>
-                  <button
-                    onClick={() => handleMicClick(pIdx, cleanText)}
-                    className={`reader-para-mic-btn ${recordingParaIdx === pIdx ? 'recording' : ''}`}
-                    title={recordingParaIdx === pIdx ? "녹음 중지" : "이 문단 따라 읽고 발음 채점"}
-                    style={{ margin: 0 }}
-                  >
-                    🎙️
-                  </button>
-                </div>
-                <span style={{ flex: 1 }}>
-                  {tokens.map((token, tIdx) =>
-                    isKoreanWord(token) ? (
-                      <span
-                        key={tIdx}
-                        className={`reading-word ${savedWords.has(token) ? 'saved' : ''}`}
-                        onClick={(e) => handleWordClick(e, token, paragraph)}
-                        onMouseEnter={(e) => handleWordMouseEnter(e, token, paragraph)}
-                        onMouseLeave={handleWordMouseLeave}
-                        title="클릭/오버하여 뜻 보기"
-                      >
-                        {token}
-                      </span>
-                    ) : (
-                      <span key={tIdx}>{token}</span>
-                    )
-                  )}
-                  {paraScores[pIdx] && (
-                    <div style={{
-                      marginTop: '10px',
-                      fontSize: '0.85rem',
-                      display: 'flex',
-                      alignItems: 'center',
-                      flexWrap: 'wrap',
-                      gap: '8px',
-                      background: 'var(--bg-secondary)',
-                      padding: '8px 12px',
-                      borderRadius: 'var(--radius-sm)',
-                      borderLeft: `4px solid ${paraScores[pIdx].score >= 80 ? '#10b981' : paraScores[pIdx].score >= 50 ? '#f59e0b' : '#ef4444'}`,
-                      animation: 'fadeIn 200ms ease',
-                      width: 'fit-content'
-                    }}>
-                      <span style={{ fontWeight: 700, color: 'var(--text-primary)' }}>
-                        🎯 발음 일치도: {paraScores[pIdx].score}%
-                      </span>
-                      <span style={{ color: 'var(--text-muted)', fontSize: '0.775rem' }}>
-                        (인식: &quot;{paraScores[pIdx].text}&quot;)
-                      </span>
-                    </div>
-                  )}
-                </span>
-              </p>
+              <Fragment key={pIdx}>
+                <p style={{
+                  fontFamily: 'Noto Sans KR, sans-serif',
+                  fontSize: fontSize === 'small' ? '0.95rem' : fontSize === 'large' ? '1.3rem' : fontSize === 'xlarge' ? '1.5rem' : '1.1rem',
+                  lineHeight: lineHeight,
+                  marginBottom: '20px',
+                  color: 'var(--text-primary)',
+                  display: 'flex',
+                  alignItems: 'flex-start',
+                }}>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', marginRight: '8px', marginTop: '4px' }}>
+                    <button
+                      onClick={() => speakText(cleanText)}
+                      className="reader-para-play-btn"
+                      title="이 문단 발음 듣기"
+                      style={{ margin: 0 }}
+                    >
+                      🔊
+                    </button>
+                    <button
+                      onClick={() => handleOpenTutor(pIdx, paragraph)}
+                      className="reader-para-tutor-btn"
+                      title="이 문단 1:1 AI 코칭"
+                      style={{ margin: 0 }}
+                    >
+                      💬
+                    </button>
+                    <button
+                      onClick={() => handleMicClick(pIdx, cleanText)}
+                      className={`reader-para-mic-btn ${recordingParaIdx === pIdx ? 'recording' : ''}`}
+                      title={recordingParaIdx === pIdx ? "녹음 중지" : "이 문단 따라 읽고 발음 채점"}
+                      style={{ margin: 0 }}
+                    >
+                      🎙️
+                    </button>
+                  </div>
+                  <span style={{ flex: 1 }}>
+                    {tokens.map((token, tIdx) =>
+                      isKoreanWord(token) ? (
+                        <span
+                          key={tIdx}
+                          className={`reading-word ${savedWords.has(token) ? 'saved' : ''}`}
+                          onClick={(e) => handleWordClick(e, token, paragraph)}
+                          onMouseEnter={(e) => handleWordMouseEnter(e, token, paragraph)}
+                          onMouseLeave={handleWordMouseLeave}
+                          title="클릭/오버하여 뜻 보기"
+                        >
+                          {token}
+                        </span>
+                      ) : (
+                        <span key={tIdx}>{token}</span>
+                      )
+                    )}
+                    {paraScores[pIdx] && (
+                      <div style={{
+                        marginTop: '10px',
+                        fontSize: '0.85rem',
+                        display: 'flex',
+                        alignItems: 'center',
+                        flexWrap: 'wrap',
+                        gap: '8px',
+                        background: 'var(--bg-secondary)',
+                        padding: '8px 12px',
+                        borderRadius: 'var(--radius-sm)',
+                        borderLeft: `4px solid ${paraScores[pIdx].score >= 80 ? '#10b981' : paraScores[pIdx].score >= 50 ? '#f59e0b' : '#ef4444'}`,
+                        animation: 'fadeIn 200ms ease',
+                        width: 'fit-content'
+                      }}>
+                        <span style={{ fontWeight: 700, color: 'var(--text-primary)' }}>
+                          🎯 발음 일치도: {paraScores[pIdx].score}%
+                        </span>
+                        <span style={{ color: 'var(--text-muted)', fontSize: '0.775rem' }}>
+                          (인식: &quot;{paraScores[pIdx].text}&quot;)
+                        </span>
+                      </div>
+                    )}
+                  </span>
+                </p>
+
+                {/* 🎨 본문 중간 문맥 삽화 (In-text Scene Illustration) */}
+                {article.imageUrls?.[1] && pIdx === midIdx && (
+                  <ArticleIllustration
+                    src={article.imageUrls[1]}
+                    alt={`${article.title} - 문맥 삽화`}
+                    badgeText="🎨 AI 문맥 삽화"
+                    style={{ margin: '20px 0 28px 0' }}
+                  />
+                )}
+              </Fragment>
             );
           })}
         </div>

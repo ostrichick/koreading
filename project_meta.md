@@ -41,6 +41,7 @@ Conq/
 │   │   └── page.tsx             # 서비스 랜딩(소개) 페이지
 │   ├── components/
 │   │   ├── AlertModal.tsx       # 알림/에러 메시지 + AI 생성 로그 표시 모달
+│   │   ├── ArticleIllustration.tsx # [NEW] 아티클 주제 맞춤 AI 일러스트 컴포넌트 (스켈레톤 shimmer, 에러 폴백)
 │   │   ├── Footer.tsx           # [AdSense] 하단 공통 푸터 (Privacy/Terms/About 링크)
 │   │   ├── NavBar.tsx           # 상단 내비게이션 바 컴포넌트
 │   │   └── SeoTextBlock.tsx     # [SEO] 검색 엔진 크롤러용 영문 구조화 텍스트 블록
@@ -89,6 +90,7 @@ Conq/
 | NavBar.tsx | 전역 상단 내비게이션 바로, 로그인/게스트/비로그인 상태에 따라 메뉴 항목을 동적 분기합니다. SSR 하이드레이션 불일치 방지 로직이 적용되어 있습니다. |
 | Footer.tsx | [AdSense 필수] 사이트 하단 공통 푸터입니다. 개인정보처리방침, 이용약관, About 링크를 항상 노출하여 Google AdSense 심사 기준을 충족하고 사이트 신뢰성을 높입니다. (이벤트 핸들러 적용으로 'use client' 선언) |
 | AlertModal.tsx | 직접 구현된 모달 팝업입니다. 단순 경고 외에, AI 생성 과정의 상세 동작 로그 목록(_logs)을 터미널 뷰 형태로 제공합니다. |
+| ArticleIllustration.tsx | [NEW] 아티클 주제 맞춤형 AI 일러스트 컴포넌트입니다. Pollinations.ai (FLUX.1) 비동기 로딩, 쉬머 스켈레톤 애니메이션, 로드 실패 시 에러 숨김(Graceful Fallback), 16:9 배너 비율 및 AI 삽화 배지를 제공합니다. |
 | SeoTextBlock.tsx | [SEO] 구글 봇 크롤러가 JS 없이도 읽을 수 있도록 최적화된 영문 구조화 텍스트 블록입니다. aria-hidden="true"가 적용되어 스크린 리더에 지장을 주지 않습니다. |
 
 ### 3. `src/app/` - 페이지 컴포넌트
@@ -130,7 +132,7 @@ Conq/
 
 ## 최근 주요 변경 이력
 
-| 2026-09-13 | - **글 생성 품질 및 다양성 전면 개편 (1·2·3단계 완료)**<br>• 백엔드 AI 생성 temperature `0.8` 상향 (사전 검색 `0.1` 유지)<br>• 8개 주제별 100종 이상의 동적 서브토픽 풀 신설 (`topicSeeds.ts`)<br>• AI 상투어/클리셰 원천 금지 규칙(Anti-Cliche) 및 100% 순수 한글 제약 강화<br>• 5가지 글 스타일(수필, 대화, 칼럼, 스토리, 무작위) 지원<br>• 도서관 최근 글 제목 10개 기반 중복 방지(Negative Prompting) 연동<br>• 도서관 모달 UI에 맞춤 관심사/키워드 직접 입력창 및 글 스타일 선택 칩 추가<br>- **4대 정기 점검 및 SEO 사이트맵 동적 색인 자동화 완료**<br>• `sitemap.ts`: Firestore 내 모든 공개 아티클 동적 쿼리 연동 (`/read/[id]` 자동 색인 등록)<br>• `check-models`: 일일 AI 모델 가용성 자동 헬스체크 (`0 0 * * *`)<br>• `monthly-model-audit`: 월간 AI 모델 벤치마크 및 Top 3 추천 스케줄러 (`0 0 1 * *`)<br>• `system-audit`: 주간 도서관 아티클 품질 전수 감사, 애드센스 법적 페이지 200 OK 핑, SEO 색인 검증, Firestore 쿼터 진단 (`0 0 * * 0`)<br>- 타 AI(ChatGPT/Claude) 협업 및 온보딩을 위한 종합 가이드 문서 `AI_HANDOVER.md` 신설 |
+| 2026-09-13 | - **글 생성 품질 및 다양성 전면 개편 (1·2·3단계 완료)**<br>• 백엔드 AI 생성 temperature `0.8` 상향 (사전 검색 `0.1` 유지)<br>• 8개 주제별 100종 이상의 동적 서브토픽 풀 신설 (`topicSeeds.ts`)<br>• AI 상투어/클리셰 원천 금지 규칙(Anti-Cliche) 및 100% 순수 한글 제약 강화<br>• 5가지 글 스타일(수필, 대화, 칼럼, 스토리, 무작위) 지원<br>• 도서관 최근 글 제목 10개 기반 중복 방지(Negative Prompting) 연동<br>• 도서관 모달 UI에 맞춤 관심사/키워드 직접 입력창 및 글 스타일 선택 칩 추가<br>- **주제 맞춤형 AI 일러스트 2종 자동 생성 및 뷰어 연동 (Pollinations.ai / FLUX.1)**<br>• 글 생성 시 Gemini가 본문의 배경 및 핵심 사건을 분석한 영문 프롬프트 2종 직접 도출<br>• 100% 무료 무제한 오픈 AI 인프라(Pollinations.ai) 기반 고화질(16:9) 일러스트 URL 조합<br>• `ArticleIllustration.tsx`: 로딩 중 쉬머 스켈레톤, 에러 발생 시 부드러운 자동 숨김(Graceful Fallback)<br>• 독해 뷰어(회원/게스트)에 상단 대표 커버 및 본문 중반 문맥 삽화 배치<br>• 도서관 카드 상단에 썸네일 배너 표출로 매거진 뷰 제공<br>- **4대 정기 점검 및 SEO 사이트맵 동적 색인 자동화 완료**<br>• `sitemap.ts`: Firestore 내 모든 공개 아티클 동적 쿼리 연동 (`/read/[id]` 자동 색인 등록)<br>• `check-models`: 일일 AI 모델 가용성 자동 헬스체크 (`0 0 * * *`)<br>• `monthly-model-audit`: 월간 AI 모델 벤치마크 및 Top 3 추천 스케줄러 (`0 0 1 * *`)<br>• `system-audit`: 주간 도서관 아티클 품질 전수 감사, 애드센스 법적 페이지 200 OK 핑, SEO 색인 검증, Firestore 쿼터 진단 (`0 0 * * 0`)<br>- 타 AI(ChatGPT/Claude) 협업 및 온보딩을 위한 종합 가이드 문서 `AI_HANDOVER.md` 신설 |
 | 2026-09-09 | - ESLint 린터 설정(`.eslintrc.json`) 구축 및 Next.js 16 CLI 호환 lint 스크립트 수정 (`npm run lint` 통과)<br>- JSX unescaped entity (`&quot;`, `&apos;`) 오류 및 React hook dependency 경고 전면 해결<br>- Fisher-Yates 무작위 셔플 알고리즘(`shuffleArray`) 유틸 신설 및 어휘 퀴즈/플래시카드 적용<br>- profile 페이지 `<a>` 태그를 `Link` 컴포넌트로 전환하여 클라이언트 네비게이션 최적화<br>- layout.tsx 내 schema.org `SearchAction` 구조화 데이터 표준 스키마 적용 |
 | 2026-07-23 | - AI API Route (`/api/ai`) Edge IP 기반 Rate Limiting (분당 20회) 및 파라미터(paragraph, chatHistory) 길이 제한 추가<br>- `saveReview()` Firestore 트랜잭션(`runTransaction`) 적용으로 평점 집계 동시성 충돌 해결<br>- `deleteUserAccount` Auth 선삭제 후 DB 삭제 순서 보장 및 안전 탈퇴 UI 연동<br>- `AuthContext.tsx` onAuthStateChanged 에러 핸들링(`try/catch/finally`)으로 무한 로딩 해결<br>- 랜딩 페이지 중복 푸터 제거 및 일본어 번역 오타(`カスタム`, `ニュアンス`, `保存中`) 수정<br>- `NavBar.tsx` SSR hydration mismatch 방지 로직 적용 및 CSS 토큰 보완 |
 | 2026-06-08 | APK 빌드(PWABuilder) 및 PWA 설치를 지원하기 위해 manifest.json 및 sw.js(서비스 워커) 추가, Footer.tsx에 서비스 워커 등록 연동 |
