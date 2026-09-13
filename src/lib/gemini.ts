@@ -53,6 +53,15 @@ async function callAI(body: object) {
 }
 
 /**
+ * 아티클 생성 시 사용자 맞춤성을 부여하기 위한 세부 옵션 인터페이스입니다.
+ */
+export interface GenerateArticleOptions {
+  customKeyword?: string;   // 사용자가 직접 입력한 관심 키워드나 소재
+  genre?: string;           // 글의 장르/스타일 ('essay' | 'dialogue' | 'column' | 'story' | 'random')
+  recentTitles?: string[];  // 도서관에 이미 등록된 최근 글 제목들 (중복 방지용)
+}
+
+/**
  * 지정된 레벨, 주제, 모국어 설정에 맞춰 한국어 독해 기사(아티클)를 AI를 통해 생성합니다.
  * onLog 콜백을 통해 AI 모델의 전환 과정이나 생성 중 상태 로그를 클라이언트에 실시간으로 전달합니다.
  */
@@ -60,8 +69,19 @@ export async function generateArticle(
   level: CEFRLevel,
   topic: string,
   nativeLang: NativeLanguage,
-  onLog?: (message: string) => void
+  optionsOrLog?: GenerateArticleOptions | ((message: string) => void),
+  maybeOnLog?: (message: string) => void
 ) {
+  let options: GenerateArticleOptions = {};
+  let onLog: ((message: string) => void) | undefined = undefined;
+
+  if (typeof optionsOrLog === 'function') {
+    onLog = optionsOrLog;
+  } else if (optionsOrLog && typeof optionsOrLog === 'object') {
+    options = optionsOrLog;
+    onLog = maybeOnLog;
+  }
+
   let customApiKey = '';
   if (typeof window !== 'undefined') {
     customApiKey = localStorage.getItem('koreading_custom_api_key') || '';
@@ -70,7 +90,16 @@ export async function generateArticle(
   const res = await fetch('/api/ai', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ action: 'generateArticle', level, topic, nativeLang, customApiKey }),
+    body: JSON.stringify({
+      action: 'generateArticle',
+      level,
+      topic,
+      nativeLang,
+      customApiKey,
+      customKeyword: options.customKeyword,
+      genre: options.genre,
+      recentTitles: options.recentTitles,
+    }),
   });
 
   const data = await res.json();

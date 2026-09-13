@@ -10,6 +10,7 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/contexts/AuthContext';
 import { TOPICS, CEFRLevel, NativeLanguage, generateArticle } from '@/lib/gemini';
+import { GENRE_OPTIONS } from '@/lib/topicSeeds';
 import { getArticlesByLevel, getAllArticles, saveArticle, getReadArticles, createOrUpdateUser, Article } from '@/lib/db';
 import { getGuestLevel, getGuestLang, setGuestLang } from '@/lib/storage';
 import AlertModal from '@/components/AlertModal';
@@ -38,66 +39,66 @@ const TRANSLATIONS = {
     apiKeySettings: '🔑 API Key 설정',
     apiKeyRegistered: '🔑 API Key 등록됨',
     deleteKey: '🗑️ 키 삭제',
-    loginToSave: '로그인하여 단어 저장하기',
+    loginToSave: '로그인하고 단어를 저장하세요',
     allLevels: '전체 레벨',
     allTopics: '전체 주제',
-    sortByRating: '⭐ 별점순',
-    sortByNewest: '⏱️ 최신순',
-    createCustomReading: '✨ 내 맞춤형 읽기 생성',
-    setApiKeyTitle: '🔑 내 Gemini API Key 설정',
-    generateNow: '✨ 지금 조건 선택해 생성하기',
+    sortByRating: '⭐ 별점 높은 순',
+    sortByNewest: '⏱️ 최신 등록 순',
+    createCustomReading: '✨ 맞춤형 읽기 자료 생성',
+    setApiKeyTitle: '🔑 개인 Gemini API Key 설정',
+    generateNow: '✨ 조건 선택하고 바로 만들기',
   },
   en: {
     newText: '✨ Create New Text',
     cancel: 'Cancel',
     startGen: '✨ Start Generating Custom Reading',
-    generating: '🔄 Generating AI Text...',
+    generating: '🔄 AI Generating Text...',
     save: '💾 Save',
-    apiKeySettings: '🔑 API Key Settings',
-    apiKeyRegistered: '🔑 API Key Registered',
+    apiKeySettings: '🔑 Set API Key',
+    apiKeyRegistered: '🔑 API Key Saved',
     deleteKey: '🗑️ Delete Key',
-    loginToSave: 'Log in to save vocabulary',
+    loginToSave: 'Log in to save words',
     allLevels: 'All Levels',
     allTopics: 'All Topics',
-    sortByRating: '⭐ By Rating',
-    sortByNewest: '⏱️ By Newest',
+    sortByRating: '⭐ Top Rated',
+    sortByNewest: '⏱️ Newest',
     createCustomReading: '✨ Create Custom Reading',
     setApiKeyTitle: '🔑 Set Gemini API Key',
-    generateNow: '✨ Create custom text now',
+    generateNow: '✨ Choose Conditions & Generate',
   },
   es: {
     newText: '✨ Crear nuevo texto',
     cancel: 'Cancelar',
-    startGen: '✨ Empezar a generar lectura personalizada',
-    generating: '🔄 Generando texto de IA...',
+    startGen: '✨ Comenzar a generar lectura personalizada',
+    generating: '🔄 IA generando texto...',
     save: '💾 Guardar',
-    apiKeySettings: '🔑 Configurar clave API',
-    apiKeyRegistered: '🔑 Clave API registrada',
-    deleteKey: '🗑️ Eliminar clave',
-    loginToSave: 'Iniciar sesión para guardar vocabulario',
+    apiKeySettings: '🔑 Configurar API Key',
+    apiKeyRegistered: '🔑 API Key registrada',
+    deleteKey: '🗑️ Eliminar Key',
+    loginToSave: 'Inicia sesión para guardar palabras',
     allLevels: 'Todos los niveles',
     allTopics: 'Todos los temas',
-    sortByRating: '⭐ Por calificación',
-    sortByNewest: '⏱️ Más reciente',
+    sortByRating: '⭐ Mejor calificados',
+    sortByNewest: '⏱️ Más recientes',
     createCustomReading: '✨ Crear lectura personalizada',
-    setApiKeyTitle: '🔑 Configurar clave API de Gemini',
-    generateNow: '✨ Crear texto personalizado ahora',
+    setApiKeyTitle: '🔑 Configurar Gemini API Key',
+    generateNow: '✨ Seleccionar condiciones y crear ahora',
   },
   ja: {
-    newText: '✨ 新規テキスト作成',
+    newText: '✨ 新しいテキストを作成',
     cancel: 'キャンセル',
-    startGen: '✨ カスタム読解の作成を開始',
+    startGen: '✨ カスタム読解作成を開始',
     generating: '🔄 AIテキスト生成中...',
-    save: '💾 保存する',
+    save: '💾 保存',
     apiKeySettings: '🔑 APIキー設定',
     apiKeyRegistered: '🔑 APIキー登録済み',
     deleteKey: '🗑️ キー削除',
     loginToSave: 'ログインして単語を保存',
-    allLevels: '全レベル',
-    allTopics: '全トピック',
+    allLevels: 'すべてのレベル',
+    allTopics: 'すべてのトピック',
     sortByRating: '⭐ 評価順',
-    sortByNewest: '⏱️ 最新順',
-    createCustomReading: '✨ カスタם読解作成',
+    sortByNewest: '⏱️ 新着順',
+    createCustomReading: '✨ カスタム読解作成',
     setApiKeyTitle: '🔑 Gemini APIキー設定',
     generateNow: '✨ 条件を選択して今すぐ作成',
   },
@@ -139,10 +140,12 @@ export default function LibraryPage() {
   // 정렬 순서 상태값 ('rating': 별점 높은 순, 'newest': 최신순)
   const [sortBy, setSortBy] = useState<'rating' | 'newest'>('rating');
 
-  // "새 텍스트 생성" 모달 내의 체크박스 상태들
+  // "새 텍스트 생성" 모달 내의 상태들 (체크박스, 키워드, 스타일)
   const [showGenModal, setShowGenModal] = useState(false);
   const [genLevels, setGenLevels] = useState<CEFRLevel[]>([]);
   const [genTopics, setGenTopics] = useState<string[]>([]);
+  const [customKeyword, setCustomKeyword] = useState('');                      // 사용자 지정 관심 키워드
+  const [selectedGenre, setSelectedGenre] = useState('random');                // 글 스타일/장르
 
   // 알림 모달 제어 상태들
   const [alertOpen, setAlertOpen] = useState(false);
@@ -298,13 +301,26 @@ export default function LibraryPage() {
     const topic = genTopics[Math.floor(Math.random() * genTopics.length)];
     const lang = currentLang;
 
+    // 도서관에 이미 등록된 최근 글 제목들 추출 (중복 회피 가이드용)
+    const recentTitles = articles.slice(0, 10).map(a => a.title).filter(Boolean);
+
     setGenerating(true);
     setGenLogs([]);
     try {
-      // client wrapper function 호출 (진행 로그 콜백 연동)
-      const data = await generateArticle(level, topic, lang, (logMsg) => {
-        setGenLogs(prev => [...prev, logMsg]);
-      });
+      // client wrapper function 호출 (동적 옵션 및 진행 로그 콜백 연동)
+      const data = await generateArticle(
+        level,
+        topic,
+        lang,
+        {
+          customKeyword: customKeyword.trim() || undefined,
+          genre: selectedGenre,
+          recentTitles,
+        },
+        (logMsg) => {
+          setGenLogs(prev => [...prev, logMsg]);
+        }
+      );
       
       try {
         // Firestore 아티클 저장
@@ -593,7 +609,7 @@ export default function LibraryPage() {
           <div className="empty-state">
             <div className="empty-state-icon">📭</div>
             <div className="empty-state-title">해당하는 텍스트가 아직 없어요</div>
-            <div className="empty-state-desc">"{t.newText}" 버튼을 눌러 첫 번째 읽기 자료를 만들어보세요!</div>
+            <div className="empty-state-desc">&quot;{t.newText}&quot; 버튼을 눌러 첫 번째 읽기 자료를 만들어보세요!</div>
             <button onClick={() => setShowGenModal(true)} className="btn btn-primary mt-4">{t.generateNow}</button>
           </div>
         ) : (
@@ -688,7 +704,7 @@ export default function LibraryPage() {
             </div>
 
             {/* 토픽 선택 다중 조건 목록 */}
-            <div style={{ marginBottom: '32px' }}>
+            <div style={{ marginBottom: '24px' }}>
               <div style={{ fontSize: '0.875rem', fontWeight: 700, color: 'var(--text-secondary)', marginBottom: '12px' }}>
                 🏷️ 주제 선택 (다중 선택 가능)
               </div>
@@ -721,6 +737,96 @@ export default function LibraryPage() {
                       />
                       <span>{topic.emoji} {topic.label}</span>
                     </label>
+                  );
+                })}
+              </div>
+            </div>
+
+            {/* 💡 나만의 맞춤 관심사/키워드 직접 입력 */}
+            <div style={{ marginBottom: '24px' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+                <span style={{ fontSize: '0.875rem', fontWeight: 700, color: 'var(--text-secondary)' }}>
+                  💡 원하는 특별 키워드나 소재 (선택사항)
+                </span>
+                {customKeyword && (
+                  <button
+                    type="button"
+                    onClick={() => setCustomKeyword('')}
+                    style={{ background: 'none', border: 'none', color: 'var(--text-muted)', fontSize: '0.75rem', cursor: 'pointer', textDecoration: 'underline' }}
+                  >
+                    초기화
+                  </button>
+                )}
+              </div>
+              <input
+                type="text"
+                value={customKeyword}
+                onChange={(e) => setCustomKeyword(e.target.value)}
+                placeholder="예: 뉴진스, 성수동 팝업스토어, 비 오는 날 감성 (비워두면 AI 자동 추천)"
+                maxLength={100}
+                disabled={generating}
+                style={{
+                  width: '100%',
+                  padding: '12px 16px',
+                  background: 'var(--bg-secondary)',
+                  border: '1px solid var(--border-medium)',
+                  borderRadius: 'var(--radius-md)',
+                  color: 'var(--text-primary)',
+                  fontSize: '0.875rem',
+                  outline: 'none',
+                  transition: 'border-color 150ms ease, box-shadow 150ms ease',
+                  boxSizing: 'border-box',
+                }}
+                onFocus={(e) => {
+                  e.currentTarget.style.borderColor = 'var(--accent-primary)';
+                  e.currentTarget.style.boxShadow = '0 0 0 3px rgba(99,102,241,0.15)';
+                }}
+                onBlur={(e) => {
+                  e.currentTarget.style.borderColor = 'var(--border-medium)';
+                  e.currentTarget.style.boxShadow = 'none';
+                }}
+              />
+              <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: '6px' }}>
+                * 입력한 단어나 상황을 중심으로 AI가 학습자의 레벨에 맞춰 새로운 글을 작성합니다.
+              </div>
+            </div>
+
+            {/* 🎭 글의 형식 / 서술 스타일 선택 */}
+            <div style={{ marginBottom: '32px' }}>
+              <div style={{ fontSize: '0.875rem', fontWeight: 700, color: 'var(--text-secondary)', marginBottom: '10px' }}>
+                🎭 글의 서술 스타일
+              </div>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(100px, 1fr))', gap: '8px' }}>
+                {GENRE_OPTIONS.map(g => {
+                  const active = selectedGenre === g.id;
+                  return (
+                    <button
+                      key={g.id}
+                      type="button"
+                      onClick={() => setSelectedGenre(g.id)}
+                      disabled={generating}
+                      title={g.desc}
+                      style={{
+                        display: 'flex',
+                        flexDirection: 'column',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        gap: '6px',
+                        padding: '10px 6px',
+                        background: active ? 'rgba(99,102,241,0.15)' : 'var(--bg-secondary)',
+                        border: '1px solid',
+                        borderColor: active ? 'var(--accent-primary)' : 'var(--border-subtle)',
+                        borderRadius: 'var(--radius-md)',
+                        cursor: 'pointer',
+                        color: active ? 'var(--accent-primary)' : 'var(--text-secondary)',
+                        fontWeight: active ? 700 : 500,
+                        fontSize: '0.75rem',
+                        transition: 'all 150ms ease',
+                      }}
+                    >
+                      <span style={{ fontSize: '1.25rem' }}>{g.emoji}</span>
+                      <span style={{ textAlign: 'center', lineHeight: 1.2 }}>{g.label}</span>
+                    </button>
                   );
                 })}
               </div>
@@ -804,7 +910,7 @@ export default function LibraryPage() {
             <div style={{ background: 'rgba(99,102,241,0.05)', border: '1px solid rgba(99,102,241,0.15)', borderRadius: 'var(--radius-md)', padding: '12px 16px', marginBottom: '20px', fontSize: '0.8rem', color: 'var(--text-secondary)', lineHeight: 1.6 }}>
               💡 <strong>API Key 발급 방법 (1분 소요)</strong>:<br />
               1. <a href="https://aistudio.google.com/" target="_blank" rel="noopener noreferrer" style={{ color: 'var(--accent-primary)', fontWeight: 700, textDecoration: 'underline' }}>Google AI Studio</a>에 접속하여 로그인합니다.<br />
-              2. <strong>'Get API Key'</strong> 버튼을 클릭하여 새로운 무료 키를 발급받은 뒤 복사하여 아래에 붙여넣어 주세요!
+              2. <strong>&apos;Get API Key&apos;</strong> 버튼을 클릭하여 새로운 무료 키를 발급받은 뒤 복사하여 아래에 붙여넣어 주세요!
             </div>
 
             <div style={{ marginBottom: '24px' }}>
