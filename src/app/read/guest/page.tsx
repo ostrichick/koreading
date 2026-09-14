@@ -13,6 +13,8 @@ import { TOPICS } from '@/lib/gemini';
 import { getGuestArticle, getGuestLang, getGuestLevel, incrementGuestReadCount } from '@/lib/storage';
 import { saveVocabulary, getCustomCategories } from '@/lib/db';
 import ArticleIllustration from '@/components/ArticleIllustration';
+import EditorialHeroCard from '@/components/reader/EditorialHeroCard';
+import DiscussionPromptCard from '@/components/reader/DiscussionPromptCard';
 import { isKoreanWord } from '@/lib/utils';
 import { useWordLookup } from '@/hooks/useWordLookup';
 import ReaderBody from '@/components/reader/ReaderBody';
@@ -522,13 +524,30 @@ export default function GuestReadPage() {
           <p style={{ color: 'var(--text-secondary)', fontSize: '0.875rem', fontStyle: 'italic' }}>{articleSummary(article, profile?.nativeLanguage || guestLanguage)}</p>
         </div>
 
-        {/* 🎨 1번: 4K 초고화질 실제 한국 현장 사진 (Hero Cover Real Photo) */}
-        {article.imageUrls?.[0] && (
+        {/* 📖 에디토리얼 감성 후크 배너 또는 시각자료 */}
+        {article.hookQuote ? (
+          <EditorialHeroCard
+            hookQuote={article.hookQuote}
+            genre={(article as any).genre}
+            topicLabel={topicInfo?.label}
+            topicEmoji={topicInfo?.emoji}
+            estimatedMinutes={article.estimatedMinutes}
+            level={article.level}
+          />
+        ) : article.imageUrls?.[0] ? (
           <ArticleIllustration
             src={article.imageUrls[0]}
-            alt={`${article.title} - 실제 한국 현장 사진`}
-            badgeText="📸 실제 한국 현장 사진 (Real Photo)"
+            alt={`${article.title}`}
+            badgeText="🖼️ 시각 자료"
             style={{ marginBottom: '24px', marginTop: '0px' }}
+          />
+        ) : (
+          <EditorialHeroCard
+            genre={(article as any).genre}
+            topicLabel={topicInfo?.label}
+            topicEmoji={topicInfo?.emoji}
+            estimatedMinutes={article.estimatedMinutes}
+            level={article.level}
           />
         )}
 
@@ -618,6 +637,11 @@ export default function GuestReadPage() {
         {/* 독해 지문 본문 카드 (각 한국어 어휘에 인터랙티브 클릭 이벤트 및 바인딩 완료) */}
         {lookupError && <p role="alert">{lookupError}</p>}
         <ReaderBody paragraphs={paragraphs} article={article} fontSize={fontSize} lineHeight={lineHeight} savedWords={savedWords} recordingParaIdx={recordingParaIdx} paraScores={paraScores} onWordClick={handleWordClick} onWordEnter={handleWordMouseEnter} onWordLeave={handleWordMouseLeave} onSpeak={speakText} onTutor={handleOpenTutor} onMic={handleMicClick} />
+
+        {/* 🤔 생각해볼 거리 / 당신의 선택은? */}
+        {(article as any).discussionPrompt && (
+          <DiscussionPromptCard prompt={(article as any).discussionPrompt} />
+        )}
 
         {/* 독해 완료 유도 버튼 툴바 영역 */}
         {!readingDone && (

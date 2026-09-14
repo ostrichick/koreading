@@ -18,8 +18,7 @@ import { GoogleGenerativeAI } from '@google/generative-ai';
 import type { CEFRLevel, NativeLanguage } from '@/lib/gemini';
 import { TOPICS } from '@/lib/gemini';
 import { getRandomSubTopic, getGenreInstruction } from '@/lib/topicSeeds';
-import { getPedagogicalInstruction, getVisualAidDirectingInstruction } from '@/lib/koreanCurriculum';
-import { getRealKoreanPhoto, get2DTextbookVectorIllustration } from '@/lib/koreanVisuals';
+import { getPedagogicalInstruction } from '@/lib/koreanCurriculum';
 
 // 서버 환경변수에 GEMINI_API_KEY가 설정되어 있지 않으면 에러 로그를 남깁니다.
 if (!process.env.GEMINI_API_KEY) {
@@ -195,43 +194,48 @@ export async function POST(req: NextRequest) {
       }
 
       const pedagogicalGuide = getPedagogicalInstruction(level as CEFRLevel, topicLabel);
-      const visualAidGuide = getVisualAidDirectingInstruction();
 
-      // 프롬프트를 정교하게 구성합니다. (소설가 페르소나 탈피 -> KFL 한국어 교육학 전문 집필관)
-      const prompt = `당신은 국립국어원 한국어 표준 교육과정 및 국제 한국어 교육학(KFL) 최고 권위자이자 한국어 독해 교재 전문 집필관입니다.
-CEFR ${level} 레벨의 외국인 학습자가 실질적인 한국어 습득 효과(Comprehensible Input)를 온전히 누릴 수 있도록 "${topicLabel}" 주제의 체계적이고 유익한 교육용 독해 지문을 작성해 주세요.
+      // 프롬프트를 정교하게 구성합니다. (학습자를 사로잡는 스토리텔링 + KFL 한국어 교육학 결합)
+      const prompt = `당신은 전 세계 한국어 학습자를 단숨에 몰입시키는 최고의 한국어 스토리텔러이자 KFL(외국어로서의 한국어) 독해 전문 작가입니다.
+외국인 학습자가 지루한 교과서 느낌을 전혀 받지 않고, "다음 문장이 궁금해서 멈출 수 없는" 흥미진진한 "${topicLabel}" 독해 지문을 작성해 주세요.
 ${subtopicInstruction}
 ${genreInstruction}
 ${duplicateAvoidanceInstruction}
 ${pedagogicalGuide}
-${visualAidGuide}
 
-[절대 준수해야 하는 강한 제약 조건 (CRITICAL)]:
-1. 100% 순수 한글 원칙: "title"과 "content" 필드는 반드시 100% 순수한 한글(한국어 문자)로만 작성해야 합니다.
-2. 절대 본문("content")이나 제목("title")에 영어, 한자(漢字/简繁体字), 일본어, 외국어 번역 괄호 표기(예: '공부(study)하다', '건강(健康)')를 단 한 글자도 넣지 마십시오. 모든 단어는 100% 순수한 한글 단어로만 문장 속에 자연스럽게 녹여내야 합니다. 번역 설명용 외래 문자는 절대 금지입니다.
-3. 한국어 교육학적 완성도:
-   - 본문에 이번 레벨(${level})의 필수 목표 문법이 2~3개 이상 자연스럽게 사용되어야 합니다.
+[절대 준수해야 하는 스토리텔링 & 교육학 원칙 (CRITICAL)]:
+1. 진부한 상투어 및 교과서식 도입부 원천 금지 (STRICT NEGATIVE CONSTRAINT):
+   - "오늘은 날씨가 좋았다", "어제 나는 친구와 ~에 갔다", "한국에는 ~가 있다", "참 즐거운 하루였다" 같은 지루하고 뻔한 문장으로 시작하거나 끝맺지 마십시오.
+   - 첫 문장은 반드시 사건의 한가운데(In medias res), 호기심을 끄는 대화, 혹은 곤란하거나 엉뚱한 돌발 상황으로 시작하십시오.
+2. 3단 서사 구조 (Narrative Arc) 필수:
+   - [도입]: 돌발 사건, 뜻밖의 발견, 혹은 난처한 순간으로 호기심 유발.
+   - [전개]: 작은 갈등(Conflict), 문화적 차이나 소통 과정에서의 귀여운 오해/실수, 유쾌한 티키타카.
+   - [결말]: 유쾌한 반전(Twist), 따뜻한 감동, 혹은 여운을 남기는 여운과 교훈.
+3. 100% 순수 한글 원칙:
+   - "title", "content", "hookQuote" 필드는 반드시 100% 순수한 한글(한국어 문자)로만 작성해야 합니다.
+   - 절대 본문이나 제목에 영어, 한자, 일본어, 외국어 번역 괄호(예: '공부(study)하다')를 단 한 글자도 넣지 마십시오.
+4. 교육학적 난이도 통제:
+   - 본문에 이번 레벨(${level})의 필수 목표 문법이 2~3개 이상 자연스럽게 녹아있어야 합니다.
    - 5개의 핵심 어휘(keyVocabulary)는 본문 속에서 각각 최소 2회 이상 자연스럽게 반복(Recycled)되어야 합니다.
-   - 어휘 난이도와 문장 길이는 반드시 CEFR ${level} 기준을 철저히 지키십시오. 뜬구름 잡는 추상적 소설이나 난해한 문학적 묘사를 금지합니다.
+   - 어휘 난이도와 문장 길이는 CEFR ${level} 기준을 철저히 준수하십시오.
 
 반드시 다음 형식의 JSON 객체만 반환해 주세요 (마크다운 기호 없이 JSON만 반환):
 {
-  "title": "텍스트 제목 (100% 순수 한글, 학습자의 흥미를 끄는 명료한 제목)",
-  "content": "전체 텍스트 내용 (선정된 목표 문법과 핵심 어휘가 2회 이상 반복되며 유기적으로 연결된 100% 순수 한글)",
+  "title": "흥미진진하고 호기심을 끄는 한글 제목",
+  "content": "선정된 목표 문법과 핵심 어휘가 2회 이상 반복되며 생동감 넘치는 100% 순수 한글 본문",
   "summary": "${langNote}로 작성된 한 문장의 본문 요약",
   "summaries": {"en":"English summary", "es":"Resumen español", "ja":"日本語の要約", "zh":"中文摘要"},
   "topicCategory": "${topic}",
   "level": "${level}",
-  "estimatedMinutes": 2, // 텍스트 난이도와 길이에 따라 예상 소요 시간(분)을 정수(예: 1, 2, 3, 4)로 동적 예측
+  "genre": "${genre || 'random'}",
+  "estimatedMinutes": 2,
   "keyVocabulary": ["핵심단어1", "핵심단어2", "핵심단어3", "핵심단어4", "핵심단어5"],
-  "imagePrompts": [
-    "A clear, educational textbook illustration showing the main scene of this story: [describe the specific situational scene and characters doing the action in Korea], clear composition, bright pleasant lighting, modern Korean language textbook graphic style, absolutely NO text or letters",
-    "A close-up educational visual dictionary illustration focusing clearly on [describe the specific object or core hand action of 1-2 key vocabulary words], clearly demonstrating the item, uncluttered background, educational vector art style, absolutely NO text or words"
-  ]
+  "hookQuote": "본문에서 가장 인상 깊고 호기심을 끄는 핵심 한 줄 대사 또는 후크 문장 (100% 순수 한글)",
+  "discussionPrompt": "${langNote}로 작성된, 글을 다 읽은 후 학습자에게 던지는 흥미로운 질문 또는 '당신이라면 어떻게 했을까요?' 선택지 (1~2문장)"
 }`;
 
-      // 교육적 일관성과 엄격한 어휘 통제를 위해 최적의 교육용 온도인 0.45로 설정합니다.
-      const genConfig = { temperature: 0.45, responseMimeType: 'application/json' as const };
+      // 생동감 넘치고 흥미진진한 서사를 위해 창의성 온도를 0.70으로 최적화합니다.
+      const genConfig = { temperature: 0.70, responseMimeType: 'application/json' as const };
       
       // 사용자 브라우저 모달에 처리 경과 로그를 실시간 중계하기 위해 배열에 이력을 담아둡니다.
       const logs: string[] = [];
@@ -261,7 +265,7 @@ ${visualAidGuide}
               },
               body: JSON.stringify({
                 model: gm.id,
-                temperature: 0.45,
+                temperature: 0.70,
                 messages: [
                   { role: 'system', content: systemInstruction },
                   { role: 'user', content: prompt }
@@ -326,31 +330,16 @@ ${visualAidGuide}
         try {
           const parsed = articleSchema.parse(parseModelJson(resultText));
 
-          // 🎨 하이브리드 시각 자료 매칭 및 생성 (1번 고화질 4K 실사 + 2번 2D 교재 벡터 일러스트)
-          // - imageUrls[0]: 4K 초고화질 실제 한국 현장 사진 (Unsplash / 실물 100% 선명도, 왜곡 0%, 즉시 로드)
-          // - imageUrls[1]: 선명한 2D 교재 플랫 벡터 일러스트 (실사 금지, 선명한 외곽선, 귀여운 교재풍 그래픽)
-          const prompts = Array.isArray(parsed.imagePrompts) && parsed.imagePrompts.length > 0
-            ? parsed.imagePrompts
-            : [];
-
-          const realPhoto = await getRealKoreanPhoto(topic, parsed.title || '', parsed.keyVocabulary || [], customKeyword);
-          const rawPrompt2 = prompts[1] || prompts[0] || '';
-          const vectorArt = get2DTextbookVectorIllustration(
-            parsed.title || '',
-            topic,
-            parsed.keyVocabulary || [],
-            parsed.summary || '',
-            rawPrompt2
-          );
-
-          const imageUrls = [realPhoto.url, vectorArt.url];
-          const imagePrompts = [realPhoto.description, vectorArt.prompt];
-
+          // 🎨 에디토리얼 미니멀 카드 스타일 (겉돌고 왜곡되는 AI 이미지 배제)
+          // 고급스러운 타이포그래피 & 핵심 명대사 후크(hookQuote) 및 생각거리 질문(discussionPrompt) 제공
           return NextResponse.json({
             ...parsed,
             summaryLanguage: nativeLang,
-            imageUrls,
-            imagePrompts,
+            genre: parsed.genre || genre || 'story',
+            hookQuote: parsed.hookQuote || parsed.title,
+            discussionPrompt: parsed.discussionPrompt || undefined,
+            imageUrls: [],
+            imagePrompts: [],
             generatorModel: modelUsed,
             _logs: logs
           });

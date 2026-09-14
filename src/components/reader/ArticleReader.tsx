@@ -15,6 +15,8 @@ import { getGuestLang } from '@/lib/storage';
 import { isAdminEmail } from '@/lib/adminConfig';
 import AlertModal from '@/components/AlertModal';
 import ArticleIllustration from '@/components/ArticleIllustration';
+import EditorialHeroCard from '@/components/reader/EditorialHeroCard';
+import DiscussionPromptCard from '@/components/reader/DiscussionPromptCard';
 import { isKoreanWord } from '@/lib/utils';
 import { useWordLookup } from '@/hooks/useWordLookup';
 import ReaderBody from '@/components/reader/ReaderBody';
@@ -669,13 +671,30 @@ export default function ArticleReader({ initialArticle }: { initialArticle: Arti
           </p>
         </div>
 
-        {/* 🎨 1번: 4K 초고화질 실제 한국 현장 사진 (Hero Cover Real Photo) */}
-        {article.imageUrls?.[0] && (
+        {/* 📖 에디토리얼 감성 후크 배너 또는 시각자료 */}
+        {article.hookQuote ? (
+          <EditorialHeroCard
+            hookQuote={article.hookQuote}
+            genre={(article as any).genre}
+            topicLabel={topicInfo?.label}
+            topicEmoji={topicInfo?.emoji}
+            estimatedMinutes={article.estimatedMinutes}
+            level={article.level}
+          />
+        ) : article.imageUrls?.[0] ? (
           <ArticleIllustration
             src={article.imageUrls[0]}
-            alt={`${article.title} - 실제 한국 현장 사진`}
-            badgeText="📸 실제 한국 현장 사진 (Real Photo)"
+            alt={`${article.title}`}
+            badgeText="🖼️ 시각 자료"
             style={{ marginBottom: '24px', marginTop: '0px' }}
+          />
+        ) : (
+          <EditorialHeroCard
+            genre={(article as any).genre}
+            topicLabel={topicInfo?.label}
+            topicEmoji={topicInfo?.emoji}
+            estimatedMinutes={article.estimatedMinutes}
+            level={article.level}
           />
         )}
 
@@ -767,6 +786,11 @@ export default function ArticleReader({ initialArticle }: { initialArticle: Arti
         {/* 독해 본문 내용 카드 영역 */}
         {lookupError && <p role="alert">{lookupError}</p>}
         <ReaderBody paragraphs={paragraphs} article={article} fontSize={fontSize} lineHeight={lineHeight} savedWords={savedWords} recordingParaIdx={recordingParaIdx} paraScores={paraScores} onWordClick={handleWordClick} onWordEnter={handleWordMouseEnter} onWordLeave={handleWordMouseLeave} onSpeak={speakText} onTutor={handleOpenTutor} onMic={handleMicClick} />
+
+        {/* 🤔 생각해볼 거리 / 당신의 선택은? */}
+        {(article as any).discussionPrompt && (
+          <DiscussionPromptCard prompt={(article as any).discussionPrompt} />
+        )}
 
         {/* 독자 평가 평점 제출 카드 */}
         <div className="card" style={{ marginBottom: '32px', padding: '32px' }}>

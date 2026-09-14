@@ -622,7 +622,8 @@ export default function LibraryPage() {
                     )}
 
                     {/* 🎨 아티클 대표 썸네일 이미지 (존재 시 카드 상단 배너로 표출) */}
-                    {article.imageUrls?.[0] && (
+                    {/* 🎨 아티클 대표 썸네일 or 감성 에디토리얼 밴드 */}
+                    {article.imageUrls?.[0] ? (
                       <div style={{
                         position: 'relative',
                         width: '100%',
@@ -649,6 +650,35 @@ export default function LibraryPage() {
                             display: 'block',
                           }}
                         />
+                      </div>
+                    ) : (
+                      <div style={{
+                        position: 'relative',
+                        width: '100%',
+                        padding: '14px 16px',
+                        borderRadius: 'var(--radius-md, 10px)',
+                        overflow: 'hidden',
+                        marginBottom: '14px',
+                        background: 'linear-gradient(135deg, rgba(217,119,6,0.1) 0%, rgba(245,158,11,0.02) 100%)',
+                        border: '1px solid rgba(217,119,6,0.18)',
+                        minHeight: '76px',
+                        display: 'flex',
+                        flexDirection: 'column',
+                        justifyContent: 'center',
+                      }}>
+                        <div style={{
+                          fontSize: '0.85rem',
+                          fontWeight: 700,
+                          lineHeight: 1.45,
+                          color: 'var(--text-primary)',
+                          fontFamily: '"Noto Serif KR", serif, sans-serif',
+                          display: '-webkit-box',
+                          WebkitLineClamp: 2,
+                          WebkitBoxOrient: 'vertical',
+                          overflow: 'hidden',
+                        }}>
+                          {article.hookQuote ? `“${article.hookQuote}”` : `“${article.title}”`}
+                        </div>
                       </div>
                     )}
 

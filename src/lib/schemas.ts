@@ -6,7 +6,7 @@ export const topics = ['fairy-tales', 'daily-life', 'culture', 'nature-travel', 
 const text = (max: number) => z.string().trim().min(1).max(max);
 const common = { customApiKey: z.string().trim().max(256).optional(), nativeLang: z.enum(languages).default('en') };
 export const aiRequestSchema = z.discriminatedUnion('action', [
-  z.object({ ...common, action: z.literal('generateArticle'), level: z.enum(levels), topic: z.enum(topics), customKeyword: z.string().max(100).optional(), genre: z.enum(['random', 'essay', 'dialogue', 'column', 'story']).default('random'), recentTitles: z.array(text(200)).max(10).default([]) }),
+  z.object({ ...common, action: z.literal('generateArticle'), level: z.enum(levels), topic: z.enum(topics), customKeyword: z.string().max(100).optional(), genre: z.enum(['random', 'essay', 'dialogue', 'column', 'story', 'kakaotalk', 'mystery', 'review']).default('random'), recentTitles: z.array(text(200)).max(10).default([]) }),
   z.object({ ...common, action: z.literal('lookupWord'), type: z.enum(['all', 'basic', 'advanced']).default('all'), word: text(50), sentence: text(1000) }),
   z.object({ ...common, action: z.literal('generateTest') }),
   z.object({ ...common, action: z.literal('tutorChat'), level: z.enum(levels), paragraph: text(5000), userMessage: text(1000), chatHistory: z.array(z.object({ role: z.enum(['user', 'model']), parts: z.array(z.object({ text: text(2500) })).length(1) })).max(20).default([]) }),
@@ -16,6 +16,9 @@ export const articleSchema = z.object({
   summaries: z.object({ en: text(1000), es: text(1000), ja: text(1000), zh: text(1000) }).optional(),
   summaryLanguage: z.enum(languages).optional(), topicCategory: z.enum(topics), level: z.enum(levels),
   estimatedMinutes: z.number().int().min(1).max(60), keyVocabulary: z.array(text(50)).min(1).max(10),
+  hookQuote: text(500).optional(),
+  discussionPrompt: text(1000).optional(),
+  genre: text(100).optional(),
   imagePrompts: z.array(text(2000)).max(2).optional(),
   grammarEvidence: z.array(z.object({ pattern: text(200), quote: text(1000) })).min(2).max(3).optional(),
   imageUrls: z.array(z.string().url().max(6000).refine(u => ['image.pollinations.ai', 'images.unsplash.com'].includes(new URL(u).hostname) && new URL(u).protocol === 'https:')).max(2).optional(),
