@@ -1,3 +1,4 @@
+import { isAuthorizedCron } from '@/lib/cronAuth';
 /**
  * @file route.ts (api/cron/system-audit)
  * @description Koreading 주간 4대 정기 시스템 감사 및 가용성 진단 Cron API입니다.
@@ -16,7 +17,8 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server';
-import { getAllArticles, Article } from '@/lib/db';
+import type { Article } from '@/lib/db';
+import { publicArticleIndex } from '@/lib/server/publicArticles';
 
 export const dynamic = 'force-dynamic';
 // Firebase JS SDK 호출을 위해 Node.js 런타임 사용
@@ -42,22 +44,8 @@ interface PageHealthItem {
 }
 
 export async function GET(req: NextRequest) {
+  if (!isAuthorizedCron(req.headers, process.env.CRON_SECRET)) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   const auditStart = Date.now();
-
-  // 1. 인증 가드 (CRON_SECRET 설정 시 검증, 미설정 시 수동 확인 허용)
-  const authHeader = req.headers.get('authorization');
-  const cronSecret = process.env.CRON_SECRET;
-  const urlSecret = req.nextUrl.searchParams.get('secret');
-  const userAgent = req.headers.get('user-agent') || '';
-  const isVercelCron = userAgent.includes('vercel-cron');
-
-  if (cronSecret && authHeader !== `Bearer ${cronSecret}` && urlSecret !== cronSecret && !isVercelCron) {
-    // 비인가 접근 시 기본 상태 안내만 반환
-    return NextResponse.json({
-      error: 'UNAUTHORIZED',
-      message: 'CRON_SECRET 또는 올바른 Authorization 헤더가 필요합니다.'
-    }, { status: 401 });
-  }
 
   // 기준 URL (요청 origin 또는 프로덕션 도메인)
   const origin = req.nextUrl.origin || 'https://koreading.vercel.app';
@@ -75,7 +63,7 @@ export async function GET(req: NextRequest) {
   let totalCharacters = 0;
 
   try {
-    articles = await getAllArticles();
+    articles = await publicArticleIndex(true);
 
     for (const article of articles) {
       const reasons: string[] = [];
@@ -196,7 +184,7 @@ export async function GET(req: NextRequest) {
   // ═══════════════════════════════════════════════════
   let sitemapCheck = {
     ok: false,
-    totalIndexedUrls: 0,
+    totalListedUrls: 0,
     dynamicArticleUrls: 0,
     status: 'UNKNOWN' as 'HEALTHY' | 'PARTIAL' | 'FAILED',
     message: ''
@@ -211,7 +199,7 @@ export async function GET(req: NextRequest) {
 
       sitemapCheck = {
         ok: true,
-        totalIndexedUrls: locMatches.length,
+        totalListedUrls: locMatches.length,
         dynamicArticleUrls: readMatches.length,
         status: readMatches.length > 0 ? 'HEALTHY' : 'PARTIAL',
         message: readMatches.length > 0
@@ -221,7 +209,7 @@ export async function GET(req: NextRequest) {
     } else {
       sitemapCheck = {
         ok: false,
-        totalIndexedUrls: 0,
+        totalListedUrls: 0,
         dynamicArticleUrls: 0,
         status: 'FAILED',
         message: `sitemap.xml 응답 실패 (HTTP ${sitemapRes.status})`
@@ -230,7 +218,7 @@ export async function GET(req: NextRequest) {
   } catch (err: any) {
     sitemapCheck = {
       ok: false,
-      totalIndexedUrls: 0,
+      totalListedUrls: 0,
       dynamicArticleUrls: 0,
       status: 'FAILED',
       message: `sitemap.xml 검사 중 예외 발생: ${err?.message || String(err)}`
@@ -245,6 +233,8 @@ export async function GET(req: NextRequest) {
   const maxSafeDailyVisits = Math.floor(freeDailyReads / estimatedReadsPerLibraryVisit);
 
   const quotaReport = {
+    isEstimate: true,
+    note: 'Article-count estimate, not live billing or search index data.',
     totalArticles: articles.length,
     totalCharacters,
     averageLengthChars: averageLength,

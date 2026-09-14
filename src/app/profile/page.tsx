@@ -191,14 +191,7 @@ export default function ProfilePage() {
     }
   };
 
-  // 사용자 세션이 완전히 판별될 때까지 임시 로딩 로직 제공
-  if (!user || !profile) return (
-    <div className="loading-wrapper" style={{ minHeight: '100vh' }}>
-      <div className="loading-spinner" />
-    </div>
-  );
-
-  // 회원 탈퇴 핸들러 (Auth 먼저 삭제 후 DB 문서 삭제)
+  // 학습 데이터 정리 후 Auth 계정을 삭제합니다.
   const handleDeleteAccount = async () => {
     if (!user) return;
     const confirmed = window.confirm('정말로 계정을 탈퇴하시겠습니까? 저장된 모든 학습 데이터가 삭제되며 이 작업은 복구할 수 없습니다.');
@@ -217,6 +210,14 @@ export default function ProfilePage() {
       }
     }
   };
+
+  if (!user || loading) return <div className="loading-wrapper"><div className="loading-spinner" /></div>;
+  if (!profile) return <main className="container" style={{ padding: 40 }}>
+    <h1>프로필을 불러올 수 없습니다</h1>
+    <p>삭제 중 오류가 발생했다면 계정 삭제를 다시 시도할 수 있습니다.</p>
+    <button onClick={handleDeleteAccount}>계정 삭제 다시 시도</button>
+    <Link href="/login">로그인 화면</Link>
+  </main>;
 
   return (
     <div style={{ minHeight: '100vh', padding: '40px 24px' }}>

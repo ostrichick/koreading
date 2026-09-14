@@ -11,8 +11,9 @@ import { useRouter } from 'next/navigation';
 import { useAuth } from '@/contexts/AuthContext';
 import { TOPICS, CEFRLevel, NativeLanguage, generateArticle } from '@/lib/gemini';
 import { GENRE_OPTIONS } from '@/lib/topicSeeds';
-import { getArticlesByLevel, getAllArticles, saveArticle, getReadArticles, createOrUpdateUser, Article } from '@/lib/db';
+import { saveArticle, getReadArticles, createOrUpdateUser, Article } from '@/lib/db';
 import { getGuestLevel, getGuestLang, setGuestLang } from '@/lib/storage';
+import { articleSummary } from '@/lib/learning';
 import AlertModal from '@/components/AlertModal';
 
 // CEFR 기반 레벨 필터 목록
@@ -123,7 +124,7 @@ const TRANSLATIONS = {
 };
 
 export default function LibraryPage() {
-  const { user, profile, refreshProfile } = useAuth();
+  const { user, profile, loading: authLoading, refreshProfile } = useAuth();
   const router = useRouter();
 
   // 도서관 필터링용 상태들
@@ -132,7 +133,11 @@ export default function LibraryPage() {
   const [articles, setArticles] = useState<Article[]>([]);                      // 도서관 기사 리스트
   const [readArticles, setReadArticles] = useState<string[]>([]);              // 유저가 다 읽은 기사 ID 배열
   const [loadingArticles, setLoadingArticles] = useState(false);               // 기사 목록 로딩 토글
-  const articleCacheRef = useRef<Record<string, Article[]>>({});               // 레벨별 아티클 캐시 Ref
+  const articleCacheRef = useRef<Record<string, Article[]>>({});
+  const [nextCursor, setNextCursor] = useState<string | null>(null);
+  const [listError, setListError] = useState('');
+  const requestId = useRef(0);
+  const loadLock = useRef(false);               // 레벨별 아티클 캐시 Ref
   const [generating, setGenerating] = useState(false);                         // AI 기사 생성 대기 토글
   const [genLogs, setGenLogs] = useState<string[]>([]);                        // AI 생성 중 로그 출력 내용
   const [userLevel, setUserLevel] = useState<CEFRLevel | null>(null);          // 로그인 유저의 레벨 정보
@@ -194,7 +199,7 @@ export default function LibraryPage() {
       if (trimmed) {
         localStorage.setItem('koreading_custom_api_key', trimmed);
         setHasApiKey(true);
-        triggerAlert('Gemini API Key가 성공적으로 브라우저 로컬 저장소에 등록되었습니다! 이제 일일 20회 제한 없이 무제한으로 사용하실 수 있습니다.', '등록 완료', 'success');
+        triggerAlert('Gemini API Key가 성공적으로 브라우저 로컬 저장소에 등록되었습니다! 개인 제공사 할당량과 서비스 사용 한도가 적용됩니다.', '등록 완료', 'success');
       } else {
         localStorage.removeItem('koreading_custom_api_key');
         setHasApiKey(false);
@@ -206,11 +211,8 @@ export default function LibraryPage() {
 
   // 유저의 학습 레벨 진단 여부를 확인하고, 이력이 없다면 레벨 테스트(/test) 페이지로 즉시 강제 포워딩합니다.
   useEffect(() => {
-    const level = profile?.level || getGuestLevel();
-    if (!level) {
-      router.push('/test');
-      return;
-    }
+    if (authLoading) return;
+    const level = profile?.level || getGuestLevel() || 'A1';
     setUserLevel(level);
 
     // AI 생성기 팝업 창 내의 기본 레벨/주제 선택 기본값을 복원합니다.
@@ -238,55 +240,46 @@ export default function LibraryPage() {
         setGenTopics([]);
       }
     }
-  }, [profile, router]);
+  }, [profile, router, authLoading]);
 
   // Firestore DB로부터 해당 레벨의 아티클 목록을 쿼리하고 정렬 순서에 맞게 세팅하는 헬퍼 함수
-  const loadArticles = useCallback(async (level: CEFRLevel | 'all', currentSort: 'rating' | 'newest') => {
-    setLoadingArticles(true);
+  const loadArticles = useCallback(async (cursor?: string) => {
+    if (cursor && loadLock.current) return;
+    loadLock.current = true;
+    const id = ++requestId.current;
+    setLoadingArticles(true); setListError('');
     try {
-      let all: Article[] = [];
-      const cacheKey = level;
-      if (articleCacheRef.current[cacheKey]) {
-        all = articleCacheRef.current[cacheKey];
-      } else {
-        if (level === 'all') {
-          all = await getAllArticles();
-        } else {
-          all = await getArticlesByLevel(level);
-        }
-        articleCacheRef.current[cacheKey] = all;
-      }
-
-      // 평점 정렬(별점 동일 시 최신순) 또는 최신 생성 시간 정렬 적용
-      const sorted = [...all];
-      if (currentSort === 'rating') {
-        sorted.sort((a, b) => (b.averageRating || 0) - (a.averageRating || 0) || (b.createdAt?.seconds || 0) - (a.createdAt?.seconds || 0));
-      } else {
-        sorted.sort((a, b) => (b.createdAt?.seconds || 0) - (a.createdAt?.seconds || 0));
-      }
-
-      setArticles(sorted);
-    } catch (err) {
-      console.error(err);
-    } finally {
-      setLoadingArticles(false);
-    }
-  }, []);
-
-  // 레벨 조건 및 정렬 방식 변경 감지 시 도서관 목록 갱신
+      const query = new URLSearchParams({ level: selectedLevel, topic: selectedTopic, sort: sortBy });
+      if (cursor) query.set('cursor', cursor);
+      const response = await fetch(`/api/library?${query}`);
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.error || 'Unable to load library');
+      if (id !== requestId.current) return;
+      setArticles(previous => cursor ? [...previous, ...result.articles.filter((a: Article) => !previous.some(p => p.id === a.id))] : result.articles);
+      setNextCursor(result.cursor);
+    } catch (error) {
+      if (id === requestId.current) setListError(error instanceof Error ? error.message : 'Please retry');
+    } finally { if (id === requestId.current) { setLoadingArticles(false); loadLock.current = false; } }
+  }, [selectedLevel, selectedTopic, sortBy]);
   useEffect(() => {
-    loadArticles(selectedLevel, sortBy);
-  }, [selectedLevel, sortBy, loadArticles]);
+    setArticles([]); setNextCursor(null);
+    void loadArticles();
+    const state = requestId;
+    return () => { state.current++; loadLock.current = false; };
+  }, [loadArticles]);
 
   // 로그인 회원일 경우 읽은 아티클 목록 갱신
   useEffect(() => {
     if (user) {
-      getReadArticles(user.uid).then(setReadArticles);
+      getReadArticles(user.uid).then(setReadArticles).catch(() => setReadArticles([]));
+    } else {
+      setReadArticles([]);
     }
   }, [user]);
 
   // AI 텍스트 생성 버튼 클릭 이벤트 핸들러
   const handleGenerate = async () => {
+    if (generating) return;
     if (genLevels.length === 0) {
       triggerAlert('최소 한 개의 레벨을 선택해 주세요!', '조건 선택', 'warning');
       return;
@@ -322,6 +315,10 @@ export default function LibraryPage() {
         }
       );
       
+      if (!user) {
+        sessionStorage.setItem('koreading_guest_article', JSON.stringify({ ...data, id: 'guest' }));
+        setShowGenModal(false); router.push('/read/guest'); return;
+      }
       try {
         // Firestore 아티클 저장
         const id = await saveArticle(data);
@@ -338,8 +335,8 @@ export default function LibraryPage() {
         setGenLogs([]);
         
         triggerAlert(
-          'ℹ️ Firebase Database 권한 설정(Missing or insufficient permissions)으로 인해 도서관에 저장되지 못했습니다.\n\n걱정 마세요! 생성된 글은 임시 페이지에 로드되므로 지금 바로 읽으실 수 있습니다.\n\n(영구 저장하여 공유하시려면 Google 로그인 후 글을 생성하시거나, Firebase 콘솔의 Firestore 규칙에서 articles 컬렉션의 write 권한을 허용 [allow read, write: if true;]해 주세요!)',
-          '데이터베이스 권한 오류',
+          '글을 도서관에 저장하지 못했습니다. 생성된 글은 이 탭의 임시 읽기 페이지에서 읽을 수 있습니다.',
+          '저장 실패',
           'warning'
         );
         
@@ -359,7 +356,7 @@ export default function LibraryPage() {
 
       let helpfulGuide: string;
       if (isQuotaError) {
-        helpfulGuide = `🚨 [API 쿼터 제한 초과 에러]\n\n현재 서버의 무료 Gemini API 키 할당량이 전부 소진되었습니다.\n\n💡 해결 방법:\n도서관 화면 상단의 [🔑 API Key 설정] 버튼을 눌러 본인의 무료 Gemini API Key를 등록하시면, 즉시 대기 시간 없이 무제한으로 학습 자료를 평생 무료 생성하고 즐기실 수 있습니다!${logBlock}`;
+        helpfulGuide = `🚨 [API 쿼터 제한 초과 에러]\n\n현재 서버의 무료 Gemini API 키 할당량이 전부 소진되었습니다.\n\n💡 해결 방법:\n도서관 화면 상단의 [🔑 API Key 설정] 버튼을 눌러 본인의 무료 Gemini API Key를 등록하시면, 개인 제공사 할당량을 사용할 수 있습니다. 서비스 한도와 제공사 요금은 계속 적용됩니다.${logBlock}`;
       } else if (is503Error) {
         helpfulGuide = `⏳ [서버 과부하 에러]\n\nAI 서버(Groq 3종 + Gemini 5종, 총 8개 모델)를 모두 시도했으나 전부 과부하 상태입니다.\n\n💡 해결 방법:\n• 1~2분 후 다시 시도해 보세요 (일시적 현상)\n• 도서관 상단의 [🔑 API Key 설정]에서 본인의 Gemini API Key를 등록하면 개인 쿼터를 사용하므로 성공률이 크게 높아집니다!${logBlock}`;
       } else {
@@ -660,7 +657,7 @@ export default function LibraryPage() {
                       {topicInfo && <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>{topicInfo.emoji} {topicInfo.label}</span>}
                     </div>
                     <h3 style={{ fontSize: '1rem', fontWeight: 700, marginBottom: '8px', fontFamily: 'Noto Sans KR, sans-serif' }}>{article.title}</h3>
-                    <p style={{ color: 'var(--text-secondary)', fontSize: '0.825rem', lineHeight: 1.6, marginBottom: '16px' }}>{article.summary}</p>
+                    <p style={{ color: 'var(--text-secondary)', fontSize: '0.825rem', lineHeight: 1.6, marginBottom: '16px' }}>{articleSummary(article, currentLang)}</p>
                     
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '0.75rem', color: 'var(--text-muted)', borderTop: '1px solid var(--border-subtle)', paddingTop: '12px', marginTop: 'auto' }}>
                       <div style={{ display: 'flex', gap: '12px' }}>
@@ -669,7 +666,7 @@ export default function LibraryPage() {
                       </div>
                       {article.averageRating ? (
                         <span style={{ color: '#fbbf24', fontWeight: 700 }}>
-                          ★ {article.averageRating}
+                          ★ {article.averageRating.toFixed(1)}
                         </span>
                       ) : (
                         <span style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>평가 없음</span>
@@ -683,6 +680,8 @@ export default function LibraryPage() {
         )}
       </div>
 
+      {listError && <div role="alert"><p>{listError}</p><button onClick={() => loadArticles(nextCursor || undefined)}>Retry</button></div>}
+      {nextCursor && <button className="btn btn-secondary" disabled={loadingArticles} onClick={() => loadArticles(nextCursor)}>{loadingArticles ? 'Loading…' : 'Load more / 더 보기'}</button>}
       {/* 맞춤형 아티클 생성 설정 팝업 모달 */}
       {showGenModal && (
         <div className="word-popup-overlay" onClick={(e) => { if (e.target === e.currentTarget) setShowGenModal(false); }}>
@@ -936,7 +935,7 @@ export default function LibraryPage() {
             </div>
 
             <p style={{ color: 'var(--text-secondary)', fontSize: '0.85rem', marginBottom: '20px', lineHeight: 1.6 }}>
-              무료 쿼터 초과 에러(429)를 우회하여 대기 시간 없이 평생 무제한으로 텍스트를 생성하시려면, 본인의 개인 Gemini API Key를 등록해 주세요. 입력된 키는 본인의 브라우저 로컬 저장소(localStorage)에만 안전하게 보관됩니다.
+              개인 Gemini API Key를 등록하면 해당 키로 Gemini를 호출합니다. 키는 이 브라우저에 저장되며 요청 시 서버와 Google에 전달됩니다. 제공사 요금·할당량과 서비스 사용 한도가 적용됩니다.
             </p>
 
             <div style={{ background: 'rgba(217,119,6,0.06)', border: '1px solid rgba(217,119,6,0.2)', borderRadius: 'var(--radius-md)', padding: '12px 16px', marginBottom: '20px', fontSize: '0.8rem', color: 'var(--text-secondary)', lineHeight: 1.6 }}>

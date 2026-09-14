@@ -1,3 +1,6 @@
+import { writeReview } from './reviewStore';
+import { removeAccount } from './deleteAccount';
+import { auth } from './firebase';
 import {
   doc,
   setDoc,
@@ -11,7 +14,6 @@ import {
   serverTimestamp,
   Timestamp,
   deleteDoc,
-  runTransaction,
 } from 'firebase/firestore';
 import { db } from './firebase';
 import { isAdminEmail } from './adminConfig';
@@ -33,6 +35,8 @@ export interface Article {
   id: string;                  // 아티클 고유 식별 ID
   title: string;               // 아티클 한글 제목
   content: string;             // 아티클 본문 내용
+  summaries?: Partial<Record<NativeLanguage, string>>;
+  summaryLanguage?: NativeLanguage;
   summary: string;             // 아티클 모국어 번역 요약본
   topicCategory: string;       // 아티클의 주제 분류 (예: fairy-tales, history)
   level: CEFRLevel;            // 아티클이 타겟팅하는 한국어 레벨 (CEFR)
@@ -48,6 +52,7 @@ export interface Article {
 
 // 아티클 리뷰 데이터 인터페이스 (각 아티클 하위의 'reviews' 서브컬렉션)
 export interface Review {
+  userId?: string;
   id?: string;                 // 리뷰 식별 ID
   rating: number;              // 평점 (별점 1 ~ 5)
   pros: string;                // 긍정적인 평가 의견
@@ -186,25 +191,8 @@ export async function getVocabulary(uid: string): Promise<VocabularyEntry[]> {
  * 동시에 상위 아티클 문서의 평점(averageRating)과 리뷰 수(ratingCount) 집계 값을 동적으로 산출하여 병합 업데이트합니다.
  */
 export async function saveReview(articleId: string, review: Omit<Review, 'id' | 'createdAt'>) {
-  const reviewsRef = collection(db, 'articles', articleId, 'reviews');
-  await addDoc(reviewsRef, { ...review, createdAt: serverTimestamp() });
-
-  // 트랜잭션으로 상위 아티클 문서의 리뷰 카운트와 평균 별점을 원자적으로 업데이트합니다.
-  const articleRef = doc(db, 'articles', articleId);
-  await runTransaction(db, async (transaction) => {
-    const snap = await transaction.get(articleRef);
-    if (!snap.exists()) return;
-    const articleData = snap.data();
-    const oldCount = articleData.ratingCount || 0;
-    const oldAverage = articleData.averageRating || 0;
-    const newCount = oldCount + 1;
-    const newAverage = (oldAverage * oldCount + review.rating) / newCount;
-
-    transaction.update(articleRef, {
-      ratingCount: newCount,
-      averageRating: Number(newAverage.toFixed(1)),
-    });
-  });
+  if (!auth.currentUser) throw new Error('Please sign in to review');
+  await writeReview(db, auth.currentUser.uid, auth.currentUser.displayName || 'Learner', articleId, review);
 }
 
 /**
@@ -293,12 +281,7 @@ export async function deleteCustomCategory(uid: string, name: string): Promise<v
  * (Auth 삭제 시 재인증(requires-recent-login) 에러가 발생하더라도 Firestore 데이터가 유실되지 않도록 보장)
  */
 export async function deleteUserAccount(user: any): Promise<void> {
-  const uid = user.uid;
-  // 1. Firebase Auth 계정 삭제 (최근 로그인 필요할 수 있음)
-  await user.delete();
-  // 2. Auth 삭제 성공 시 Firestore 유저 프로필 문서 삭제
-  const ref = doc(db, 'users', uid);
-  await deleteDoc(ref);
+  await removeAccount(db, user);
 }
 
 

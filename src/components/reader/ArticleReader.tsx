@@ -1,17 +1,19 @@
 'use client';
 
 /**
- * @file page.tsx (read/guest)
- * @description 비로그인 게스트 사용자가 방금 임시 생성한 맞춤형 한국어 텍스트를 읽고 인터랙티브 사전을 활용하는 '게스트 전용 본문 독해 화면'입니다. 회원이 아니어도 초광속 2단계 점진적 사전 조회(Double-Stage Progressive Lookup), iOS 스타일 마우스 오버 즉시 검색, 다 읽은 후 자동 가입 권유 모달 등을 제공합니다.
- * @why 신규 유저가 복잡한 구글 로그인이나 가입 절차 없이도 코레딩의 초속 독해 및 사전 조회의 매끄러움을 온전히 경험하고 자연스럽게 정식 회원으로 유입되게 돕는 강력한 랜딩 버퍼로 작동하기 위해 존재합니다.
+ * @file page.tsx (read/[id])
+ * @description 로그인 상태의 사용자가 개별 도서관 텍스트를 읽고 인터랙티브 사전을 활용하는 '본문 독해 화면'입니다. 단어 오버/클릭 시 2단계 점진적 사전 조회(Double-Stage Progressive Lookup), iOS 스타일의 마우스 오버 즉시 검색 설정 토글, 다 읽음 체크 및 독자 별점/리뷰(Pros & Cons) 제출 및 실시간 조회 기능을 담고 있습니다.
+ * @why 문맥 기반의 몰입감 넘치는 한국어 학습 경험을 제공하며, 다른 독자들과 평점/코멘트를 적극 공유하여 양질의 독서 커뮤니티 생태계를 조성하기 위해 존재합니다.
  */
 
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/contexts/AuthContext';
+import { getArticleById, markArticleRead, saveVocabulary, getReadArticles, Article, saveReview, getReviews, Review, deleteArticle, getCustomCategories } from '@/lib/db';
 import { TOPICS } from '@/lib/gemini';
-import { getGuestArticle, getGuestLang, getGuestLevel, incrementGuestReadCount } from '@/lib/storage';
-import { saveVocabulary, getCustomCategories } from '@/lib/db';
+import { getGuestLang } from '@/lib/storage';
+import { isAdminEmail } from '@/lib/adminConfig';
+import AlertModal from '@/components/AlertModal';
 import ArticleIllustration from '@/components/ArticleIllustration';
 import { isKoreanWord } from '@/lib/utils';
 import { useWordLookup } from '@/hooks/useWordLookup';
@@ -19,18 +21,24 @@ import ReaderBody from '@/components/reader/ReaderBody';
 import TutorPanel, { type TutorSelection } from '@/components/reader/TutorPanel';
 import { articleSummary } from '@/lib/learning';
 
-// 단어 상세 사전 데이터를 보관할 인터페이스 정의
+// 사전 조회 데이터를 담을 구조 인터페이스
 // 다국어 번역 사전 정의
 const TRANSLATIONS = {
   ko: {
     deleteArticle: '🗑️ 텍스트 삭제 (품질 저하)',
     toLibrary: '← 도서관으로',
-    doneReading: '✅ 다 읽었어요!',
+    markRead: '✅ 읽음으로 표시',
+    markingRead: '저장 중...',
     save: '📚 저장',
-    login: '🔑 로그인',
+    saving: '저장...',
+    saved: '✓ 저장됨',
     details: '🔍 자세히',
     saveToVocab: '📚 단어장에 저장',
-    loginToVocab: '🔑 로그인하여 단어장에 저장',
+    savingToVocab: '저장 중...',
+    savedToVocab: '✓ 단어장에 저장됨',
+    loginToSave: '🔑 로그인하여 단어장에 저장',
+    submitReview: '별점 및 평가 등록하기',
+    submittingReview: '제출 중...',
     tutorTitle: '💬 1:1 AI 튜터',
     tutorPlaceholder: '질문을 입력하세요...',
     tutorIntro: '이 문단에 대해 궁금한 점을 질문해 보세요.',
@@ -42,12 +50,18 @@ const TRANSLATIONS = {
   en: {
     deleteArticle: '🗑️ Delete Text (Low Quality)',
     toLibrary: '← To Library',
-    doneReading: '✅ Done Reading!',
+    markRead: '✅ Mark as Read',
+    markingRead: 'Saving...',
     save: '📚 Save',
-    login: '🔑 Log In',
+    saving: 'Saving...',
+    saved: '✓ Saved',
     details: '🔍 Details',
     saveToVocab: '📚 Save to Vocabulary',
-    loginToVocab: '🔑 Log In to Save',
+    savingToVocab: 'Saving...',
+    savedToVocab: '✓ Saved to Vocabulary',
+    loginToSave: '🔑 Log in to Save',
+    submitReview: 'Submit Rating & Review',
+    submittingReview: 'Submitting...',
     tutorTitle: '💬 1:1 AI Tutor',
     tutorPlaceholder: 'Type your question...',
     tutorIntro: 'Ask any questions about this paragraph.',
@@ -59,29 +73,41 @@ const TRANSLATIONS = {
   es: {
     deleteArticle: '🗑️ Eliminar texto (Baja calidad)',
     toLibrary: '← A la biblioteca',
-    doneReading: '✅ ¡Terminé de leer!',
+    markRead: '✅ Marcar como leído',
+    markingRead: 'Guardando...',
     save: '📚 Guardar',
-    login: '🔑 Iniciar sesión',
+    saving: 'Guardando...',
+    saved: '✓ Guardado',
     details: '🔍 Detalles',
     saveToVocab: '📚 Guardar en vocabulario',
-    loginToVocab: '🔑 Iniciar sesión para guardar',
+    savingToVocab: 'Guardando...',
+    savedToVocab: '✓ Guardado en vocabulario',
+    loginToSave: '🔑 Iniciar sesión para guardar',
+    submitReview: 'Enviar calificación y reseña',
+    submittingReview: 'Enviando...',
     tutorTitle: '💬 Tutor de IA 1:1',
     tutorPlaceholder: 'Escribe tu pregunta...',
     tutorIntro: 'Haz cualquier pregunta sobre este párrafo.',
     qTranslate: 'Traduce este párrafo',
-    qGrammar: 'Explica los puntos gramaticales clave',
+    qGrammar: 'Explica los pontos gramaticales clave',
     qVocab: 'Muestra vocabulario clave y categorías gramaticales',
     qNuance: '¿Cuál es el matiz natural aquí?',
   },
   ja: {
     deleteArticle: '🗑️ テキスト削除 (品質低下)',
     toLibrary: '← 図書館へ',
-    doneReading: '✅ 読み終えました！',
+    markRead: '✅ 既読にする',
+    markingRead: '保存中...',
     save: '📚 保存',
-    login: '🔑 ログイン',
+    saving: '保存中...',
+    saved: '✓ 保存済み',
     details: '🔍 詳細',
     saveToVocab: '📚 単語帳に保存',
-    loginToVocab: '🔑 ログインして保存',
+    savingToVocab: '保存中...',
+    savedToVocab: '✓ 単語帳に保存済み',
+    loginToSave: '🔑 ログインして保存',
+    submitReview: '評価とレビューを登録する',
+    submittingReview: '送信中...',
     tutorTitle: '💬 1:1 AIチューター',
     tutorPlaceholder: '質問を入力してください...',
     tutorIntro: 'この段落について何でも質問してください。',
@@ -93,12 +119,18 @@ const TRANSLATIONS = {
   zh: {
     deleteArticle: '🗑️ 删除文本 (质量低下)',
     toLibrary: '← 返回图书馆',
-    doneReading: '✅ 我读完了！',
+    markRead: '✅ 标记为已读',
+    markingRead: '保存中...',
     save: '📚 保存',
-    login: '🔑 登录',
+    saving: '保存中...',
+    saved: '✓ 已保存',
     details: '🔍 详情',
     saveToVocab: '📚 保存到单词本',
-    loginToVocab: '🔑 登录以保存',
+    savingToVocab: '保存中...',
+    savedToVocab: '✓ 已保存到单词本',
+    loginToSave: '🔑 登录以保存',
+    submitReview: '提交评分与评价',
+    submittingReview: '提交中...',
     tutorTitle: '💬 1:1 AI导师',
     tutorPlaceholder: '输入您的问题...',
     tutorIntro: '请针对该段落提出任何问题。',
@@ -109,31 +141,52 @@ const TRANSLATIONS = {
   }
 };
 
-export default function GuestReadPage() {
-  const { user, profile, signInWithGoogle } = useAuth();
+export default function ArticleReader({ initialArticle }: { initialArticle: Article }) {
+  const id = initialArticle.id;                 // Next.js 동적 라우팅 파라미터 [id] 언팩
+  const { user, profile } = useAuth();        // AuthContext 세션 정보 조회
   const router = useRouter();
   const [guestLanguage, setGuestLanguage] = useState<import('@/lib/gemini').NativeLanguage>('en');
   useEffect(() => setGuestLanguage(getGuestLang()), []);
   const { wordData, loadingWord, loadingAdvanced, lookupError, fetchWordData, clearWord } = useWordLookup(profile?.nativeLanguage || guestLanguage);
 
 
-  const [article, setArticle] = useState<any>(null);                        // 읽고 있는 임시 아티클 객체
-  const [savedWords, setSavedWords] = useState<Set<string>>(new Set());      // 단어장 저장이 완료된 단어들 목록
-  const [showLoginModal, setShowLoginModal] = useState(false);               // 구글 로그인 유도 모달 노출 제어
-  const [readingDone, setReadingDone] = useState(false);                     // 다 읽기 완료 처리 상태
-  const [signingIn, setSigningIn] = useState(false);                         // 소셜 로그인 처리 중 대기 제어
+  const [article, setArticle] = useState<Article | null>(initialArticle);              // 로드된 아티클 상태값
+  const [loading, setLoading] = useState(false);                              // 아티클 로딩 스피너 제어
+  const [savedWords, setSavedWords] = useState<Set<string>>(new Set());      // 단어장에 추가 완료된 한글 단어 뱃지 리스트
+  const [savingWord, setSavingWord] = useState(false);                       // 단어장 Firestore 추가 API 락 제어
+  const [savedToast, setSavedToast] = useState(false);                       // 화면 우측 하단 저장 성공 토스트 활성화 제어
+  const [isRead, setIsRead] = useState(false);                               // 현재 사용자가 이 기사를 읽은 기록이 있는지 판별
+  const [markingRead, setMarkingRead] = useState(false);                     // 완독 체크 중 로딩 상태
+
+  // 마우스 오버 시 즉시 사전을 표출하는 토글을 위한 Refs 및 상태
+  const [hoverLookup, setHoverLookup] = useState(false);
+  const hoverTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
   // [신규 기능] 툴팁 사전 및 독해 뷰어 커스텀 설정 상태 변수들
   const [tooltipPosition, setTooltipPosition] = useState<{ top: number; left: number } | null>(null);
   const [showAdvancedModal, setShowAdvancedModal] = useState<boolean>(false);
   const [fontSize, setFontSize] = useState<string>('normal');
   const [lineHeight, setLineHeight] = useState<number>(2.2);
-  const [readerTheme, setReaderTheme] = useState<string>('dark');
+  const [readerTheme, setReaderTheme] = useState<string>(() => {
+    // SSR 환경 대응을 위한 다크 테마 디폴트 설정
+    return 'dark';
+  });
   const [showSettings, setShowSettings] = useState<boolean>(false);
 
-  // 마우스 오버 즉시 검색 옵션 관련 Ref 및 상태 값
-  const [hoverLookup, setHoverLookup] = useState(false);
-  const hoverTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  // 독자 평가 리뷰 작성 및 렌더링을 위한 상태들
+  const [reviews, setReviews] = useState<Review[]>([]);                      // 기사에 등록된 리뷰 목록
+  const [rating, setRating] = useState<number>(0);                           // 작성 중인 내 별점 (1 ~ 5)
+  const [hoverRating, setHoverRating] = useState<number>(0);                 // 별점 마우스 호버 오버레이 점수
+  const [pros, setPros] = useState('');                                      // 좋았던 점 텍스트
+  const [cons, setCons] = useState('');                                      // 아쉬운 점 텍스트
+  const [submittingReview, setSubmittingReview] = useState(false);           // 리뷰 작성 비동기 락
+  const [hasReviewed, setHasReviewed] = useState(false);                     // 리뷰 작성 성공 뱃지
+
+  // 알림 모달 상태 관리
+  const [alertOpen, setAlertOpen] = useState(false);
+  const [alertTitle, setAlertTitle] = useState('알림');
+  const [alertMsg, setAlertMsg] = useState('');
+  const [alertType, setAlertType] = useState<'info' | 'error' | 'warning' | 'success'>('info');
 
   // [신규 기능] 커스텀 카테고리 상태 및 단어 저장 시 선택된 카테고리
   const [customCategories, setCustomCategories] = useState<string[]>([]);
@@ -217,7 +270,7 @@ export default function GuestReadPage() {
 
     const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
     if (!SpeechRecognition) {
-      alert('이 브라우저는 음성 인식을 지원하지 않습니다. Chrome 또는 Safari 브라우저 사용을 권장합니다.');
+      triggerAlert('이 브라우저는 음성 인식을 지원하지 않습니다. Chrome 또는 Safari 브라우저 사용을 권장합니다.', '지원 불가', 'error');
       return;
     }
 
@@ -242,7 +295,7 @@ export default function GuestReadPage() {
     rec.onerror = (event: any) => {
       console.error('Speech recognition error:', event.error);
       if (event.error !== 'no-speech') {
-        alert(`음성 인식 중 에러가 발생했습니다: ${event.error}`);
+        triggerAlert(`음성 인식 중 에러가 발생했습니다: ${event.error}`, '인식 에러', 'error');
       }
       setRecordingParaIdx(null);
     };
@@ -260,18 +313,15 @@ export default function GuestReadPage() {
     }
   };
 
-  // 로그인 상태 변화 시 커스텀 카테고리 로딩
-  useEffect(() => {
-    if (user) {
-      getCustomCategories(user.uid).then(setCustomCategories);
-    } else {
-      setCustomCategories([]);
-    }
-  }, [user]);
+  const triggerAlert = (message: string, title = '알림', type: 'info' | 'error' | 'warning' | 'success' = 'info') => {
+    setAlertTitle(title);
+    setAlertMsg(message);
+    setAlertType(type);
+    setAlertOpen(true);
+  };
 
-  // 컴포넌트 마운트 시 브라우저 설정 로드 및 세션 기사 읽어오기
+  // 컴포넌트 마운트 및 ID 변경 시 Firestore로부터 아티클 상세 정보, 읽음 여부 및 리뷰 목록들을 일괄 로딩합니다.
   useEffect(() => {
-    // 로컬 스토리지에 저장된 마우스 오버 사전 검색 활성화 선호도 설정 로드
     const savedHover = localStorage.getItem('koreading_hover_lookup') === 'true';
     setHoverLookup(savedHover);
 
@@ -283,11 +333,26 @@ export default function GuestReadPage() {
     const savedTheme = localStorage.getItem('koreading_reader_theme');
     if (savedTheme) setReaderTheme(savedTheme);
 
-    // 게스트가 방금 임시 생성한 세션 상의 기사 로드
-    const a = getGuestArticle();
-    if (!a) { router.push('/library'); return; }
-    setArticle(a);
-    setSelectedSaveCategory('');
+    const load = async () => {
+      const a = initialArticle;
+      if (!a) { router.push('/library'); return; }
+      setArticle(a);
+      setSelectedSaveCategory(''); // 기본값은 미분류('')
+      
+      // 유저가 로그인 상태라면 완독 이력 데이터를 DB에서 로드합니다.
+      if (user) {
+        const readIds = await getReadArticles(user.uid);
+        setIsRead(readIds.includes(id));
+        // Fetch custom categories
+        getCustomCategories(user.uid).then(setCustomCategories);
+      }
+      
+      // 기사별 한줄 평 목록 취득
+      const list = await getReviews(id);
+      setReviews(list);
+      setLoading(false);
+    };
+    load().catch(() => { setLoading(false); });
 
     // 외부 영역 클릭 시 미니 사전 툴팁 닫기
     const handleGlobalClick = (e: MouseEvent) => {
@@ -302,12 +367,11 @@ export default function GuestReadPage() {
     };
     document.addEventListener('click', handleGlobalClick);
 
-    // 타이머 메모리 누수 방지용 언마운트 정리
     return () => {
       if (hoverTimeoutRef.current) clearTimeout(hoverTimeoutRef.current);
       document.removeEventListener('click', handleGlobalClick);
     };
-  }, [router, closePopup]);
+  }, [id, user, router, initialArticle, closePopup]);
 
   // [신규 기능] 독서 뷰어 커스텀 설정 갱신 헬퍼 함수
   const updateFontSize = (size: string) => {
@@ -379,18 +443,17 @@ export default function GuestReadPage() {
   // 팝업 오버레이 닫기
 
 
-  // 단어 저장 버튼 클릭 이벤트
+  // "내 단어장에 저장" 클릭 시 실행 핸들러
   const handleSaveWord = async () => {
-    if (!wordData) return;
-    // 비로그인 상태이므로 단어를 저장할 수 없음을 안내하고 가입 모달 노출
-    if (!user) {
-      clearWord();
-      setShowLoginModal(true);
+    if (!user || !wordData || !article) {
+      triggerAlert('단어를 저장하려면 로그인해야 합니다.', '로그인 필요', 'warning');
+      router.push('/login');
       return;
     }
+    setSavingWord(true);
     try {
       const wordToSave = wordData.dictionaryForm || wordData.word;
-      // 로그인되어 있을 시 Firestore에 단어 저장
+      // DB 유저 하부 서브컬렉션 vocabulary 테이블에 신규 레코드 생성
       await saveVocabulary(user.uid, {
         word: wordToSave,
         pronunciation: wordData.pronunciation,
@@ -399,8 +462,8 @@ export default function GuestReadPage() {
         partOfSpeech: wordData.partOfSpeech,
         examples: wordData.examples || [],
         level: wordData.level,
-        topic: selectedSaveCategory,
-        articleTitle: article?.title || '',
+        topic: selectedSaveCategory || article.topicCategory,
+        articleTitle: article.title,
       });
       setSavedWords(prev => {
         const next = new Set(prev);
@@ -409,48 +472,118 @@ export default function GuestReadPage() {
           next.add(wordData.dictionaryForm);
         }
         return next;
-      });
+      }); // 완료 뱃지 추가
+      setSavedToast(true);
+      setTimeout(() => setSavedToast(false), 2000); // 토스트 피드백 2초 표출
       closePopup();
-    } catch (e) { console.error(e); }
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setSavingWord(false);
+    }
   };
 
-  // 게스트는 관리자가 아니므로 deleteArticle 기능이 없습니다.
-  // 아티클 삭제는 관리자 이메일로 로그인한 사용자만 read/[id]/page.tsx에서 수행할 수 있습니다.
-
-  // '다 읽었어요' 클릭 시 게스트의 읽은 횟수를 1 증가시키고 로그인 유도 모달 토글
-  const handleDoneReading = () => {
-    incrementGuestReadCount();
-    setReadingDone(true);
-    setShowLoginModal(true);
+  // "읽음으로 표시" 핸들러
+  const handleMarkRead = async () => {
+    if (!user) {
+      setIsRead(true);
+      return;
+    }
+    setMarkingRead(true);
+    await markArticleRead(user.uid, id); // Firestore readArticles 컬렉션에 추가
+    setIsRead(true);
+    setMarkingRead(false);
   };
 
-  // 가입 유도 모달 내 구글 로그인 연동 처리
-  const handleGoogleLogin = async () => {
-    setSigningIn(true);
+  // 현재 로그인한 사용자가 관리자인지 여부 (삭제 버튼 표시 제어)
+  const isAdmin = isAdminEmail(user?.email);
+
+  // 품질 저하 시 독서 화면에서 해당 텍스트를 영구 삭제하는 관리자 전용 액션
+  const handleDeleteArticle = async () => {
+    // 1차 가드: 로그인 여부 확인
+    if (!user) {
+      triggerAlert('삭제는 로그인이 필요합니다.', '권한 없음', 'error');
+      return;
+    }
+    // 2차 가드: 관리자 여부 확인
+    if (!isAdmin) {
+      triggerAlert('관리자만 아티클을 삭제할 수 있습니다.', '권한 없음', 'error');
+      return;
+    }
+
+    const confirmDelete = window.confirm(
+      '🚨 [관리자 전용]\n\n이 텍스트의 퀄리티가 너무 낮아 도서관에서 영구 삭제하시겠습니까?\n이 작업은 되돌릴 수 없으며, 모든 독자의 목록에서 완전히 제거됩니다.'
+    );
+    if (!confirmDelete) return;
+
     try {
-      await signInWithGoogle();
-      setShowLoginModal(false);
-      router.push('/library'); // 로그인 완료 시 정식 라이브러리로 이동
-    } catch { setSigningIn(false); }
+      await deleteArticle(id, user.email); // callerEmail 전달 → db.ts에서 관리자 검증
+      triggerAlert('텍스트가 성공적으로 삭제되었습니다. 도서관으로 이동합니다.', '삭제 완료', 'success');
+      setTimeout(() => {
+        router.push('/library');
+      }, 1500);
+    } catch (err: any) {
+      console.error(err);
+      triggerAlert(`삭제 실패: ${err?.message || JSON.stringify(err)}`, '오류', 'error');
+    }
   };
 
-  if (!article) return (
+  // 사용자의 별점 및 코멘트 작성 서브밋 핸들러
+  const handleSubmitReview = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (submittingReview) return;
+    if (!user) { router.push('/login'); return; }
+    if (rating === 0) {
+      triggerAlert('별점을 선택해주세요!', '평가 입력', 'warning');
+      return;
+    }
+    setSubmittingReview(true);
+    try {
+      const name = user?.displayName || '게스트';
+      // Firestore db.ts 내 saveReview 호출하여 리뷰 저장 및 상위 평점 집계 동시 수행
+      await saveReview(id, {
+        rating,
+        pros,
+        cons,
+        userDisplayName: name,
+      });
+      setHasReviewed(true);
+      setPros('');
+      setCons('');
+      setRating(0);
+      
+      // 신규 리뷰 적용을 위해 다시 리스트 갱신
+      const list = await getReviews(id);
+      setReviews(list);
+      
+      // 평점 합계 갱신을 위해 아티클 정보 재로드
+      const updatedArticle = await getArticleById(id);
+      if (updatedArticle) setArticle(updatedArticle);
+    } catch (err) {
+      console.error(err);
+      triggerAlert('리뷰 등록에 실패했습니다. 잠시 후 다시 시도해 주세요.', '리뷰 등록 실패', 'error');
+    } finally {
+      setSubmittingReview(false);
+    }
+  };
+
+  if (loading) return (
     <div className="loading-wrapper" style={{ minHeight: '100vh' }}>
       <div className="loading-spinner" />
+      <span style={{ color: 'var(--text-muted)' }}>텍스트 불러오는 중...</span>
     </div>
   );
 
+  if (!article) return null;
+
   const topicInfo = TOPICS.find(t => t.id === article.topicCategory);
-  const paragraphs = article.content?.split('\n').filter((p: string) => p.trim()) || [];
-  const activeNativeLang = profile?.nativeLanguage || guestLanguage || 'en';
+  const paragraphs = article.content.split('\n').filter(p => p.trim());
+  const activeNativeLang = user ? (profile?.nativeLanguage || 'en') : guestLanguage;
 
   // 사용자의 로그인 여부 및 레벨에 따른 UI 언어 선택
   const getUiLang = (): 'en' | 'es' | 'ja' | 'zh' | 'ko' => {
-    const level = profile?.level || getGuestLevel();
-    if (!user) {
-      if (level && ['C1', 'C2'].includes(level)) return 'ko';
-      return activeNativeLang;
-    }
+    const level = profile?.level;
+    if (!user) return activeNativeLang; // 비로그인은 모국어 설정에 맞게
     if (level && ['C1', 'C2'].includes(level)) {
       return 'ko'; // C1, C2 레벨은 한국어로
     }
@@ -471,7 +604,7 @@ export default function GuestReadPage() {
         transition: 'background-color var(--transition-base), color var(--transition-base)' 
       }}
     >
-      {/* 펄스 애니메이션이 가미된 유려한 사전 조회 스켈레톤용 CSS 스타일 주입 */}
+      {/* 펄스 애니메이션이 동반된 스켈레톤 로딩 스타일 인젝션 */}
       <style>{`
         @keyframes skeleton-pulse {
           0% {
@@ -493,14 +626,14 @@ export default function GuestReadPage() {
       `}</style>
 
       <div className="container" style={{ maxWidth: '760px' }}>
-        {/* 상단 빵부스러기(Breadcrumb) 경로 표시 */}
+        {/* 상단 탐색 네비게이션 빵부스러기 */}
         <div style={{ display: 'flex', gap: '8px', alignItems: 'center', marginBottom: '24px', fontSize: '0.8rem', color: 'var(--text-muted)' }}>
           <a href="/library" style={{ color: 'var(--text-muted)', textDecoration: 'none' }}>📚 도서관</a>
           <span>›</span>
           <span style={{ color: 'var(--text-secondary)' }}>{article.title}</span>
         </div>
 
-        {/* 아티클 메타 정보 영역 (레벨 배지, 토픽, 예측 독해시간, 생성 모델명) */}
+        {/* 아티클 상세 정보 및 타이틀 요약 헤더 */}
         <div style={{ marginBottom: '32px' }}>
           <div style={{ display: 'flex', gap: '8px', alignItems: 'center', marginBottom: '16px', flexWrap: 'wrap' }}>
             <span className={`level-badge level-${article.level}`}>{article.level}</span>
@@ -510,16 +643,30 @@ export default function GuestReadPage() {
               </span>
             )}
             <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>⏱ {article.estimatedMinutes}분</span>
+            {article.averageRating ? (
+              <span style={{ fontSize: '0.75rem', color: '#fbbf24', background: 'rgba(251,191,36,0.1)', padding: '3px 10px', borderRadius: '100px', border: '1px solid rgba(251,191,36,0.3)', fontWeight: 700 }}>
+                ★ {article.averageRating} ({article.ratingCount}개 평가)
+              </span>
+            ) : null}
+            {isRead && (
+              <span style={{ fontSize: '0.75rem', background: 'rgba(16,185,129,0.15)', color: '#10b981', padding: '3px 10px', borderRadius: '100px', border: '1px solid rgba(16,185,129,0.3)' }}>
+                ✓ 읽음
+              </span>
+            )}
             {article.generatorModel && (
-              <span style={{ fontSize: '0.75rem', background: 'rgba(217,119,6,0.1)', color: 'var(--accent-primary)', padding: '3px 10px', borderRadius: '100px', border: '1px solid rgba(217,119,6,0.3)', fontWeight: 600 }}>
+              <span style={{ fontSize: '0.75rem', background: 'rgba(99,102,241,0.1)', color: 'var(--accent-primary)', padding: '3px 10px', borderRadius: '100px', border: '1px solid rgba(99,102,241,0.3)', fontWeight: 600 }}>
                 🤖 {article.generatorModel}
               </span>
             )}
           </div>
+
           <h1 style={{ fontSize: '1.8rem', fontWeight: 900, fontFamily: 'Noto Sans KR, sans-serif', marginBottom: '12px', lineHeight: 1.4 }}>
             {article.title}
           </h1>
-          <p style={{ color: 'var(--text-secondary)', fontSize: '0.875rem', fontStyle: 'italic' }}>{articleSummary(article, profile?.nativeLanguage || guestLanguage)}</p>
+
+          <p style={{ color: 'var(--text-secondary)', fontSize: '0.875rem', fontStyle: 'italic' }}>
+            {articleSummary(article, profile?.nativeLanguage || guestLanguage)}
+          </p>
         </div>
 
         {/* 🎨 1번: 4K 초고화질 실제 한국 현장 사진 (Hero Cover Real Photo) */}
@@ -532,7 +679,7 @@ export default function GuestReadPage() {
           />
         )}
 
-        {/* 유저 인터랙션 제어 바 (마우스 호버 검색 On/Off 토글 지원) */}
+        {/* 설정 변경 제어 영역 (마우스 오버 사전 연동) */}
         <div style={{
           display: 'flex',
           justifyContent: 'space-between',
@@ -584,12 +731,14 @@ export default function GuestReadPage() {
           </div>
         </div>
 
-        {/* AI가 선별한 아티클 핵심 중요 어휘 키 리스트 */}
-        {article.keyVocabulary?.length > 0 && (
+        {/* 지문 주요 단어 리스트업 영역 */}
+        {article.keyVocabulary && article.keyVocabulary.length > 0 && (
           <div className="card" style={{ marginBottom: '32px' }}>
-            <div style={{ fontSize: '0.75rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.1em', color: 'var(--text-muted)', marginBottom: '12px' }}>핵심 어휘</div>
+            <div style={{ fontSize: '0.75rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.1em', color: 'var(--text-muted)', marginBottom: '12px' }}>
+              핵심 어휘
+            </div>
             <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
-              {article.keyVocabulary.map((word: string, i: number) => (
+              {article.keyVocabulary.map((word, i) => (
                 <button
                   key={i}
                   onClick={(e) => handleWordClick(e, word, article.content)}
@@ -605,31 +754,229 @@ export default function GuestReadPage() {
                     fontSize: '0.875rem',
                     cursor: 'pointer',
                     fontFamily: 'Noto Sans KR, sans-serif',
-                    transition: 'all 150ms ease'
+                    transition: 'all 150ms ease',
                   }}
                 >
-                  {word}
+                  {savedWords.has(word) && '✓ '}{word}
                 </button>
               ))}
             </div>
           </div>
         )}
 
-        {/* 독해 지문 본문 카드 (각 한국어 어휘에 인터랙티브 클릭 이벤트 및 바인딩 완료) */}
+        {/* 독해 본문 내용 카드 영역 */}
         {lookupError && <p role="alert">{lookupError}</p>}
         <ReaderBody paragraphs={paragraphs} article={article} fontSize={fontSize} lineHeight={lineHeight} savedWords={savedWords} recordingParaIdx={recordingParaIdx} paraScores={paraScores} onWordClick={handleWordClick} onWordEnter={handleWordMouseEnter} onWordLeave={handleWordMouseLeave} onSpeak={speakText} onTutor={handleOpenTutor} onMic={handleMicClick} />
 
-        {/* 독해 완료 유도 버튼 툴바 영역 */}
-        {!readingDone && (
-          <div style={{ display: 'flex', gap: '12px', justifyContent: 'flex-end', marginBottom: '60px', flexWrap: 'wrap', alignItems: 'center' }}>
-            {/* 게스트는 관리자가 아니디로 삭제 버튼을 표시하지 않습니다 */}
+        {/* 독자 평가 평점 제출 카드 */}
+        <div className="card" style={{ marginBottom: '32px', padding: '32px' }}>
+          <h2 style={{ fontSize: '1.25rem', fontWeight: 800, marginBottom: '20px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+            💬 이 읽기 자료에 평가 남기기
+          </h2>
+          
+          {hasReviewed ? (
+            <div style={{ background: 'rgba(16,185,129,0.08)', border: '1px solid rgba(16,185,129,0.2)', borderRadius: 'var(--radius-md)', padding: '16px', color: '#10b981', fontSize: '0.9rem', marginBottom: '24px', fontWeight: 600, textAlign: 'center' }}>
+              🎉 별점과 코멘트가 성공적으로 등록되었습니다. 감사합니다!
+            </div>
+          ) : (
+            <form onSubmit={handleSubmitReview} style={{ marginBottom: '32px' }}>
+              {/* 별점 선택 라디오형 버튼 */}
+              <div style={{ marginBottom: '20px' }}>
+                <label style={{ display: 'block', fontSize: '0.875rem', fontWeight: 600, color: 'var(--text-secondary)', marginBottom: '8px' }}>
+                  별점을 선택해주세요 (필수)
+                </label>
+                <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                  {[1, 2, 3, 4, 5].map(star => {
+                    const active = star <= (hoverRating || rating);
+                    return (
+                      <button
+                        key={star}
+                        type="button"
+                        onClick={() => setRating(star)}
+                        onMouseEnter={() => setHoverRating(star)}
+                        onMouseLeave={() => setHoverRating(Star => 0)} // 호버 아웃 시 복원
+                        style={{
+                          background: 'none',
+                          border: 'none',
+                          cursor: 'pointer',
+                          fontSize: '2rem',
+                          padding: 0,
+                          color: active ? '#fbbf24' : 'var(--border-medium)',
+                          transition: 'transform 100ms ease, color 150ms ease',
+                          transform: active ? 'scale(1.1)' : 'scale(1)',
+                        }}
+                      >
+                        ★
+                      </button>
+                    );
+                  })}
+                  {rating > 0 && (
+                    <span style={{ fontSize: '0.875rem', color: 'var(--text-muted)', marginLeft: '8px', fontWeight: 600 }}>
+                      {rating}점 / 5점
+                    </span>
+                  )}
+                </div>
+              </div>
 
-            <a href="/library" className="btn btn-ghost">{t.toLibrary}</a>
-            <button id="mark-done-btn" onClick={handleDoneReading} className="btn btn-primary">
-              {t.doneReading}
-            </button>
+              {/* 좋았던 점 서술 영역 */}
+              <div style={{ marginBottom: '16px' }}>
+                <label style={{ display: 'block', fontSize: '0.875rem', fontWeight: 600, color: 'var(--text-secondary)', marginBottom: '8px' }}>
+                  👍 좋았던 점
+                </label>
+                <textarea
+                  value={pros}
+                  onChange={e => setPros(e.target.value)}
+                  placeholder="단어 구성, 흥미로운 주제, 난이도 적절성 등 좋았던 부분을 작성해보세요."
+                  rows={2}
+                  style={{
+                    width: '100%',
+                    padding: '12px',
+                    borderRadius: 'var(--radius-md)',
+                    border: '1px solid var(--border-medium)',
+                    background: 'var(--bg-secondary)',
+                    color: 'var(--text-primary)',
+                    fontFamily: 'inherit',
+                    fontSize: '0.875rem',
+                    resize: 'vertical',
+                    outline: 'none',
+                  }}
+                  onFocus={e => (e.currentTarget.style.borderColor = 'var(--accent-primary)')}
+                  onBlur={e => (e.currentTarget.style.borderColor = 'var(--border-medium)')}
+                />
+              </div>
+
+              {/* 아쉬운 점 서술 영역 */}
+              <div style={{ marginBottom: '24px' }}>
+                <label style={{ display: 'block', fontSize: '0.875rem', fontWeight: 600, color: 'var(--text-secondary)', marginBottom: '8px' }}>
+                  👎 아쉬운 점
+                </label>
+                <textarea
+                  value={cons}
+                  onChange={e => setCons(e.target.value)}
+                  placeholder="번역 개선점, 어려운 단어 분포 등 아쉬웠던 부분을 편하게 알려주세요."
+                  rows={2}
+                  style={{
+                    width: '100%',
+                    padding: '12px',
+                    borderRadius: 'var(--radius-md)',
+                    border: '1px solid var(--border-medium)',
+                    background: 'var(--bg-secondary)',
+                    color: 'var(--text-primary)',
+                    fontFamily: 'inherit',
+                    fontSize: '0.875rem',
+                    resize: 'vertical',
+                    outline: 'none',
+                  }}
+                  onFocus={e => (e.currentTarget.style.borderColor = 'var(--accent-primary)')}
+                  onBlur={e => (e.currentTarget.style.borderColor = 'var(--border-medium)')}
+                />
+              </div>
+
+              <button
+                type="submit"
+                disabled={submittingReview || rating === 0}
+                className="btn btn-primary"
+                style={{ width: '100%', justifyContent: 'center' }}
+              >
+                {submittingReview ? t.submittingReview : t.submitReview}
+              </button>
+            </form>
+          )}
+
+          <hr style={{ border: 'none', borderTop: '1px solid var(--border-subtle)', margin: '32px 0' }} />
+
+          {/* 독자 평가들의 리스트 뷰 영역 */}
+          <div>
+            <h3 style={{ fontSize: '1.05rem', fontWeight: 700, marginBottom: '20px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <span>⭐ 독자 평가 ({reviews.length}개)</span>
+              {article.averageRating ? (
+                <span style={{ color: '#fbbf24', fontSize: '1.1rem', fontWeight: 800 }}>
+                  ★ {article.averageRating} / 5.0
+                </span>
+              ) : (
+                <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>평가 없음</span>
+              )}
+            </h3>
+
+            {reviews.length === 0 ? (
+              <div style={{ textAlign: 'center', padding: '32px 0', color: 'var(--text-muted)', fontSize: '0.875rem' }}>
+                아직 작성된 평가가 없습니다. 첫 번째 평가를 남겨보세요!
+              </div>
+            ) : (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+                {reviews.map(rev => (
+                  <div key={rev.id} style={{ background: 'var(--bg-secondary)', border: '1px solid var(--border-subtle)', borderRadius: 'var(--radius-md)', padding: '16px' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '12px', alignItems: 'center' }}>
+                      <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                        <span style={{ fontSize: '0.85rem', fontWeight: 700 }}>{rev.userDisplayName}</span>
+                        <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>· 독자</span>
+                      </div>
+                      <div style={{ color: '#fbbf24', fontWeight: 700, fontSize: '0.9rem' }}>
+                        {'★'.repeat(rev.rating)}{'☆'.repeat(5 - rev.rating)}
+                      </div>
+                    </div>
+
+                    {rev.pros && (
+                      <div style={{ fontSize: '0.85rem', marginBottom: '8px', lineHeight: 1.5 }}>
+                        <span style={{ color: '#10b981', fontWeight: 700, marginRight: '6px' }}>👍 좋았던 점:</span>
+                        <span style={{ color: 'var(--text-secondary)' }}>{rev.pros}</span>
+                      </div>
+                    )}
+
+                    {rev.cons && (
+                      <div style={{ fontSize: '0.85rem', lineHeight: 1.5 }}>
+                        <span style={{ color: '#fb7185', fontWeight: 700, marginRight: '6px' }}>👎 아쉬운 점:</span>
+                        <span style={{ color: 'var(--text-secondary)' }}>{rev.cons}</span>
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
-        )}
+        </div>
+
+        {/* 독해 완료 처리 버튼 바 */}
+        <div style={{ display: 'flex', gap: '12px', justifyContent: 'flex-end', marginBottom: '60px', flexWrap: 'wrap', alignItems: 'center' }}>
+          {/* [관리자 전용] 품질 저하 아티클 영구 삭제 버튼 — 관리자 이메일로 로그인 시에만 표시됨 */}
+          {isAdmin && (
+            <button
+              onClick={handleDeleteArticle}
+              style={{
+                background: 'rgba(239,68,68,0.1)',
+                color: '#ef4444',
+                border: '1px solid rgba(239,68,68,0.3)',
+                borderRadius: '100px',
+                padding: '8px 20px',
+                fontSize: '0.85rem',
+                fontWeight: 700,
+                cursor: 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '6px',
+                transition: 'all 150ms ease',
+                fontFamily: 'inherit',
+                marginRight: 'auto',
+              }}
+              onMouseEnter={e => e.currentTarget.style.background = 'rgba(239,68,68,0.15)'}
+              onMouseLeave={e => e.currentTarget.style.background = 'rgba(239,68,68,0.1)'}
+            >
+              {t.deleteArticle}
+            </button>
+          )}
+
+          <a href="/library" className="btn btn-ghost">{t.toLibrary}</a>
+          {!isRead && (
+            <button
+              id="mark-read-btn"
+              onClick={handleMarkRead}
+              disabled={markingRead}
+              className="btn btn-primary"
+            >
+              {markingRead ? t.markingRead : t.markRead}
+            </button>
+          )}
+        </div>
       </div>
 
       {/* 💬 미니 플로팅 툴팁 사전 */}
@@ -670,7 +1017,7 @@ export default function GuestReadPage() {
                 </div>
               </div>
               
-              <div style={{ fontSize: '0.75rem', color: 'var(--accent-primary)', fontWeight: 600, marginBottom: '6px' }}>
+              <div style={{ fontSize: '0.7rem', color: 'var(--accent-primary)', fontWeight: 600, marginBottom: '6px' }}>
                 {wordData.partOfSpeech} | CEFR {wordData.level}
               </div>
               
@@ -706,7 +1053,7 @@ export default function GuestReadPage() {
               <div style={{ display: 'flex', gap: '6px', marginTop: '10px' }}>
                 <button
                   onClick={handleSaveWord}
-                  disabled={savedWords.has(wordData.word)}
+                  disabled={savingWord || savedWords.has(wordData.word)}
                   style={{
                     flex: 1,
                     fontSize: '0.7rem',
@@ -721,7 +1068,7 @@ export default function GuestReadPage() {
                     fontFamily: 'inherit',
                   }}
                 >
-                  {user ? (savedWords.has(wordData.word) ? '✓ 저장됨' : t.save) : t.login}
+                  {savingWord ? t.saving : savedWords.has(wordData.word) ? t.saved : t.save}
                 </button>
                 <button
                   onClick={() => setShowAdvancedModal(true)}
@@ -750,6 +1097,7 @@ export default function GuestReadPage() {
       {showAdvancedModal && wordData && (
         <div className="word-popup-overlay" onClick={(e) => { if (e.target === e.currentTarget) closePopup(); }}>
           <div className="word-popup" style={{ minHeight: '380px', display: 'flex', flexDirection: 'column' }}>
+            {/* AI 데이터 바인딩 표출 */}
             <>
               <div className="word-popup-header">
                 <div>
@@ -777,14 +1125,14 @@ export default function GuestReadPage() {
 
               <span className="word-popup-pos">{wordData.partOfSpeech}</span>
 
-              {/* 2단계 백그라운드 Advanced 분석 호출 대기 중에는 미세 실선 박스로 안내 처리 */}
+              {/* 2단계 백그라운드 Advanced 분석 호출 대기 상태 대응 */}
               {loadingAdvanced && !wordData.structure ? (
-                <div style={{ marginBottom: '20px', background: 'rgba(217,119,6,0.04)', borderRadius: 'var(--radius-sm)', padding: '12px 16px', border: '1px dotted var(--border-subtle)' }}>
+                <div style={{ marginBottom: '20px', background: 'rgba(99,102,241,0.02)', borderRadius: 'var(--radius-sm)', padding: '12px 16px', border: '1px dotted var(--border-subtle)' }}>
                   <div className="skeleton" style={{ width: '45%', height: '12px', marginBottom: '10px', borderRadius: '4px' }} />
                   <div className="skeleton" style={{ width: '85%', height: '16px', borderRadius: '4px' }} />
                 </div>
               ) : wordData.structure ? (
-                <div className="word-popup-section" style={{ background: 'rgba(217,119,6,0.06)', borderRadius: 'var(--radius-sm)', padding: '12px 16px', border: '1px solid rgba(217,119,6,0.15)', marginBottom: '20px' }}>
+                <div className="word-popup-section" style={{ background: 'rgba(99,102,241,0.05)', borderRadius: 'var(--radius-sm)', padding: '12px 16px', border: '1px solid rgba(99,102,241,0.1)', marginBottom: '20px' }}>
                   <div className="word-popup-section-title" style={{ color: 'var(--accent-primary)', display: 'flex', alignItems: 'center', gap: '6px', fontWeight: 700 }}>
                     🧱 단어 구조 분석 (Word Structure)
                   </div>
@@ -806,7 +1154,7 @@ export default function GuestReadPage() {
                 <div className="word-popup-translation">{wordData.translation}</div>
               </div>
 
-              {/* 2단계 예문 로딩 상태 및 실데이터 렌더링 */}
+              {/* 2단계 예문 데이터 점진 바인딩 */}
               {loadingAdvanced && !wordData.examples ? (
                 <div style={{ marginBottom: '20px', background: 'var(--bg-secondary)', borderRadius: 'var(--radius-sm)', padding: '16px', border: '1px dotted var(--border-subtle)' }}>
                   <div className="skeleton" style={{ width: '25%', height: '12px', marginBottom: '12px', borderRadius: '4px' }} />
@@ -856,64 +1204,23 @@ export default function GuestReadPage() {
                 </div>
               )}
 
-              {/* 단어 저장 단추 */}
-              <button className="word-popup-save-btn" onClick={handleSaveWord}>
-                {user ? (savedWords.has(wordData.word) ? '✓ 단어장에 저장됨' : t.saveToVocab) : t.loginToVocab}
+              {/* 단어장에 저장 단추 */}
+              <button
+                className="word-popup-save-btn"
+                onClick={handleSaveWord}
+                disabled={savingWord || savedWords.has(wordData.word)}
+              >
+                {savingWord ? t.savingToVocab : savedWords.has(wordData.word) ? t.savedToVocab : t.saveToVocab}
               </button>
             </>
           </div>
         </div>
       )}
 
-      {/* 비회원용 구글 계정 로그인 유도 모달 */}
-      {showLoginModal && (
-        <div className="word-popup-overlay" onClick={e => { if (e.target === e.currentTarget && !readingDone) setShowLoginModal(false); }}>
-          <div className="word-popup" style={{ maxWidth: '460px', textAlign: 'center' }}>
-            <div style={{ fontSize: '3.5rem', marginBottom: '16px' }}>🎉</div>
-            {readingDone ? (
-              <>
-                <h2 style={{ fontSize: '1.4rem', fontWeight: 900, marginBottom: '12px' }}>첫 번째 읽기 완료!</h2>
-                <p style={{ color: 'var(--text-secondary)', fontSize: '0.9rem', lineHeight: 1.7, marginBottom: '28px' }}>
-                  정말 잘 하셨어요!<br />
-                  로그인하면 <strong style={{ color: 'var(--text-primary)' }}>학습 진도, 단어장, 읽기 기록</strong>을<br />
-                  저장하고 언제든 이어서 공부할 수 있어요.
-                </p>
-              </>
-            ) : (
-              <>
-                <h2 style={{ fontSize: '1.4rem', fontWeight: 900, marginBottom: '12px' }}>단어장에 저장하려면 로그인이 필요해요</h2>
-                <p style={{ color: 'var(--text-secondary)', fontSize: '0.9rem', lineHeight: 1.7, marginBottom: '28px' }}>
-                  Google 계정으로 로그인하면<br />
-                  단어장, 학습 진도를 모두 저장할 수 있어요.
-                </p>
-              </>
-            )}
-
-            {/* 로그인 실행 버튼 (E2E 테스트 구동용 login-from-reading-btn ID 탑재) */}
-            <button
-              id="login-from-reading-btn"
-              onClick={handleGoogleLogin}
-              disabled={signingIn}
-              className="btn btn-google"
-              style={{ width: '100%', justifyContent: 'center', marginBottom: '12px' }}
-            >
-              <svg width="20" height="20" viewBox="0 0 24 24">
-                <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/>
-                <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/>
-                <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z"/>
-                <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"/>
-              </svg>
-              {signingIn ? '로그인 중...' : 'Google로 로그인하기'}
-            </button>
-
-            <button
-              onClick={() => { setShowLoginModal(false); if (readingDone) router.push('/library'); }}
-              className="btn btn-ghost"
-              style={{ width: '100%', justifyContent: 'center' }}
-            >
-              {readingDone ? '로그인 없이 계속 읽기' : '나중에 하기'}
-            </button>
-          </div>
+      {/* 저장 완료 미니 토스트 알림 */}
+      {savedToast && (
+        <div className="toast toast-success">
+          ✓ 단어장에 저장되었습니다!
         </div>
       )}
 

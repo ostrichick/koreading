@@ -1,8 +1,9 @@
 'use client';
+import { recommendLevel } from '@/lib/learning';
 
 /**
  * @file page.tsx (test)
- * @description 신규 및 게스트 학습자의 한국어 독해 레벨을 진단하는 '인터랙티브 레벨테스트(Placement Test) 화면'입니다. 모국어를 설정한 후 단계를 밟아가며, 문제 오답률이 50%를 넘을 시 하위 레벨에서 즉각 조기 종료(Early Termination)되어 최종 추천 레벨을 진단 및 회원 프로필에 매핑합니다.
+ * @description 신규 및 게스트 학습자의 한국어 독해 레벨을 진단하는 '인터랙티브 레벨테스트(Placement Test) 화면'입니다. 모국어를 설정한 후 단계를 밟아가며, 해당 단계에서 오답이 발생하면 하위 레벨에서 즉각 조기 종료(Early Termination)되어 최종 추천 레벨을 진단 및 회원 프로필에 매핑합니다.
  * @why 학습자가 자신의 실제 실력에 맞지 않는 너무 쉽거나 어려운 텍스트로 인해 흥미를 잃지 않도록, 과학적인 독해력 측정 기준을 통해 맞춤형 레벨(A1~C2)의 시작점을 최단 시간에 지능적으로 제공하기 위해 존재합니다.
  */
 
@@ -72,7 +73,8 @@ export default function TestPage() {
     setGuestLang(nativeLang); // 게스트 모국어 설정 반영
     setStep('loading');       // 로딩 화면 전환
     try {
-      const data = await generatePlacementTest();
+      const data = await generatePlacementTest(nativeLang);
+      setCurrentLevelIdx(0); setCurrentQIdx(0); setAnswers({}); setSelectedAnswer(null);
       setTestData(data);
       setStep('testing');      // 테스트 문제 화면 전환
     } catch (err: any) {
@@ -108,12 +110,12 @@ export default function TestPage() {
         // 아직 현재 지문에 질문이 남아있다면 다음 질문으로 진행
         setCurrentQIdx(prev => prev + 1);
       } else {
-        // 현재 레벨의 모든 질문을 푼 경우, 통과 여부 검사 (해당 레벨 정답률 >= 50%)
+        // 현재 레벨의 모든 질문을 푼 경우, 통과 여부 검사 (해당 레벨 두 문항 모두 정답)
         const currentLevelAnswers = newAnswers[level.level] || [];
         const score = currentLevelAnswers.reduce((a, b) => a + b, 0) / (currentLevelAnswers.length || 1);
 
-        if (score < 0.5) {
-          // [조기 종료 규칙] 만약 이번 레벨 통과 점수가 50% 미만이라면 즉각 테스트를 중지하고 결과를 매깁니다.
+        if (score < 1) {
+          // [조기 종료 규칙] 만약 이번 레벨에 오답이 있다면 즉각 테스트를 중지하고 결과를 매깁니다.
           const result = calculateLevel(newAnswers);
           setResultLevel(result);
           setStep('done');
@@ -133,33 +135,22 @@ export default function TestPage() {
 
   // 통과한 정답률 점수 기록들을 분석하여, 합격 기준을 충족한 가장 최상위의 한국어 레벨을 산출합니다.
   const calculateLevel = (allAnswers: Record<string, number[]>): Level => {
-    const levels: Level[] = ['A1', 'A2', 'B1', 'B2', 'C1', 'C2'];
-    let lastPassed = 0;
-    for (let i = 0; i < levels.length - 1; i++) {
-      const ans = allAnswers[levels[i]] || [];
-      const score = ans.reduce((a, b) => a + b, 0) / (ans.length || 1);
-      if (score >= 0.5) lastPassed = i + 1; // 50% 이상 맞췄다면 해당 레벨을 통과한 것으로 처리
-    }
-    return levels[Math.min(lastPassed, levels.length - 1)];
+    return recommendLevel(allAnswers);
   };
 
   // 진단받은 결과를 영구 저장하고 도서관으로 넘어갑니다.
   const saveAndContinue = async () => {
     if (!resultLevel) return;
     setSaving(true);
-    // 게스트용 로컬 스토리지에 레벨 및 모국어 기록
-    setGuestLevel(resultLevel);
-    setGuestLang(nativeLang);
-    // 로그인된 정식 회원인 경우 Firestore의 사용자 문서 프로필 레벨 컬럼도 동시에 업데이트
-    if (user) {
-      await createOrUpdateUser(user.uid, { level: resultLevel, nativeLanguage: nativeLang });
-      await refreshProfile();
-    }
-    setSaving(false);
-    router.push('/library');
+    try {
+      if (user) { await createOrUpdateUser(user.uid, { level: resultLevel, nativeLanguage: nativeLang }); await refreshProfile(); }
+      setGuestLevel(resultLevel); setGuestLang(nativeLang); router.push('/library');
+    } catch { triggerAlert('저장에 실패했습니다. 다시 시도해 주세요.', '저장 실패', 'error'); }
+    finally { setSaving(false); }
+
   };
 
-  const totalLevels = testData?.levels.length || 5;
+  const totalLevels = testData?.levels.length || 6;
   const progress = testData ? ((currentLevelIdx * 2 + currentQIdx) / (totalLevels * 2)) * 100 : 0;
   const currentLevel = getCurrentLevel();
 
@@ -244,7 +235,7 @@ export default function TestPage() {
       <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '40px 24px' }}>
         <div style={{ maxWidth: '500px', width: '100%', textAlign: 'center' }}>
           <div style={{ fontSize: '5rem', marginBottom: '24px' }}>🎉</div>
-          <h1 style={{ fontSize: '2rem', fontWeight: 900, marginBottom: '16px' }}>테스트 완료!</h1>
+          <h1 style={{ fontSize: '2rem', fontWeight: 900, marginBottom: '16px' }}>시작 난이도 추천 완료!</h1>
           <p style={{ color: 'var(--text-secondary)', marginBottom: '24px' }}>당신의 한국어 읽기 레벨은:</p>
           <div style={{ fontSize: '5rem', fontWeight: 900, color: LEVEL_COLORS[resultLevel], marginBottom: '8px' }}>
             {resultLevel}

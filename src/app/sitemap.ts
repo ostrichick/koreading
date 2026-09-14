@@ -7,7 +7,8 @@
  */
 
 import { MetadataRoute } from 'next';
-import { getAllArticles } from '@/lib/db';
+import { publicArticleIndex } from '@/lib/server/publicArticles';
+export const revalidate = 3600;
 
 const BASE_URL = 'https://koreading.vercel.app';
 
@@ -60,7 +61,7 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
 
   // 2. Firestore DB에서 모든 공개 독해 아티클을 쿼리하여 동적 URL 등록
   try {
-    const articles = await getAllArticles();
+    const articles = await publicArticleIndex();
     const articleRoutes: MetadataRoute.Sitemap = articles.map(article => ({
       url: `${BASE_URL}/read/${article.id}`,
       lastModified: article.createdAt?.seconds 

@@ -1,3 +1,5 @@
+> 2026-09-14 복구 및 검증 최신 상태: [IMPLEMENTATION.md](./IMPLEMENTATION.md). 아래 기존 기록보다 이 검증 기록을 우선합니다.
+
 # Koreading — AI Handover & Project Master Context
 > **문서 목적**: 이 파일은 ChatGPT, Claude, Cursor 등 다른 AI 모델이나 새로운 개발자가 이 프로젝트의 전체 맥락, 아키텍처, 비즈니스 로직, 작업 히스토리를 한 번에 이해하고 바로 이어서 개발할 수 있도록 작성된 종합 인수인계 문서입니다.
 

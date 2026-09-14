@@ -1,3 +1,5 @@
+> 2026-09-14 복구 및 검증 최신 상태: [IMPLEMENTATION.md](./IMPLEMENTATION.md). 아래 기존 기록보다 이 검증 기록을 우선합니다.
+
 # Koreading - Project Metadata Guide
 
 이 파일은 **코레딩(Koreading)** 프로젝트의 전체 디렉터리 구조와 각 파일의 역할 및 기능을 한국어로 설명해 주는 메타 문서입니다.

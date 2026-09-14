@@ -36,7 +36,7 @@ export const TOPICS = [
  * AI API(/api/ai)로 POST 요청을 보내는 공통 헬퍼 함수입니다.
  * 만약 사용자가 커스텀 API Key를 브라우저에 등록했다면 이를 함께 전송하여 개인 할당량을 사용합니다.
  */
-async function callAI(body: object) {
+export async function callAI(body: object) {
   let customApiKey = '';
   if (typeof window !== 'undefined') {
     customApiKey = localStorage.getItem('koreading_custom_api_key') || '';
@@ -163,9 +163,9 @@ export async function lookupWordAll(word: string, sentence: string, nativeLang: 
 }
 
 /**
- * 신규 사용자를 위한 10문항 한국어 레벨 테스트(Placement Test) 문제집을 생성합니다.
+ * 신규 사용자를 위한 6단계 각 2문항 한국어 레벨 테스트(Placement Test) 문제집을 생성합니다.
  */
-export async function generatePlacementTest() {
-  return callAI({ action: 'generateTest' });
+export async function generatePlacementTest(nativeLang: NativeLanguage = 'en') {
+  return callAI({ action: 'generateTest', nativeLang });
 }
 
