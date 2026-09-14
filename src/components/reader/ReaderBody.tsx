@@ -2,11 +2,12 @@
 import { Fragment, type MouseEvent } from 'react';
 import { tokenizeKorean, isKoreanWord } from '@/lib/utils';
 import ArticleIllustration from '@/components/ArticleIllustration';
+import KakaoChatView from '@/components/reader/KakaoChatView';
 
 type WordHandler = (event: MouseEvent, word: string, context: string) => void;
 interface Props {
   paragraphs: string[];
-  article: { title: string; imageUrls?: string[] };
+  article: { title: string; genre?: string; imageUrls?: string[] };
   fontSize: string; lineHeight: number; savedWords: Set<string>;
   recordingParaIdx: number | null;
   paraScores: Record<number, { score: number; text: string }>;
@@ -16,6 +17,30 @@ interface Props {
   onMic: (index: number, text: string) => void;
 }
 export default function ReaderBody(p: Props) {
+  // 카톡 단톡방 장르이거나, 화자 대화 패턴([이름]: ...)이 다수 감지될 경우 카톡 비주얼 UI로 전환 (대안 2)
+  const isChatStyle =
+    p.article.genre === 'kakaotalk' ||
+    p.paragraphs.filter(line => /^\[[^\]]+\]/.test(line.trim()) || /^[가-힣A-Za-z0-9_]{1,6}:/.test(line.trim())).length >= Math.max(2, Math.floor(p.paragraphs.length * 0.4));
+
+  if (isChatStyle) {
+    return (
+      <KakaoChatView
+        paragraphs={p.paragraphs}
+        fontSize={p.fontSize}
+        lineHeight={p.lineHeight}
+        savedWords={p.savedWords}
+        onWordClick={p.onWordClick}
+        onWordEnter={p.onWordEnter}
+        onWordLeave={p.onWordLeave}
+        onSpeak={p.onSpeak}
+        onTutor={p.onTutor}
+        onMic={p.onMic}
+        recordingParaIdx={p.recordingParaIdx}
+        paraScores={p.paraScores}
+      />
+    );
+  }
+
   return <div className="card" style={{ padding: 'clamp(16px, 4vw, 36px)', marginBottom: 32 }}>
     {p.paragraphs.map((paragraph, index) => <Fragment key={index}>
       <div style={{ display: 'flex', alignItems: 'flex-start', gap: 8, marginBottom: 20 }}>
