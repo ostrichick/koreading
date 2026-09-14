@@ -4,6 +4,8 @@ export const levels = ['A1', 'A2', 'B1', 'B2', 'C1', 'C2'] as const;
 export const languages = ['en', 'es', 'ja', 'zh'] as const;
 export const topics = ['fairy-tales', 'daily-life', 'culture', 'nature-travel', 'k-content', 'news', 'food', 'history'] as const;
 const text = (max: number) => z.string().trim().min(1).max(max);
+// 한자(漢字) 및 중국어 간체자/번체자 유입 원천 차단 검증기
+const noChinese = (str: string) => !/[\u4E00-\u9FFF\u3400-\u4DBF\uF900-\uFAFF]/.test(str);
 const common = { customApiKey: z.string().trim().max(256).optional(), nativeLang: z.enum(languages).default('en') };
 export const aiRequestSchema = z.discriminatedUnion('action', [
   z.object({ ...common, action: z.literal('generateArticle'), level: z.enum(levels), topic: z.enum(topics), customKeyword: z.string().max(100).optional(), genre: z.enum(['random', 'essay', 'dialogue', 'column', 'story', 'kakaotalk', 'mystery', 'review']).default('random'), recentTitles: z.array(text(200)).max(10).default([]) }),
@@ -12,11 +14,13 @@ export const aiRequestSchema = z.discriminatedUnion('action', [
   z.object({ ...common, action: z.literal('tutorChat'), level: z.enum(levels), paragraph: text(5000), userMessage: text(1000), chatHistory: z.array(z.object({ role: z.enum(['user', 'model']), parts: z.array(z.object({ text: text(2500) })).length(1) })).max(20).default([]) }),
 ]);
 export const articleSchema = z.object({
-  title: text(200), content: text(10000).refine(v => v.trim().length >= 80, "Article too short"), summary: text(1000),
+  title: text(200).refine(noChinese, "Title contains Chinese characters"),
+  content: text(10000).refine(v => v.trim().length >= 80, "Article too short").refine(noChinese, "Content contains Chinese characters"),
+  summary: text(1000),
   summaries: z.object({ en: text(1000), es: text(1000), ja: text(1000), zh: text(1000) }).optional(),
   summaryLanguage: z.enum(languages).optional(), topicCategory: z.enum(topics), level: z.enum(levels),
   estimatedMinutes: z.number().int().min(1).max(60), keyVocabulary: z.array(text(50)).min(1).max(10),
-  hookQuote: text(500).optional(),
+  hookQuote: text(500).refine(noChinese, "Hook quote contains Chinese characters").optional(),
   discussionPrompt: text(1000).optional(),
   genre: text(100).optional(),
   imagePrompts: z.array(text(2000)).max(2).optional(),
@@ -25,8 +29,8 @@ export const articleSchema = z.object({
   generatorModel: z.string().max(100).optional(),
 });
 export const reviewSchema = z.object({ articleId: text(128).regex(/^[\w-]+$/), rating: z.number().int().min(1).max(5), pros: z.string().trim().max(2000), cons: z.string().trim().max(2000) });
-export const basicWordSchema = z.object({ word: text(50), dictionaryForm: text(50), pronunciation: text(200), partOfSpeech: text(100), definition: text(1500), translation: text(1000), level: z.enum(levels) });
-export const advancedWordSchema = z.object({ structure: text(2500), examples: z.array(z.object({ korean: text(1000), translation: text(1000) })).min(1).max(3) });
+export const basicWordSchema = z.object({ word: text(50), dictionaryForm: text(50).refine(noChinese, "dictionaryForm contains Chinese"), pronunciation: text(200), partOfSpeech: text(100), definition: text(1500).refine(noChinese, "definition contains Chinese"), translation: text(1000), level: z.enum(levels) });
+export const advancedWordSchema = z.object({ structure: text(2500).refine(noChinese, "structure contains Chinese"), examples: z.array(z.object({ korean: text(1000).refine(noChinese, "example contains Chinese"), translation: text(1000) })).min(1).max(3) });
 export const placementSchema = z.object({ levels: z.array(z.object({ level: z.enum(levels), text: text(2000), questions: z.array(z.object({ question: text(1000), options: z.array(text(500)).length(4), correct: z.number().int().min(0).max(3) })).length(2) })).length(6) }).refine(data => data.levels.every((l, i) => l.level === levels[i]), 'Levels must be ordered A1 through C2');
 export function parseModelJson(value: string) {
   return JSON.parse(value.trim().replace(/^```(?:json)?\s*/, '').replace(/\s*```$/, ''));

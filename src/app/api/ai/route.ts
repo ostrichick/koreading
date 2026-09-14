@@ -242,17 +242,49 @@ ${pedagogicalGuide}
       let resultText: string | null = null;
       let modelUsed = '';
 
-      // ── (1단계) Groq 다중 모델 시도 ──
-      // Google API 서버와 완전 별도 인프라이므로, 구글 측 429나 503 에러 발생 시 최상의 즉시 대체 경로입니다.
-      if (process.env.GROQ_API_KEY && !customApiKey) {
+      // ── (1단계) Google Gemini 최신 고성능 모델군 우선 가동 (한국어 어문 규범 최상위) ──
+      // Gemini는 국립국어원 규범 및 순수 한글 서사에 압도적으로 뛰어나며 한자/중국어 혼입이 없습니다.
+      const geminiChain = [
+        { model: model25, name: 'Gemini 2.5 Flash' },
+        { model: model35lite, name: 'Gemini 3.5 Flash Lite' },
+        { model: modelFlashLiteLatest, name: 'Gemini Flash Lite Latest' },
+        { model: model35, name: 'Gemini 3.5 Flash' },
+      ];
+      
+      for (const { model: m, name } of geminiChain) {
+        if (resultText) break;
+        logs.push(`🔄 ${name} 모델로 생성 시도 중...`);
+        try {
+          const r = await m.generateContent({
+            contents: [{ role: 'user', parts: [{ text: prompt }] }],
+            generationConfig: genConfig
+          });
+          const parsedCandidate = parseModelJson(r.response.text());
+          articleSchema.parse(parsedCandidate); // 100% 한글 검증 (한자/중국어 유입 시 거부)
+          resultText = r.response.text();
+          modelUsed = name;
+          logs.push(`✅ ${name} 모델로 순수 한글 생성 성공!`);
+        } catch (err: any) {
+          const msg = err?.message || String(err);
+          if (isRetryableError(msg)) {
+            logs.push(`⏳ ${name} 서버 과부하 (503/429). 다음 모델로 전환...`);
+            await sleep(500);
+          } else {
+            logs.push(`⚠️ ${name} 검증 거부 또는 오류: ${msg.substring(0, 60)}`);
+          }
+        }
+      }
+
+      // ── (2단계) 비상 폴백: Groq 글로벌 모델 (Qwen 등 중국계 모델 제외) ──
+      // 구글 서버 일시 장애 시 가동하며, 한자 유출 위험이 있는 Qwen은 배제하고 순수 한글 스키마를 엄격히 검증합니다.
+      if (!resultText && process.env.GROQ_API_KEY && !customApiKey) {
         const groqModels = [
-          { id: 'qwen/qwen3.8-27b', name: 'Groq Qwen 3.8 27B' },
           { id: 'openai/gpt-oss-120b', name: 'Groq GPT-OSS 120B' },
         ];
         
         for (const gm of groqModels) {
           if (resultText) break;
-          logs.push(`⚡ ${gm.name} 모델에 연결 중...`);
+          logs.push(`⚡ ${gm.name} 비상망 연결 중...`);
           try {
             const controller = new AbortController();
             const timeoutId = setTimeout(() => controller.abort(), 5000);
@@ -277,50 +309,16 @@ ${pedagogicalGuide}
             
             if (res.ok) {
               const data = await res.json();
-              articleSchema.parse(parseModelJson(data.choices[0].message.content));
+              const parsedCandidate = parseModelJson(data.choices[0].message.content);
+              articleSchema.parse(parsedCandidate); // 100% 한글 검증 (한자 포함 시 거부)
               resultText = data.choices[0].message.content;
               modelUsed = gm.name;
               logs.push(`✅ ${gm.name} 모델로 생성 성공!`);
             } else {
-              const errText = 'Provider response error';
-              logs.push(`⚠️ ${gm.name} 상태 (HTTP ${res.status}): ${errText}`);
+              logs.push(`⚠️ ${gm.name} 상태 (HTTP ${res.status})`);
             }
           } catch (e: any) {
-            logs.push(`⚠️ ${gm.name} 전환: Request failed`);
-          }
-        }
-      }
-
-      // ── (2단계) Gemini 5종 순차 폴백 체인 시도 ──
-      // Groq가 없거나 모두 연결 실패 시 작동하며, 최신 활성 Gemini 모델들로 순차 전환합니다.
-      if (!resultText) {
-        const geminiChain = [
-          { model: model25, name: 'Gemini 2.5 Flash' },
-          { model: model35lite, name: 'Gemini 3.5 Flash Lite' },
-          { model: modelFlashLiteLatest, name: 'Gemini Flash Lite Latest' },
-          { model: model35, name: 'Gemini 3.5 Flash' },
-        ];
-        
-        for (const { model: m, name } of geminiChain) {
-          if (resultText) break;
-          logs.push(`🔄 ${name} 모델로 생성 시도 중...`);
-          try {
-            const r = await m.generateContent({
-              contents: [{ role: 'user', parts: [{ text: prompt }] }],
-              generationConfig: genConfig
-            });
-            articleSchema.parse(parseModelJson(r.response.text()));
-            resultText = r.response.text();
-            modelUsed = name;
-            logs.push(`✅ ${name} 모델로 생성 성공!`);
-          } catch (err: any) {
-            const msg = err?.message || String(err);
-            if (isRetryableError(msg)) {
-              logs.push(`⏳ ${name} 서버 과부하 (503/429). 다음 모델로 전환...`);
-              await sleep(500);
-            } else {
-              logs.push(`⚠️ ${name} 오류: Response rejected`);
-            }
+            logs.push(`⚠️ ${gm.name} 전환: ${e?.message || 'Failed'}`);
           }
         }
       }
