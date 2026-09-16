@@ -8,6 +8,7 @@ import { isAuthorizedCron } from '@/lib/cronAuth';
  */
 
 import { NextRequest, NextResponse } from 'next/server';
+import { getPrioritizedGeminiModels } from '@/lib/geminiModels';
 
 export const dynamic = 'force-dynamic';
 export const runtime = 'edge';
@@ -53,21 +54,11 @@ export async function GET(req: NextRequest) {
   }
 
   // ═══════════════════════════════════════════════════
-  // 2. 벤치마크 대상 유력 후보 모델 선별 (Flash 및 Lite 계열)
+  // 2. 벤치마크 대상 유력 후보 모델 선별 (동적 우선순위 모델군 기반)
   // ═══════════════════════════════════════════════════
-  const candidateNames = [
-    'gemini-2.5-flash',
-    'gemini-3.5-flash',
-    'gemini-3.5-flash-lite',
-    'gemini-flash-lite-latest',
-    'gemini-flash-latest',
-    'gemini-3.6-flash',
-    'gemini-3.7-flash',
-    'gemini-3.8-flash',
-  ];
-
-  // 구글 공식 활성 목록에 실제로 존재하는 후보군만 매칭
-  const targetsToBenchmark = candidateNames.filter(c => 
+  const { articleModels, dictionaryModels } = await getPrioritizedGeminiModels(geminiKey);
+  const candidateIds = Array.from(new Set([...articleModels, ...dictionaryModels].map(m => m.id)));
+  const targetsToBenchmark = candidateIds.filter(c => 
     activeGoogleModels.length === 0 || activeGoogleModels.some(m => m.name === c)
   );
 

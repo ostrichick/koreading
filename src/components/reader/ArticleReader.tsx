@@ -20,6 +20,7 @@ import DiscussionPromptCard from '@/components/reader/DiscussionPromptCard';
 import { isKoreanWord } from '@/lib/utils';
 import { useWordLookup } from '@/hooks/useWordLookup';
 import ReaderBody from '@/components/reader/ReaderBody';
+import { ReaderControls } from '@/components/reader/ReaderControls';
 import TutorPanel, { type TutorSelection } from '@/components/reader/TutorPanel';
 import { articleSummary } from '@/lib/learning';
 
@@ -657,9 +658,18 @@ export default function ArticleReader({ initialArticle }: { initialArticle: Arti
             )}
             {article.generatorModel && (
               <span style={{ fontSize: '0.75rem', background: 'rgba(99,102,241,0.1)', color: 'var(--accent-primary)', padding: '3px 10px', borderRadius: '100px', border: '1px solid rgba(99,102,241,0.3)', fontWeight: 600 }}>
-                🤖 {article.generatorModel}
+                ⚡ {article.generatorModel}
               </span>
             )}
+          </div>
+
+          {/* 🎧 한국어 본문 TTS 듣기 및 글자 크기 조절 컨트롤러 */}
+          <div style={{ marginBottom: '16px' }}>
+            <ReaderControls
+              content={article.content}
+              fontSize={fontSize as any}
+              onFontSizeChange={(size) => updateFontSize(size)}
+            />
           </div>
 
           <h1 style={{ fontSize: '1.8rem', fontWeight: 900, fontFamily: 'Noto Sans KR, sans-serif', marginBottom: '12px', lineHeight: 1.4 }}>

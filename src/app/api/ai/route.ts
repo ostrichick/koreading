@@ -19,6 +19,7 @@ import type { CEFRLevel, NativeLanguage } from '@/lib/gemini';
 import { TOPICS } from '@/lib/gemini';
 import { getRandomSubTopic, getGenreInstruction } from '@/lib/topicSeeds';
 import { getPedagogicalInstruction } from '@/lib/koreanCurriculum';
+import { getPrioritizedGeminiModels } from '@/lib/geminiModels';
 
 // 서버 환경변수에 GEMINI_API_KEY가 설정되어 있지 않으면 에러 로그를 남깁니다.
 if (!process.env.GEMINI_API_KEY) {
@@ -55,12 +56,17 @@ export async function POST(req: NextRequest) {
       if (action === 'lookupWord') (advanced ? advancedWordSchema : basicWordSchema).parse(value);
     };
 
-    
-    // 2026년 현재 100% 가동 검증된 최신 고속 Gemini 모델 인스턴스들을 생성합니다.
-    const model25 = genAI.getGenerativeModel({ model: 'gemini-2.5-flash', systemInstruction }, { timeout: 20000 });
-    const model35 = genAI.getGenerativeModel({ model: 'gemini-3.5-flash', systemInstruction }, { timeout: 20000 });
-    const model35lite = genAI.getGenerativeModel({ model: 'gemini-3.5-flash-lite', systemInstruction }, { timeout: 20000 });
-    const modelFlashLiteLatest = genAI.getGenerativeModel({ model: 'gemini-flash-lite-latest', systemInstruction }, { timeout: 20000 });
+    // Google AI Studio로부터 동적으로 최신 모델을 감지하고 버전/체급별로 정렬된 체인을 로드합니다.
+    const { articleModels, dictionaryModels } = await getPrioritizedGeminiModels(activeApiKey);
+
+    // 모델 인스턴스 지연 생성 캐시
+    const modelCache = new Map<string, any>();
+    const getModel = (modelId: string, timeout = 25000) => {
+      if (!modelCache.has(modelId)) {
+        modelCache.set(modelId, genAI.getGenerativeModel({ model: modelId, systemInstruction }, { timeout }));
+      }
+      return modelCache.get(modelId)!;
+    };
 
     // 폴백 대기용 헬퍼 함수
     const sleep = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
@@ -112,30 +118,24 @@ export async function POST(req: NextRequest) {
         }
       }
 
-      // 2. 초고속 검증된 Gemini 모델 체인 (단어 사전: 800ms대 Lite 모델 우선 가동)
+      // 2. 동적 정렬된 초고속 Gemini 모델 체인 (단어 사전: 600~800ms대 Lite 모델 우선 가동)
       const config = {
         temperature: 0.1,
         responseMimeType: responseMimeType === 'application/json' ? 'application/json' : undefined
       };
       
-      const geminiModels = [
-        { model: model35lite, name: 'Gemini 3.5 Flash Lite' },
-        { model: modelFlashLiteLatest, name: 'Gemini Flash Lite Latest' },
-        { model: model25, name: 'Gemini 2.5 Flash' },
-        { model: model35, name: 'Gemini 3.5 Flash' },
-      ];
-      
-      for (const { model: m, name } of geminiModels) {
+      for (const target of dictionaryModels) {
         try {
+          const m = getModel(target.id, 15000);
           const result = await m.generateContent({
             contents: [{ role: 'user', parts: [{ text: prompt }] }],
             generationConfig: config
           });
           validateResult(result.response.text(), advanced);
-          return { text: result.response.text(), modelUsed: name };
+          return { text: result.response.text(), modelUsed: target.name };
         } catch (err: any) {
           const msg = err?.message || String(err);
-          console.warn(`[${name} error]: ${msg}`);
+          console.warn(`[${target.name} error]: ${msg}`);
           if (isRetryableError(msg)) {
             await sleep(300);
             continue;
@@ -242,19 +242,13 @@ ${pedagogicalGuide}
       let resultText: string | null = null;
       let modelUsed = '';
 
-      // ── (1단계) Google Gemini 최신 고성능 모델군 우선 가동 (한국어 어문 규범 최상위) ──
+      // ── (1단계) Google Gemini 최신 고성능 모델군 우선 가동 (3.8 > 3.7 > 3.6 > 3.5 > 500 RPD Lite > 2.5) ──
       // Gemini는 국립국어원 규범 및 순수 한글 서사에 압도적으로 뛰어나며 한자/중국어 혼입이 없습니다.
-      const geminiChain = [
-        { model: model25, name: 'Gemini 2.5 Flash' },
-        { model: model35lite, name: 'Gemini 3.5 Flash Lite' },
-        { model: modelFlashLiteLatest, name: 'Gemini Flash Lite Latest' },
-        { model: model35, name: 'Gemini 3.5 Flash' },
-      ];
-      
-      for (const { model: m, name } of geminiChain) {
+      for (const target of articleModels) {
         if (resultText) break;
-        logs.push(`🔄 ${name} 모델로 생성 시도 중...`);
+        logs.push(`🔄 ${target.name} 모델로 생성 시도 중...`);
         try {
+          const m = getModel(target.id, 25000);
           const r = await m.generateContent({
             contents: [{ role: 'user', parts: [{ text: prompt }] }],
             generationConfig: genConfig
@@ -262,15 +256,15 @@ ${pedagogicalGuide}
           const parsedCandidate = parseModelJson(r.response.text());
           articleSchema.parse(parsedCandidate); // 100% 한글 검증 (한자/중국어 유입 시 거부)
           resultText = r.response.text();
-          modelUsed = name;
-          logs.push(`✅ ${name} 모델로 순수 한글 생성 성공!`);
+          modelUsed = target.name;
+          logs.push(`✅ ${target.name} 모델로 순수 한글 생성 성공!`);
         } catch (err: any) {
           const msg = err?.message || String(err);
           if (isRetryableError(msg)) {
-            logs.push(`⏳ ${name} 서버 과부하 (503/429). 다음 모델로 전환...`);
-            await sleep(500);
+            logs.push(`⏳ ${target.name} 일시 과부하 또는 쿼터 초과 (429/503). 다음 모델로 전환...`);
+            await sleep(400);
           } else {
-            logs.push(`⚠️ ${name} 검증 거부 또는 오류: ${msg.substring(0, 60)}`);
+            logs.push(`⚠️ ${target.name} 검증 거부 또는 오류: ${msg.substring(0, 60)}`);
           }
         }
       }
