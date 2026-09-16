@@ -59,9 +59,9 @@ export async function POST(req: NextRequest) {
     // Google AI Studio로부터 동적으로 최신 모델을 감지하고 버전/체급별로 정렬된 체인을 로드합니다.
     const { articleModels, dictionaryModels } = await getPrioritizedGeminiModels(activeApiKey);
 
-    // 모델 인스턴스 지연 생성 캐시
+    // 모델 인스턴스 지연 생성 캐시 (빠른 장애 격리를 위해 9초 타임아웃 적용)
     const modelCache = new Map<string, any>();
-    const getModel = (modelId: string, timeout = 25000) => {
+    const getModel = (modelId: string, timeout = 9000) => {
       if (!modelCache.has(modelId)) {
         modelCache.set(modelId, genAI.getGenerativeModel({ model: modelId, systemInstruction }, { timeout }));
       }
@@ -72,10 +72,10 @@ export async function POST(req: NextRequest) {
     const sleep = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
 
     /** 
-     * 에러 메시지를 확인하여 503(서버 과부하) 또는 429(요청 한도 초과) 등 재시도가 필요한 에러인지 판별합니다.
+     * 에러 메시지를 확인하여 503(서버 과부하), 429(할당량 초과), 타임아웃 등 즉각 폴백이 필요한 에러인지 판별합니다.
      */
     const isRetryableError = (msg: string) =>
-      msg.includes('503') || msg.includes('429') || msg.includes('overloaded') || msg.includes('high demand') || msg.includes('Quota') || msg.includes('quota');
+      msg.includes('503') || msg.includes('429') || msg.includes('overloaded') || msg.includes('high demand') || msg.includes('Quota') || msg.includes('quota') || msg.includes('abort') || msg.includes('timeout') || msg.includes('fetch failed');
 
     /**
      * Groq 최신 모델을 우선 시도하고, 실패 시 초고속 Gemini 최신 모델군으로 전환(폴백)하는 헬퍼 함수입니다.
@@ -248,7 +248,7 @@ ${pedagogicalGuide}
         if (resultText) break;
         logs.push(`🔄 ${target.name} 모델로 생성 시도 중...`);
         try {
-          const m = getModel(target.id, 25000);
+          const m = getModel(target.id, 9000);
           const r = await m.generateContent({
             contents: [{ role: 'user', parts: [{ text: prompt }] }],
             generationConfig: genConfig
@@ -261,8 +261,8 @@ ${pedagogicalGuide}
         } catch (err: any) {
           const msg = err?.message || String(err);
           if (isRetryableError(msg)) {
-            logs.push(`⏳ ${target.name} 일시 과부하 또는 쿼터 초과 (429/503). 다음 모델로 전환...`);
-            await sleep(400);
+            logs.push(`⏳ ${target.name} 일시 지연/과부하/쿼터 초과. 다음 고성능 모델로 전환...`);
+            await sleep(100);
           } else {
             logs.push(`⚠️ ${target.name} 검증 거부 또는 오류: ${msg.substring(0, 60)}`);
           }

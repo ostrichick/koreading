@@ -374,7 +374,7 @@ export default function LibraryPage() {
       if (isQuotaError) {
         helpfulGuide = `🚨 [API 쿼터 제한 초과 에러]\n\n현재 서버의 무료 Gemini API 키 할당량이 전부 소진되었습니다.\n\n💡 해결 방법:\n도서관 화면 상단의 [🔑 API Key 설정] 버튼을 눌러 본인의 무료 Gemini API Key를 등록하시면, 개인 제공사 할당량을 사용할 수 있습니다. 서비스 한도와 제공사 요금은 계속 적용됩니다.${logBlock}`;
       } else if (is503Error) {
-        helpfulGuide = `⏳ [서버 과부하 에러]\n\nAI 서버(Groq 3종 + Gemini 5종, 총 8개 모델)를 모두 시도했으나 전부 과부하 상태입니다.\n\n💡 해결 방법:\n• 1~2분 후 다시 시도해 보세요 (일시적 현상)\n• 도서관 상단의 [🔑 API Key 설정]에서 본인의 Gemini API Key를 등록하면 개인 쿼터를 사용하므로 성공률이 크게 높아집니다!${logBlock}`;
+        helpfulGuide = `⏳ [서버 일시 지연 에러]\n\nAI 제공사(Google Gemini)의 일시적인 서비스 지연이 발생했습니다.\n\n💡 해결 방법:\n• 잠시 후 다시 시도해 보세요.\n• 도서관 상단의 [🔑 API Key 설정]에서 본인의 Gemini API Key를 등록하시면 개인 쿼터로 분리되어 더욱 안정적입니다!${logBlock}`;
       } else {
         helpfulGuide = `텍스트 생성에 실패했습니다: ${errMsg}${logBlock}`;
       }
