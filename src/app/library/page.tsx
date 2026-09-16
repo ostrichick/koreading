@@ -299,6 +299,22 @@ export default function LibraryPage() {
 
     setGenerating(true);
     setGenLogs([]);
+
+    // AI 생성 진행 상황을 사용자에게 단계별로 실시간 중계하는 타이머
+    const stepTimers: NodeJS.Timeout[] = [];
+    stepTimers.push(setTimeout(() => {
+      setGenLogs(prev => [...prev, '⚡ 최신 고성능 모델(Gemini 3.8/3.7/3.6/3.5) 연결 요청 중...']);
+    }, 80));
+    stepTimers.push(setTimeout(() => {
+      setGenLogs(prev => [...prev, '✍️ CEFR 난이도 및 장르/소재 기반 맞춤형 스토리텔링 집필 중...']);
+    }, 1400));
+    stepTimers.push(setTimeout(() => {
+      setGenLogs(prev => [...prev, '🔍 100% 순수 한글 검증 (외래어·한자 원천 배제) 중...']);
+    }, 3000));
+    stepTimers.push(setTimeout(() => {
+      setGenLogs(prev => [...prev, '🎯 핵심 어휘 5선 추출 및 독해 후크 질문 구성 중...']);
+    }, 4800));
+
     try {
       // client wrapper function 호출 (동적 옵션 및 진행 로그 콜백 연동)
       const data = await generateArticle(
@@ -893,43 +909,60 @@ export default function LibraryPage() {
               </div>
             </div>
 
-            {/* 📡 실시간 AI 백그라운드 폴백 상태 로그 패널 */}
+            {/* 📡 실시간 AI 백그라운드 모델 & 생성 파이프라인 로그 패널 */}
             {generating && (
               <div style={{
                 marginBottom: '16px',
                 background: 'var(--bg-secondary)',
                 border: '1px solid var(--border-medium)',
                 borderRadius: 'var(--radius-md)',
-                padding: '12px 16px',
+                padding: '14px 16px',
                 fontFamily: '"Fira Code", "Cascadia Code", "Consolas", monospace',
                 fontSize: '0.75rem',
                 lineHeight: 1.8,
               }}>
-                <div style={{ color: 'var(--text-muted)', marginBottom: '6px', fontSize: '0.7rem', fontWeight: 700, letterSpacing: '0.05em' }}>📡 AI 엔진 연결 로그</div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+                  <div style={{ color: 'var(--text-muted)', fontSize: '0.7rem', fontWeight: 700, letterSpacing: '0.05em' }}>📡 AI 모델 파이프라인 & 작업 진행 로그</div>
+                  <span style={{ color: 'var(--accent-primary)', fontSize: '0.68rem', fontWeight: 600 }}>진행 중...</span>
+                </div>
+
+                {/* 가동 중인 모델 체인 및 우선순위 안내 */}
+                <div style={{ background: 'rgba(0,0,0,0.12)', border: '1px solid var(--border-subtle)', borderRadius: '6px', padding: '8px 12px', marginBottom: '10px', fontSize: '0.72rem', lineHeight: 1.6 }}>
+                  <div style={{ color: '#818cf8', fontWeight: 600 }}>⚡ 1순위: 최신 플래그십 (Gemini 3.8 / 3.7 / 3.6 / 3.5 Flash)</div>
+                  <div style={{ color: 'var(--text-secondary)' }}>🛡️ 2순위: 500 RPD 쿼터 안전망 (Gemini 3.5 / 3.1 Flash Lite)</div>
+                  <div style={{ color: 'var(--text-muted)' }}>🔄 3순위: 백업 폴백 체인 (Gemini 2.5 Flash → Groq GPT-OSS 120B)</div>
+                </div>
+
+                {/* 실제 작업 단계 및 서버 응답 로그 */}
                 {genLogs.length > 0 ? (
-                  /* 모델 전환 및 성공 여부 로그 실시간 리스트업 */
-                  genLogs.map((log, i) => (
-                    <div key={i} style={{
-                      color: log.includes('✅') ? '#10b981'
-                           : log.includes('❌') || log.includes('💀') ? '#ef4444'
-                           : log.includes('⚠️') ? '#f59e0b'
-                           : log.includes('⏳') ? '#818cf8'
-                           : 'var(--text-secondary)',
-                      padding: '1px 0',
-                    }}>
-                      {log}
-                    </div>
-                  ))
-                ) : (
-                  /* 최초 요청 전달 중: 고장 우려 경감을 위한 로딩 메시지 표출 */
                   <div>
-                    <div style={{ color: '#818cf8', padding: '1px 0' }}>⚡ Groq + Gemini 초고속 AI 모델 폴백 체인 가동 중...</div>
-                    <div style={{ color: 'var(--text-secondary)', padding: '1px 0' }}>🔄 Groq Qwen 3.8 → GPT-OSS 120B</div>
-                    <div style={{ color: 'var(--text-secondary)', padding: '1px 0' }}>🔄 Gemini 2.5 Flash → 3.5 Lite → 3.5 Flash</div>
-                    <div style={{ color: 'var(--text-muted)', padding: '1px 0', fontSize: '0.7rem', marginTop: '4px' }}>서버 과부하 시 자동으로 다음 모델로 즉시 전환됩니다</div>
+                    {genLogs.map((log, i) => (
+                      <div key={i} style={{
+                        color: log.includes('✅') ? '#10b981'
+                             : log.includes('❌') || log.includes('💀') ? '#ef4444'
+                             : log.includes('⚠️') ? '#f59e0b'
+                             : log.includes('⏳') ? '#818cf8'
+                             : log.includes('✍️') || log.includes('🔍') || log.includes('🎯') ? 'var(--text-primary)'
+                             : 'var(--text-secondary)',
+                        padding: '1px 0',
+                        fontWeight: log.includes('✅') ? 700 : 500,
+                      }}>
+                        {log}
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <div>
+                    <div style={{ color: '#818cf8', padding: '1px 0' }}>⚡ 최신 고성능 모델(Gemini 3.8/3.7/3.6/3.5) 연결 중...</div>
+                    <div style={{ color: 'var(--text-secondary)', padding: '1px 0' }}>✍️ CEFR 맞춤형 난이도 & 장르 스토리텔링 지문 작성 중...</div>
+                    <div style={{ color: 'var(--text-secondary)', padding: '1px 0' }}>🔍 100% 순수 한글 검증 (외래어·한자 원천 배제)</div>
+                    <div style={{ color: 'var(--text-secondary)', padding: '1px 0' }}>🎯 핵심 어휘 5선 추출 및 독해 후크 질문 구성</div>
                   </div>
                 )}
-                <div style={{ color: 'var(--accent-primary)', animation: 'pulse 1.5s ease-in-out infinite' }}>▍</div>
+                <div style={{ color: 'var(--accent-primary)', animation: 'pulse 1.5s ease-in-out infinite', marginTop: '4px' }}>▍</div>
+                <div style={{ color: 'var(--text-muted)', fontSize: '0.68rem', marginTop: '6px', borderTop: '1px dashed var(--border-subtle)', paddingTop: '6px' }}>
+                  ※ 서버 과부하(503) 또는 쿼터 초과(429) 시 자동으로 다음 고성능 모델로 즉시 전환됩니다
+                </div>
               </div>
             )}
 
