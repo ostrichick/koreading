@@ -20,6 +20,7 @@ import { TOPICS } from '@/lib/gemini';
 import { getRandomSubTopic, getGenreInstruction } from '@/lib/topicSeeds';
 import { getPedagogicalInstruction } from '@/lib/koreanCurriculum';
 import { getPrioritizedGeminiModels } from '@/lib/geminiModels';
+import { getRealKoreanPhoto } from '@/lib/koreanVisuals';
 
 // 서버 환경변수에 GEMINI_API_KEY가 설정되어 있지 않으면 에러 로그를 남깁니다.
 if (!process.env.GEMINI_API_KEY) {
@@ -324,16 +325,32 @@ ${pedagogicalGuide}
         try {
           const parsed = articleSchema.parse(parseModelJson(resultText));
 
-          // 🎨 에디토리얼 미니멀 카드 스타일 (겉돌고 왜곡되는 AI 이미지 배제)
-          // 고급스러운 타이포그래피 & 핵심 명대사 후크(hookQuote) 및 생각거리 질문(discussionPrompt) 제공
+          // 🎨 옵션 A: 에디토리얼 훅 카드 + 주제 맞춤 고화질 실사 사진 공존
+          let imageUrls: string[] = [];
+          let imagePrompts: string[] = [];
+          try {
+            const visual = await getRealKoreanPhoto(
+              topic,
+              parsed.title || '',
+              parsed.keyVocabulary || [],
+              customKeyword
+            );
+            if (visual?.url) {
+              imageUrls = [visual.url];
+              imagePrompts = [visual.description];
+            }
+          } catch {
+            // 시각 자료 로드 실패 시에도 본문 텍스트는 정상 제공
+          }
+
           return NextResponse.json({
             ...parsed,
             summaryLanguage: nativeLang,
             genre: parsed.genre || genre || 'story',
             hookQuote: parsed.hookQuote || parsed.title,
             discussionPrompt: parsed.discussionPrompt || undefined,
-            imageUrls: [],
-            imagePrompts: [],
+            imageUrls,
+            imagePrompts,
             generatorModel: modelUsed,
             _logs: logs
           });

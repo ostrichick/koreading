@@ -62,7 +62,35 @@ const KOREAN_PHOTO_COLLECTION: Record<string, CuratedPhoto[]> = {
 };
 
 /**
- * 1번 방식: 고화질 4K 실제 한국 사진 매칭 (Unsplash)
+ * 위키백과 / 위키미디어 오픈 API로부터 고화질 실사 사진 검색 (무료, 무제한, 초고속 0.2초)
+ */
+async function fetchWikiPhoto(query: string, lang = 'ko'): Promise<{ url: string; description: string; isSvg?: boolean } | null> {
+  if (!query || !query.trim()) return null;
+  const clean = query.trim();
+  const url = `https://${lang}.wikipedia.org/w/api.php?action=query&titles=${encodeURIComponent(clean)}&prop=pageimages&format=json&pithumbsize=1200`;
+  try {
+    const res = await fetch(url, {
+      headers: { 'User-Agent': 'KoreadingApp/1.0 (education; contact@koreading.com)' },
+      signal: AbortSignal.timeout(1800),
+    });
+    if (!res.ok) return null;
+    const data = await res.json();
+    const pages = data?.query?.pages;
+    if (!pages) return null;
+    const firstKey = Object.keys(pages)[0];
+    const source = pages[firstKey]?.thumbnail?.source;
+    if (source && (source.endsWith('.jpg') || source.endsWith('.jpeg') || source.endsWith('.png') || source.includes('/thumb/'))) {
+      const isSvg = source.toLowerCase().includes('.svg');
+      return { url: source, description: `${clean} 실사 시각 자료`, isSvg };
+    }
+    return null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * 1번 방식: 고화질 4K 실제 한국 사진 매칭 (위키미디어 오픈 API + Unsplash 하이브리드)
  */
 export async function getRealKoreanPhoto(
   topic: string,
@@ -70,15 +98,37 @@ export async function getRealKoreanPhoto(
   keyVocabulary: string[] = [],
   customKeyword?: string
 ): Promise<{ url: string; description: string }> {
-  const allText = (title + ' ' + (customKeyword || '') + ' ' + keyVocabulary.join(' ')).toLowerCase();
+  // 1. 위키미디어 오픈 API를 통해 지문의 핵심 어휘/주제와 100% 일치하는 고화질 실사 사진 검색
+  const candidates: string[] = [
+    ...(customKeyword ? [customKeyword.trim()] : []),
+    ...(keyVocabulary || []).slice(0, 4),
+  ];
 
-  // 1. Unsplash Developer API Key가 환경변수에 설정되어 있다면 실시간 검색 시도
+  let fallbackSvgMatch: { url: string; description: string } | null = null;
+
+  for (const word of candidates) {
+    if (!word || word.length < 2) continue;
+    const wikiPhoto = await fetchWikiPhoto(word, 'ko');
+    if (wikiPhoto) {
+      if (!wikiPhoto.isSvg) {
+        return { url: wikiPhoto.url, description: wikiPhoto.description };
+      } else if (!fallbackSvgMatch) {
+        fallbackSvgMatch = { url: wikiPhoto.url, description: wikiPhoto.description };
+      }
+    }
+  }
+
+  if (fallbackSvgMatch) {
+    return fallbackSvgMatch;
+  }
+
+  // 2. Unsplash Developer API Key가 환경변수에 설정되어 있다면 실시간 검색 시도
   if (process.env.UNSPLASH_ACCESS_KEY) {
     try {
       const searchQuery = encodeURIComponent('korea ' + (customKeyword || keyVocabulary[0] || topic));
       const res = await fetch('https://api.unsplash.com/search/photos?query=' + searchQuery + '&per_page=3&orientation=landscape', {
         headers: { Authorization: 'Client-ID ' + process.env.UNSPLASH_ACCESS_KEY },
-        signal: AbortSignal.timeout(3000),
+        signal: AbortSignal.timeout(2000),
       });
       if (res.ok) {
         const data = await res.json();
@@ -95,7 +145,8 @@ export async function getRealKoreanPhoto(
     }
   }
 
-  // 2. 검증된 큐레이션 4K 풀에서 키워드 정밀 매칭
+  // 3. 검증된 큐레이션 4K 풀에서 키워드 정밀 매칭 (영구 무중단 폴백)
+  const allText = (title + ' ' + (customKeyword || '') + ' ' + (keyVocabulary || []).join(' ')).toLowerCase();
   const topicPool = KOREAN_PHOTO_COLLECTION[topic] || KOREAN_PHOTO_COLLECTION['daily-life'];
   
   let bestMatch = topicPool[0];

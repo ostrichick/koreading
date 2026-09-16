@@ -58,7 +58,23 @@ export default function ReaderBody(p: Props) {
           {p.paraScores[index] && <p role="status" style={{ fontSize: '.85rem' }}>음성 인식 문장 일치도: {p.paraScores[index].score}% — {p.paraScores[index].text}</p>}
         </div>
       </div>
-      {p.article.imageUrls?.[1] && index === Math.max(0, Math.floor(p.paragraphs.length / 2) - 1) && <ArticleIllustration src={p.article.imageUrls[1]} alt={`${p.article.title} - 핵심 어휘 시각 자료`} />}
+      {(() => {
+        const bodyImage = (p.article.imageUrls && p.article.imageUrls.length > 0)
+          ? (p.article.imageUrls[1] || p.article.imageUrls[0])
+          : null;
+        const isMiddleIndex = index === Math.max(0, Math.floor(p.paragraphs.length / 2) - 1);
+        if (bodyImage && isMiddleIndex) {
+          return (
+            <ArticleIllustration
+              src={bodyImage}
+              alt={`${p.article.title} - 시각 자료`}
+              badgeText="📷 주제 시각 자료"
+              style={{ margin: '20px 0 28px 0' }}
+            />
+          );
+        }
+        return null;
+      })()}
     </Fragment>)}
   </div>;
 }
