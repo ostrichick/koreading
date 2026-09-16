@@ -195,9 +195,9 @@ export async function POST(req: NextRequest) {
 
       const pedagogicalGuide = getPedagogicalInstruction(level as CEFRLevel, topicLabel);
 
-      // 프롬프트를 정교하게 구성합니다. (학습자를 사로잡는 스토리텔링 + KFL 한국어 교육학 결합)
-      const prompt = `당신은 전 세계 한국어 학습자를 단숨에 몰입시키는 최고의 한국어 스토리텔러이자 KFL(외국어로서의 한국어) 독해 전문 작가입니다.
-외국인 학습자가 지루한 교과서 느낌을 전혀 받지 않고, "다음 문장이 궁금해서 멈출 수 없는" 흥미진진한 "${topicLabel}" 독해 지문을 작성해 주세요.
+      // 프롬프트를 정교하게 구성합니다. (학습자를 사로잡는 스토리텔링 + Krashen i+1 한국어 교육학 결합)
+      const prompt = `당신은 스티븐 크라센(Stephen Krashen)의 i+1 언어 습득 이론을 완벽히 구현하는 KFL(외국어로서의 한국어) 단계별 읽기 교재(Graded Reader) 전문 작가입니다.
+외국인 학습자가 지루한 교과서 느낌을 받지 않으면서도, 자신의 수준에 딱 맞아(85~90% 이해) 술술 읽히는 흥미진진한 "${topicLabel}" 독해 지문을 작성해 주세요.
 ${subtopicInstruction}
 ${genreInstruction}
 ${duplicateAvoidanceInstruction}
@@ -214,10 +214,12 @@ ${pedagogicalGuide}
 3. 100% 순수 한글 원칙:
    - "title", "content", "hookQuote" 필드는 반드시 100% 순수한 한글(한국어 문자)로만 작성해야 합니다.
    - 절대 본문이나 제목에 영어, 한자, 일본어, 외국어 번역 괄호(예: '공부(study)하다')를 단 한 글자도 넣지 마십시오.
-4. 교육학적 난이도 통제:
+4. Krashen의 i+1 원리 및 어휘 난이도 엄격 통제 (CRITICAL):
+   - 본문 전체 단어의 85~90%는 반드시 해당 레벨 학습자가 사전을 찾지 않고도 100% 알 수 있는 기초 어휘로 작성하십시오. (예: B1 글이라면 초급 A1~A2 단어가 85~90%를 차지해야 함)
+   - 이번 글을 통해 학습자가 새로 배우는 "+1"의 낯선 어휘는 오직 아래 5개의 핵심 어휘(keyVocabulary)로만 엄격히 제한하십시오.
+   - 소설이나 시에서나 쓰는 어려운 문학적 미사여구(남몰래, 매서운, 장관, 물들이다, 모닥불 등)는 절대 쓰지 말고, 누구나 아는 쉬운 일상 단어로 순화하십시오.
    - 본문에 이번 레벨(${level})의 필수 목표 문법이 2~3개 이상 자연스럽게 녹아있어야 합니다.
    - 5개의 핵심 어휘(keyVocabulary)는 본문 속에서 각각 최소 2회 이상 자연스럽게 반복(Recycled)되어야 합니다.
-   - 어휘 난이도와 문장 길이는 CEFR ${level} 기준을 철저히 준수하십시오.
 
 반드시 다음 형식의 JSON 객체만 반환해 주세요 (마크다운 기호 없이 JSON만 반환):
 {
@@ -234,8 +236,8 @@ ${pedagogicalGuide}
   "discussionPrompt": "${langNote}로 작성된, 글을 다 읽은 후 학습자에게 던지는 흥미로운 질문 또는 '당신이라면 어떻게 했을까요?' 선택지 (1~2문장)"
 }`;
 
-      // 생동감 넘치고 흥미진진한 서사를 위해 창의성 온도를 0.70으로 최적화합니다.
-      const genConfig = { temperature: 0.70, responseMimeType: 'application/json' as const };
+      // Krashen i+1 원리 준수와 문학적 희귀 어휘 억제를 위해 교육 최적 온도인 0.38로 설정합니다.
+      const genConfig = { temperature: 0.38, responseMimeType: 'application/json' as const };
       
       // 사용자 브라우저 모달에 처리 경과 로그를 실시간 중계하기 위해 배열에 이력을 담아둡니다.
       const logs: string[] = [];
