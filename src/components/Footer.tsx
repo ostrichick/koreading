@@ -60,7 +60,6 @@ export default function Footer() {
               <div style={{ fontSize: '0.75rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.08em', color: 'var(--text-muted)', marginBottom: '12px' }}>서비스</div>
               <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
                 {[
-                  { href: '/test', label: '레벨 테스트' },
                   { href: '/library', label: '도서관' },
                   { href: '/vocabulary', label: '내 단어장' },
                 ].map(link => (

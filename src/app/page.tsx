@@ -166,8 +166,8 @@ export default function HomePage() {
 
           {/* 페이지 이동 유도 버튼 */}
           <div style={{ display: 'flex', gap: '16px', justifyContent: 'center', flexWrap: 'wrap' }}>
-            <Link href="/test" className="btn btn-primary btn-lg">
-              🎯 Start Level Test — Free
+            <Link href="/library" className="btn btn-primary btn-lg">
+              📚 Start Reading — Free
             </Link>
             <Link href="/login" className="btn btn-secondary btn-lg">
               🔑 Sign In
@@ -217,10 +217,10 @@ export default function HomePage() {
             Ready to read Korean?
           </h2>
           <div style={{ color: 'var(--text-secondary)', marginBottom: '32px', display: 'flex', justifyContent: 'center' }}>
-            <BilingualText en="Take a 5-minute level test and start reading immediately." ko="5분 레벨 테스트로 바로 시작하세요." />
+            <BilingualText en="Read and generate Korean texts right away — no account needed." ko="로그인 없이 바로 한국어 글을 읽고 생성해보세요." />
           </div>
-          <Link href="/test" className="btn btn-primary btn-lg">
-            🚀 Start for Free
+          <Link href="/library" className="btn btn-primary btn-lg">
+            🚀 Start Reading Now
           </Link>
         </div>
       </section>

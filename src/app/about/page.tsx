@@ -88,8 +88,8 @@ export default function AboutPage() {
           <p style={{ fontSize: '0.95rem', color: 'var(--text-muted)', lineHeight: 1.7, marginBottom: '32px' }}>
             한국어 독해 학습 플랫폼 · Plataforma de lectura en coreano · 韓国語読解学習プラットフォーム · 韩语阅读学习平台
           </p>
-          <Link href="/test" className="btn btn-primary btn-lg">
-            🎯 Start Free Level Test
+          <Link href="/library" className="btn btn-primary btn-lg">
+            📚 Start Reading Free
           </Link>
         </div>
       </section>
@@ -187,11 +187,10 @@ export default function AboutPage() {
         <div className="container" style={{ maxWidth: '500px' }}>
           <h2 style={{ fontSize: '1.8rem', fontWeight: 900, marginBottom: '16px' }}>Start Reading Korean Today</h2>
           <p style={{ color: 'var(--text-secondary)', marginBottom: '32px', fontSize: '0.95rem', lineHeight: 1.7 }}>
-            No login required. Take a free level test and start reading Korean texts matched to your level in minutes.
+            No login required. Start reading and generating level-matched Korean stories freely right away.
           </p>
           <div style={{ display: 'flex', gap: '12px', justifyContent: 'center', flexWrap: 'wrap' }}>
-            <Link href="/test" className="btn btn-primary btn-lg">🎯 Free Level Test</Link>
-            <Link href="/library" className="btn btn-secondary btn-lg">📚 Browse Library</Link>
+            <Link href="/library" className="btn btn-primary btn-lg">📚 Browse Library & Read</Link>
           </div>
         </div>
       </section>

@@ -534,7 +534,7 @@ export default function LibraryPage() {
         {isGuest && (
           <div style={{ background: 'rgba(217,119,6,0.06)', border: '1px solid var(--border-medium)', borderRadius: 'var(--radius-md)', padding: '14px 20px', marginBottom: '24px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '12px' }}>
             <div style={{ fontSize: '0.875rem', color: 'var(--text-secondary)' }}>
-              🔓 게스트 모드 — 생성된 모든 텍스트는 도서관에 평생 기록되어 함께 공부하게 됩니다!
+              🔓 게스트 모드 — 로그인 없이도 모든 글을 자유롭게 읽고 새 글을 생성할 수 있습니다! (단어장 저장 기능은 로그인 필요)
             </div>
             <a href="/login" className="btn btn-sm btn-primary">{t.loginToSave}</a>
           </div>

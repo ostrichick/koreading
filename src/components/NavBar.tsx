@@ -53,12 +53,10 @@ export default function NavBar() {
         { href: '/vocabulary', label: 'Vocabulary' },
         { href: '/about', label: 'About' },
       ]
-    : guestLevel
-    ? [
+    : [
         { href: '/library', label: 'Library' },
         { href: '/about', label: 'About' },
-      ]
-    : [{ href: '/about', label: 'About' }];
+      ];
 
   return (
     <>

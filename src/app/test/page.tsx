@@ -7,7 +7,7 @@ import { recommendLevel } from '@/lib/learning';
  * @why 학습자가 자신의 실제 실력에 맞지 않는 너무 쉽거나 어려운 텍스트로 인해 흥미를 잃지 않도록, 과학적인 독해력 측정 기준을 통해 맞춤형 레벨(A1~C2)의 시작점을 최단 시간에 지능적으로 제공하기 위해 존재합니다.
  */
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/contexts/AuthContext';
 import { generatePlacementTest } from '@/lib/gemini';
@@ -41,6 +41,11 @@ interface TestData {
 export default function TestPage() {
   const { user, refreshProfile } = useAuth(); // Auth 세션
   const router = useRouter();
+
+  // 레벨테스트 비활성화(숨김) 기간 동안 도서관으로 즉시 안전 리다이렉트
+  useEffect(() => {
+    router.replace('/library');
+  }, [router]);
 
   // 테스트 단계를 표현하는 상태 변수
   // intro: 모국어 선택 화면 | loading: AI 문제 생성 대기 | testing: 테스트 진행 | done: 결과 도출 및 저장 화면

@@ -540,13 +540,7 @@ export default function ProfilePage() {
         {/* 한국어 학습 레벨 수동 설정 카드 */}
         <div className="card" style={{ marginBottom: '32px' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
-            <div style={{ fontSize: '1rem', fontWeight: 700 }}>🎯 한국어 레벨</div>
-            <Link
-              href="/test"
-              style={{ fontSize: '0.8rem', color: 'var(--accent-primary)', textDecoration: 'none' }}
-            >
-              레벨 재테스트 →
-            </Link>
+            <div style={{ fontSize: '1rem', fontWeight: 700 }}>🎯 한국어 레벨 (클릭하여 변경)</div>
           </div>
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '8px' }}>
             {LEVELS.map(level => (
