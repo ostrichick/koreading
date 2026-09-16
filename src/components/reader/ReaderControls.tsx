@@ -4,8 +4,8 @@ import React, { useState, useEffect } from 'react';
 
 interface ReaderControlsProps {
   content: string;
-  fontSize: 'normal' | 'large' | 'xlarge';
-  onFontSizeChange: (size: 'normal' | 'large' | 'xlarge') => void;
+  fontSize: 'small' | 'normal' | 'large' | 'xlarge';
+  onFontSizeChange: (size: 'small' | 'normal' | 'large' | 'xlarge') => void;
 }
 
 export const ReaderControls: React.FC<ReaderControlsProps> = ({

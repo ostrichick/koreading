@@ -1,0 +1,5 @@
+﻿# Project Rules
+
+This project's rules have been consolidated into **[AGENTS.md](./AGENTS.md)**.
+
+Read AGENTS.md first; it is the single source of truth for all AI agents (engineering principles, project overview, verification commands, and per-project rules).

@@ -27,7 +27,7 @@
 | 계층 | 사용 기술 | 설명 |
 | :--- | :--- | :--- |
 | **Frontend Framework** | **Next.js 15+ (App Router)** | React 19, Turbopack, TypeScript 기반 |
-| **Runtime & Deploy** | **Vercel (Edge Network)** | `/api/ai` 라우트는 **Edge Runtime (`export const runtime = 'edge'`)** 적용으로 콜드 스타트 없음 |
+| **Runtime & Deploy** | **Vercel (Serverless)** | `/api/ai` 라우트는 **Node.js Runtime (`export const runtime = 'nodejs'`)** 적용. Edge 전용 제약 없이 Gemini SDK 폴백 체인과 예외 처리를 안정적으로 구동 |
 | **Styling** | **Pure CSS (`globals.css`)** | CSS 변수 기반 에디토리얼 웜(Warm Paper & Charcoal) 디자인 시스템, 미디엄/브런치 감성의 가독성 중심 테마 |
 | **Authentication** | **Firebase Auth** | Google OAuth 간편 로그인 (팝업 및 모바일 리다이렉트 대응) |
 | **Database** | **Cloud Firestore** | NoSQL 문서 데이터베이스 (아티클, 단어장, 읽음 기록, 리뷰, 사용자 프로필) |
@@ -76,7 +76,7 @@
 
 ### 3.3 보안 및 관리자 시스템
 - **관리자 계정 (`src/lib/adminConfig.ts`)**:
-  - `asulchoi@gmail.com`, `xilencist@gmail.com`
+  - `NEXT_PUBLIC_ADMIN_EMAILS` 환경변수(쉼표 구분)를 우선 읽고, 기본값 `asulchoi@gmail.com`, `xilencist@gmail.com`을 폴백으로 항상 포함.
 - **3단계 방어 아키텍처**:
   1. **UI Layer**: 관리자 로그인 시에만 아티클 삭제 버튼 노출 + 화면 상단 보라색 관리자 모드 배너/배지 표시.
   2. **Client Business Logic (`db.ts`)**: `deleteArticle(id, callerEmail)` 호출 시 `isAdminEmail()` 사전 검증.
@@ -155,6 +155,7 @@ Conq/
 
 | 일자 | 구분 | 주요 구현 및 변경 내역 |
 | :--- | :--- | :--- |
+| **2026-09-16** | **타입 안전성 강화 & AI 협업 표준 통합** | - **관리자 이메일 환경변수화**: `adminConfig.ts`가 `NEXT_PUBLIC_ADMIN_EMAILS`(쉼표 구분)를 읽고 기본 목록을 폴백으로 포함.<br>- **`as any` · `: any` 전면 제거**: `/api/ai` 라우트(액션별 구조분해, `Map<string, GenerativeModel>`, catch `unknown` 전환), `gemini.ts`(`callAI<T>` 제네릭 + `WordLookupResult`/`PlacementTestResult`/`GeneratedArticle` 반환 타입), 크론 3종, .tsx 컴포넌트(catch, SpeechRecognition, `fontSize` 유니언, 불필요한 `article` 캐스트) 정리.<br>- **Edge → Node.js Runtime 전환**: `/api/ai` 및 크론 라우트를 `nodejs`로 통일 (Edge 폐기 예정 경고 해소).<br>- **미사용 DB 함수 제거**: 호출처가 없는 `getAllArticles()`, `getArticlesByLevel()` 삭제.<br>- **문서 단일화**: `AGENTS.md` 신설(엔지니어링 규칙 + 프로젝트 규칙 + 검증 명령어). `.clinerules`/`.continuerules`는 AGENTS.md 참조로 축소, 중복 `GEMINI.md` 삭제. |
 | **2026-09-13** | **에디토리얼 웜 (Editorial Warm Paper & Charcoal) 전면 개편** | - **눈이 편안한 종이책 감성 UI 적용**: 어두운 딥블루/네이비 테마를 전면 탈피하고 웜 페이퍼 크림(`--bg-primary: #fbfaf8`), 웜 아이보리(`--bg-secondary: #f4f1ea`), 딥 차콜 잉크(`--text-primary: #1c1917`), 웜 앰버 포인트(`--accent-primary: #d97706`)로 구성된 에디토리얼 테마 전역 적용.<br>- **리더기 3단 테마 시스템 개편**: Paper(기본), Sepia, Dark(웜 차콜) 모드 완비.<br>- **하드코딩 인디고/슬레이트 컬러 완전 정비**: 도서관 모달, 사전 팝업, 어휘 차트, 게스트 배너, 삽화 오버레이 등 모든 컴포넌트의 인라인 컬러를 신규 테마 토큰과 완벽하게 동기화.<br>- **Next.js 16 빌드 & ESLint 무결성 검증 완료**. |
 | **2026-09-13** | **KFL 한국어 교육 커리큘럼 & 교재 삽화 개편** | - **국립국어원 표준 CEFR 커리큘럼 엔진 (`koreanCurriculum.ts`)**: 레벨별 필수 목표 문법 2~3개 내재화 강제, 5대 핵심 단어 본문 내 최소 2회 이상 자연스러운 반복(Vocabulary Recycling), 실생활 상황 중심 텍스트 제어.<br>- **교재형 시각 보조자료(Visual Aid) 1:1 매핑**: 예술적 추상화 대신 '대표 상황도(Situational Scene)'와 '핵심 어휘 클로즈업 도해(Visual Vocabulary Aid)'로 영문 프롬프트 디렉팅 전면 개편.<br>- **교육 최적화 Temperature**: 0.8 ➜ 0.45로 조정하여 어휘 난이도 통제 및 문법 일관성 보장. |
 | **2026-09-13** | **주제 맞춤 AI 삽화 연동** | - **Pollinations.ai (FLUX.1) 연동**: 글 생성 시 본문의 구체적 사건/배경을 반영한 영문 프롬프트 기반 16:9 고화질 삽화 2종(커버 + 본문 중간) 자동 조합.<br>- **비동기 스켈레톤 뷰어 (`ArticleIllustration.tsx`)**: 텍스트 우선 로딩 후 백그라운드 쉬머 로딩, 오류 시 부드러운 자동 숨김.<br>- **도서관 카드 매거진 뷰**: 도서관 목록 카드 상단에 썸네일 배너 노출. |
@@ -175,8 +176,8 @@ Conq/
    - 한국어 텍스트 생성 필드(`content`, `title`, `definition`, `structure` 등)에는 **절대 외국어나 한자(漢字)를 섞지 말 것**. 100% 순수 한글만 출력되도록 시스템 지침을 엄격히 유지해야 합니다.
    - 단어 사전 조회(`lookupWord`)는 사실성과 정확성이 생명이므로 `temperature: 0.1`을 유지하고, 아티클 창작(`generateArticle`)은 레벨별 어휘 통제와 문법 제약을 철저히 준수하기 위해 `temperature: 0.45`를 유지하십시오.
    - 글 생성 시 `src/lib/koreanCurriculum.ts`의 커리큘럼 지침(목표 문법 2~3개, 5대 어휘 2회 이상 반복, 상황도/어휘도해 프롬프트)을 프롬프트에 지속적으로 공급해야 합니다.
-2. **Edge Runtime 주의사항**:
-   - `src/app/api/ai/route.ts`는 Vercel Edge Runtime에서 구동됩니다. Node.js 전용 내장 모듈(`fs`, `child_process`, `path` 등)을 import하지 마십시오.
+2. **Node.js Runtime 주의사항**:
+   - `src/app/api/ai/route.ts`는 Vercel Node.js Runtime에서 구동됩니다. Edge 전용 제약은 해소되었지만, SDK·DB 연결 등은 이 라우트의 폴백 체인이 Node 호환 API만 사용하도록 유지하십시오.
 3. **Firestore 수정 시 주의사항**:
    - 클라이언트에서 Firestore를 직접 호출할 때 `db.ts`의 래퍼 함수를 반드시 경유하십시오.
    - 권한 변경 시 `firestore.rules`와 `adminConfig.ts` 양쪽을 모두 확인하십시오.

@@ -1,6 +1,7 @@
 import { writeReview } from './reviewStore';
 import { removeAccount } from './deleteAccount';
 import { auth } from './firebase';
+import type { User } from 'firebase/auth';
 import {
   doc,
   setDoc,
@@ -14,6 +15,7 @@ import {
   serverTimestamp,
   Timestamp,
   deleteDoc,
+  type FieldValue,
 } from 'firebase/firestore';
 import { db } from './firebase';
 import { isAdminEmail } from './adminConfig';
@@ -83,7 +85,7 @@ export interface VocabularyEntry {
  * 신규 가입 유저를 저장하거나 기존 유저의 프로필을 업데이트하는 함수입니다.
  * merge: true 설정을 적용하여 전달되지 않은 기존 필드는 유지하면서 특정 필드만 부분 갱신합니다.
  */
-export async function createOrUpdateUser(uid: string, data: Partial<UserProfile>) {
+export async function createOrUpdateUser(uid: string, data: Omit<Partial<UserProfile>, 'createdAt'> & { createdAt?: Timestamp | FieldValue }) {
   const ref = doc(db, 'users', uid);
   await setDoc(ref, { ...data, updatedAt: serverTimestamp() }, { merge: true });
 }
@@ -110,17 +112,6 @@ export async function saveArticle(article: Omit<Article, 'id' | 'createdAt'>) {
     createdAt: serverTimestamp()
   });
   return docRef.id;
-}
-
-/**
- * 특정 레벨(CEFRLevel)에 해당하는 모든 아티클을 Firestore에서 가져와 최신 생성 시간 순으로 내림차순 정렬하여 반환합니다.
- */
-export async function getArticlesByLevel(level: CEFRLevel): Promise<Article[]> {
-  const ref = collection(db, 'articles');
-  const q = query(ref, where('level', '==', level));
-  const snap = await getDocs(q);
-  const list = snap.docs.map(d => ({ id: d.id, ...d.data() } as Article));
-  return list.sort((a, b) => (b.createdAt?.seconds || 0) - (a.createdAt?.seconds || 0));
 }
 
 /**
@@ -209,17 +200,6 @@ export async function getReviews(articleId: string): Promise<Review[]> {
 }
 
 /**
- * Firestore의 'articles' 컬렉션에 등록된 모든 아티클 목록을 최신 생성 시간 순으로 내림차순 정렬하여 반환합니다.
- * 도서관 전체 조회 필터 선택 시 단 한 번의 쿼리로 전체 데이터를 로드하기 위해 사용됩니다.
- */
-export async function getAllArticles(): Promise<Article[]> {
-  const ref = collection(db, 'articles');
-  const snap = await getDocs(ref);
-  const list = snap.docs.map(d => ({ id: d.id, ...d.data() } as Article));
-  return list.sort((a, b) => (b.createdAt?.seconds || 0) - (a.createdAt?.seconds || 0));
-}
-
-/**
  * AI가 생성한 한국어 독해 지문 중 품질이 미비하거나 비정상적인 지문을 완전히 영구 삭제합니다.
  * @param id - 삭제할 아티클 Firestore 문서 ID
  * @param callerEmail - 삭제를 요청하는 사용자의 이메일 (관리자 여부 검증에 사용)
@@ -283,7 +263,7 @@ export async function deleteCustomCategory(uid: string, name: string): Promise<v
  * 안전성을 위해 Firebase Auth 계정을 먼저 삭제한 후 Firestore 문서를 삭제합니다.
  * (Auth 삭제 시 재인증(requires-recent-login) 에러가 발생하더라도 Firestore 데이터가 유실되지 않도록 보장)
  */
-export async function deleteUserAccount(user: any): Promise<void> {
+export async function deleteUserAccount(user: Pick<User, 'uid' | 'getIdTokenResult' | 'delete'>): Promise<void> {
   await removeAccount(db, user);
 }
 

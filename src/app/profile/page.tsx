@@ -106,7 +106,8 @@ export default function ProfilePage() {
         };
 
         const today = new Date();
-        const last7Days: any[] = [];
+        type DayStat = { dateObj: Date; dateKey: string; label: string; readCount: number; vocabCount: number };
+        const last7Days: DayStat[] = [];
         for (let i = 6; i >= 0; i--) {
           const d = new Date(today);
           d.setDate(today.getDate() - i);
@@ -201,12 +202,12 @@ export default function ProfilePage() {
       await deleteUserAccount(user);
       alert('회원 탈퇴가 완료되었습니다.');
       router.push('/');
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error('❌ 회원 탈퇴 실패:', err);
-      if (err?.code === 'auth/requires-recent-login') {
+      if ((err as { code?: string })?.code === 'auth/requires-recent-login') {
         alert('보안을 위해 다시 로그인한 후 회원 탈퇴를 시도해 주세요.');
       } else {
-        alert('회원 탈퇴 처리 중 오류가 발생했습니다: ' + (err?.message || '알 수 없는 오류'));
+        alert('회원 탈퇴 처리 중 오류가 발생했습니다: ' + (err instanceof Error ? err.message : '알 수 없는 오류'));
       }
     }
   };

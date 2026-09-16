@@ -342,7 +342,7 @@ export default function LibraryPage() {
         setShowGenModal(false);
         setGenLogs([]);
         router.push(`/read/${id}`); // 완료 시 회원용 독해로 포워딩
-      } catch (dbErr: any) {
+      } catch (dbErr: unknown) {
         console.warn('Firestore 저장 실패, 임시 로컬 저장소로 백업합니다:', dbErr);
         
         // Firestore 권한이 모자랄 경우 (비로그인, 혹은 DB 규칙 상 미인증 시) 게스트 로컬 세션에 보관
@@ -358,10 +358,12 @@ export default function LibraryPage() {
         
         router.push('/read/guest'); // 게스트용 임시 독해로 포워딩
       }
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error(err);
-      const errMsg = err?.message || JSON.stringify(err);
-      const serverLogs: string[] = err?._logs || [];
+      const errMsg = err instanceof Error ? err.message : JSON.stringify(err);
+      const serverLogs: string[] = Array.isArray((err as { _logs?: unknown })._logs)
+        ? (err as { _logs: string[] })._logs
+        : [];
       const isQuotaError = errMsg.includes('429') || errMsg.includes('Quota') || errMsg.includes('quota') || errMsg.includes('limit');
       const is503Error = errMsg.includes('503') || errMsg.includes('과부하') || errMsg.includes('high demand');
       

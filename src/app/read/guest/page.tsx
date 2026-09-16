@@ -8,6 +8,20 @@
 
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { useRouter } from 'next/navigation';
+
+// 브라우저 음성 인식 API 최소 타입 정의 (Web Speech API)
+type SpeechRecognitionLike = {
+  lang: string;
+  interimResults: boolean;
+  maxAlternatives: number;
+  onstart: (() => void) | null;
+  onresult: ((event: { results: ArrayLike<ArrayLike<{ transcript: string }>> }) => void) | null;
+  onerror: ((event: { error: string }) => void) | null;
+  onend: (() => void) | null;
+  start: () => void;
+  stop: () => void;
+};
+type SpeechRecognitionConstructor = new () => SpeechRecognitionLike;
 import { useAuth } from '@/contexts/AuthContext';
 import { TOPICS } from '@/lib/gemini';
 import { getGuestArticle, getGuestLang, getGuestLevel, incrementGuestReadCount } from '@/lib/storage';
@@ -217,13 +231,14 @@ export default function GuestReadPage() {
       if (recordingParaIdx === pIdx) return;
     }
 
-    const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
-    if (!SpeechRecognition) {
+    const w = window as typeof window & { SpeechRecognition?: SpeechRecognitionConstructor; webkitSpeechRecognition?: SpeechRecognitionConstructor };
+    const SpeechRecognitionCtor = w.SpeechRecognition ?? w.webkitSpeechRecognition;
+    if (!SpeechRecognitionCtor) {
       alert('이 브라우저는 음성 인식을 지원하지 않습니다. Chrome 또는 Safari 브라우저 사용을 권장합니다.');
       return;
     }
 
-    const rec = new SpeechRecognition();
+    const rec = new SpeechRecognitionCtor();
     rec.lang = 'ko-KR';
     rec.interimResults = false;
     rec.maxAlternatives = 1;
@@ -232,7 +247,7 @@ export default function GuestReadPage() {
       setRecordingParaIdx(pIdx);
     };
 
-    rec.onresult = (event: any) => {
+    rec.onresult = (event) => {
       const resultText = event.results[0][0].transcript;
       const score = calculateSimilarity(originalText, resultText);
       setParaScores(prev => ({
@@ -241,7 +256,7 @@ export default function GuestReadPage() {
       }));
     };
 
-    rec.onerror = (event: any) => {
+    rec.onerror = (event) => {
       console.error('Speech recognition error:', event.error);
       if (event.error !== 'no-speech') {
         alert(`음성 인식 중 에러가 발생했습니다: ${event.error}`);
@@ -528,7 +543,7 @@ export default function GuestReadPage() {
         {article.hookQuote ? (
           <EditorialHeroCard
             hookQuote={article.hookQuote}
-            genre={(article as any).genre}
+            genre={article.genre}
             topicLabel={topicInfo?.label}
             topicEmoji={topicInfo?.emoji}
             estimatedMinutes={article.estimatedMinutes}
@@ -543,7 +558,7 @@ export default function GuestReadPage() {
           />
         ) : (
           <EditorialHeroCard
-            genre={(article as any).genre}
+            genre={article.genre}
             topicLabel={topicInfo?.label}
             topicEmoji={topicInfo?.emoji}
             estimatedMinutes={article.estimatedMinutes}
@@ -639,8 +654,8 @@ export default function GuestReadPage() {
         <ReaderBody paragraphs={paragraphs} article={article} fontSize={fontSize} lineHeight={lineHeight} savedWords={savedWords} recordingParaIdx={recordingParaIdx} paraScores={paraScores} onWordClick={handleWordClick} onWordEnter={handleWordMouseEnter} onWordLeave={handleWordMouseLeave} onSpeak={speakText} onTutor={handleOpenTutor} onMic={handleMicClick} />
 
         {/* 🤔 생각해볼 거리 / 당신의 선택은? */}
-        {(article as any).discussionPrompt && (
-          <DiscussionPromptCard prompt={(article as any).discussionPrompt} />
+        {article.discussionPrompt && (
+          <DiscussionPromptCard prompt={article.discussionPrompt} />
         )}
 
         {/* 독해 완료 유도 버튼 툴바 영역 */}

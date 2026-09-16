@@ -11,7 +11,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getPrioritizedGeminiModels } from '@/lib/geminiModels';
 
 export const dynamic = 'force-dynamic';
-export const runtime = 'edge';
+export const runtime = 'nodejs';
 
 interface BenchmarkScore {
   modelId: string;
@@ -41,13 +41,14 @@ export async function GET(req: NextRequest) {
   try {
     const listRes = await fetch(`https://generativelanguage.googleapis.com/v1beta/models?key=${geminiKey}`);
     if (listRes.ok) {
-      const listData = await listRes.json();
+      const listData = await listRes.json() as { models?: { name?: string; displayName?: string; supportedGenerationMethods?: string[] }[] };
       activeGoogleModels = (listData.models || [])
-        .filter((m: any) => m.supportedGenerationMethods?.includes('generateContent'))
-        .map((m: any) => ({
-          name: m.name.replace('models/', ''),
-          displayName: m.displayName || m.name
-        }));
+        .filter(m => m.supportedGenerationMethods?.includes('generateContent'))
+        .map(m => ({
+          name: (m.name ?? '').replace('models/', ''),
+          displayName: m.displayName || m.name || ''
+        }))
+        .filter(m => m.name && m.displayName);
     }
   } catch (err) {
     console.error('Failed to fetch Google model list:', err);
@@ -142,7 +143,8 @@ CEFR A2 수준의 한국 음식 주제로 짧은 글을 작성하세요.
         notes: `정상 응답 (${elapsed}ms, 한글 순수도 ${purityScore}점)`
       });
 
-    } catch (e: any) {
+    } catch (e: unknown) {
+      const note = e instanceof Error ? e.message : String(e);
       benchmarkResults.push({
         modelId,
         displayName: modelId,
@@ -152,7 +154,7 @@ CEFR A2 수준의 한국 음식 주제로 짧은 글을 작성하세요.
         koreanPurityScore: 0,
         jsonValid: false,
         totalScore: 0,
-        notes: `타임아웃 또는 예외: ${e?.message || String(e)}`
+        notes: `타임아웃 또는 예외: ${note}`
       });
     }
   }

@@ -27,7 +27,7 @@ export default function TutorPanel({ selected, onClose, language, level, labels 
     const history = chats[index] || [];
     const userMessage: Message = { role: 'user', parts: [{ text: message.trim() }] };
     try {
-      const result = await callAI({ action: 'tutorChat', level, nativeLang: language, paragraph: selected.text.slice(0, 5000), userMessage: message.trim(), chatHistory: history.slice(-6).map(m => ({ ...m, parts: [{ text: m.parts[0].text.slice(0, 2500) }] })) });
+      const result = await callAI<{ text: string }>({ action: 'tutorChat', level, nativeLang: language, paragraph: selected.text.slice(0, 5000), userMessage: message.trim(), chatHistory: history.slice(-6).map(m => ({ ...m, parts: [{ text: m.parts[0].text.slice(0, 2500) }] })) });
       if (epoch === generation.current) {
         setChats(prev => ({ ...prev, [index]: [...history, userMessage, { role: 'model', parts: [{ text: result.text }] }] }));
         setInput('');

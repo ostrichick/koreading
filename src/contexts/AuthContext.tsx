@@ -74,7 +74,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
             await createOrUpdateUser(firebaseUser.uid, {
               ...newProfile,
-              createdAt: serverTimestamp() as any,
+              createdAt: serverTimestamp(),
             });
 
             // 데이터베이스 재조회 쿼리 없이 즉시 프로필 상태값으로 설정하여 1회 쿼리 비용을 절약합니다.

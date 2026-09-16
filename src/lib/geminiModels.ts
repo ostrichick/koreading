@@ -12,6 +12,16 @@ export interface ModelTarget {
   isLite: boolean;
 }
 
+// Google Generative Language API /v1beta/models 응답의 최소 타입 정의
+interface GenericModelInfo {
+  name?: string;
+  supportedGenerationMethods?: string[];
+}
+
+interface ModelListResponse {
+  models?: GenericModelInfo[];
+}
+
 // 1.5~2초대 초고속 응답 & 500 RPD 대용량 쿼터가 검증된 최우선 기본 체인
 export const DEFAULT_ARTICLE_MODELS: ModelTarget[] = [
   { id: 'gemini-3.5-flash-lite', name: 'Gemini 3.5 Flash Lite (500 RPD)', version: 3.5, isLite: true },
@@ -100,10 +110,11 @@ export async function getPrioritizedGeminiModels(apiKey: string): Promise<{
       return { articleModels: cachedArticleModels, dictionaryModels: cachedDictionaryModels };
     }
 
-    const data = await res.json();
-    const rawList: string[] = (data.models || [])
-      .filter((m: any) => m.supportedGenerationMethods?.includes('generateContent'))
-      .map((m: any) => m.name.replace(/^models\//, ''))
+    const data = await res.json() as ModelListResponse;
+    const rawModels = data.models || [];
+    const rawList: string[] = rawModels
+      .filter(m => m.supportedGenerationMethods?.includes('generateContent'))
+      .map(m => m.name?.replace(/^models\//, '') ?? '')
       .filter(isValidFlashModel);
 
     if (rawList.length === 0) {

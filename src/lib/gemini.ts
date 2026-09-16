@@ -36,7 +36,7 @@ export const TOPICS = [
  * AI API(/api/ai)로 POST 요청을 보내는 공통 헬퍼 함수입니다.
  * 만약 사용자가 커스텀 API Key를 브라우저에 등록했다면 이를 함께 전송하여 개인 할당량을 사용합니다.
  */
-export async function callAI(body: object) {
+export async function callAI<T = unknown>(body: object): Promise<T> {
   let customApiKey = '';
   if (typeof window !== 'undefined') {
     customApiKey = localStorage.getItem('koreading_custom_api_key') || '';
@@ -49,9 +49,9 @@ export async function callAI(body: object) {
   });
 
   const text = await res.text();
-  let data: any;
+  let parsed: { detail?: string; error?: string };
   try {
-    data = JSON.parse(text);
+    parsed = JSON.parse(text);
   } catch {
     if (!res.ok) {
       throw new Error(`AI 서버 과부하 (HTTP ${res.status}): 일시적인 지연입니다. 잠시 후 다시 시도해 주세요.`);
@@ -59,18 +59,27 @@ export async function callAI(body: object) {
     throw new Error(`서버 응답 파싱 오류: ${text.substring(0, 100)}`);
   }
 
-  if (!res.ok) throw new Error(data.detail || data.error || 'AI request failed');
-  return data;
+  if (!res.ok) throw new Error(parsed.detail || parsed.error || 'AI request failed');
+  return parsed as unknown as T;
 }
 
 /**
  * 아티클 생성 시 사용자 맞춤성을 부여하기 위한 세부 옵션 인터페이스입니다.
  */
 export interface GenerateArticleOptions {
-  customKeyword?: string;   // 사용자가 직접 입력한 관심 키워드나 소재
-  genre?: string;           // 글의 장르/스타일 ('essay' | 'dialogue' | 'column' | 'story' | 'random')
-  recentTitles?: string[];  // 도서관에 이미 등록된 최근 글 제목들 (중복 방지용)
+  customKeyword?: string;
+  genre?: string;
+  recentTitles?: string[];
 }
+
+export type GeneratedArticle = {
+  title: string; content: string; summary: string;
+  summaries?: Partial<Record<NativeLanguage, string>>; summaryLanguage?: NativeLanguage;
+  topicCategory: string; level: CEFRLevel; estimatedMinutes: number;
+  keyVocabulary: string[]; hookQuote?: string; discussionPrompt?: string;
+  genre?: string; imageUrls?: string[]; imagePrompts?: string[];
+  generatorModel?: string; _logs?: string[]; error?: string;
+};
 
 /**
  * 지정된 레벨, 주제, 모국어 설정에 맞춰 한국어 독해 기사(아티클)를 AI를 통해 생성합니다.
@@ -82,7 +91,7 @@ export async function generateArticle(
   nativeLang: NativeLanguage,
   optionsOrLog?: GenerateArticleOptions | ((message: string) => void),
   maybeOnLog?: (message: string) => void
-) {
+): Promise<GeneratedArticle> {
   let options: GenerateArticleOptions = {};
   let onLog: ((message: string) => void) | undefined = undefined;
 
@@ -114,9 +123,9 @@ export async function generateArticle(
   });
 
   const text = await res.text();
-  let data: any;
+  let parsed: Record<string, unknown>;
   try {
-    data = JSON.parse(text);
+    parsed = JSON.parse(text);
   } catch {
     if (!res.ok) {
       throw new Error(`AI 서버 과부하 (HTTP ${res.status}): 일시적인 지연입니다. 잠시 후 다시 시도해 주세요.`);
@@ -124,48 +133,71 @@ export async function generateArticle(
     throw new Error(`서버 응답 파싱 오류: ${text.substring(0, 100)}`);
   }
 
-  // 서버에서 반환된 기사 생성 로그가 존재할 경우, 화면에 출력하기 위해 onLog 콜백을 호출합니다.
-  if (data._logs && onLog) {
-    for (const log of data._logs) {
+  const logs = parsed._logs as string[] | undefined;
+  if (logs && onLog) {
+    for (const log of logs) {
       onLog(log);
     }
   }
 
   if (!res.ok) {
-    const err = new Error(data.detail || data.error || 'AI request failed');
-    (err as any)._logs = data._logs || [];
+    const msg = String(parsed.detail || parsed.error || 'AI request failed');
+    const err = new Error(msg);
+    (err as unknown as { _logs: string[] })._logs = logs || [];
     throw err;
   }
 
-  return data;
+  return parsed as unknown as GeneratedArticle;
+}
+
+export interface WordLookupResult {
+  word: string;
+  dictionaryForm: string;
+  pronunciation: string;
+  partOfSpeech: string;
+  definition: string;
+  translation: string;
+  level: CEFRLevel;
+  structure?: string;
+  examples?: { korean: string; translation: string }[];
+  _modelBasic?: string;
+  _modelAdv?: string;
+}
+
+export interface PlacementTestResult {
+  levels: {
+    level: CEFRLevel;
+    text: string;
+    questions: { question: string; options: string[]; correct: number }[];
+  }[];
 }
 
 /**
  * 단어를 클릭했을 때, 가장 기본적인 사전 정보(단어 뜻, 번역)를 빠르게 조회합니다.
  */
-export async function lookupWordBasic(word: string, sentence: string, nativeLang: NativeLanguage) {
-  return callAI({ action: 'lookupWord', type: 'basic', word, sentence, nativeLang });
+export async function lookupWordBasic(word: string, sentence: string, nativeLang: NativeLanguage): Promise<WordLookupResult> {
+  return callAI<WordLookupResult>({ action: 'lookupWord', type: 'basic', word, sentence, nativeLang });
 }
 
 /**
  * 사용자가 단어 상세 보기(문법 분석, 품사, 어근, 예문 등)를 요청할 때 호출하는 고급 사전 분석 기능입니다.
  */
-export async function lookupWordAdvanced(word: string, sentence: string, nativeLang: NativeLanguage) {
-  return callAI({ action: 'lookupWord', type: 'advanced', word, sentence, nativeLang });
+export async function lookupWordAdvanced(word: string, sentence: string, nativeLang: NativeLanguage): Promise<WordLookupResult> {
+  return callAI<WordLookupResult>({ action: 'lookupWord', type: 'advanced', word, sentence, nativeLang });
 }
 
 /**
  * ⚡ 성능 최적화: basic + advanced 사전 조회를 서버에서 병렬 실행하여 단 1번의 API 호출로 반환합니다.
  * 기존 순차 2회 호출(basic → advanced) 대비 네트워크 왕복 횟수를 절반으로 줄입니다.
  */
-export async function lookupWordAll(word: string, sentence: string, nativeLang: NativeLanguage) {
-  return callAI({ action: 'lookupWord', type: 'all', word, sentence, nativeLang });
+export async function lookupWordAll(word: string, sentence: string, nativeLang: NativeLanguage): Promise<WordLookupResult> {
+  return callAI<WordLookupResult>({ action: 'lookupWord', type: 'all', word, sentence, nativeLang });
 }
 
 /**
  * 신규 사용자를 위한 6단계 각 2문항 한국어 레벨 테스트(Placement Test) 문제집을 생성합니다.
  */
-export async function generatePlacementTest(nativeLang: NativeLanguage = 'en') {
-  return callAI({ action: 'generateTest', nativeLang });
+export async function generatePlacementTest(nativeLang: NativeLanguage = 'en'): Promise<PlacementTestResult> {
+  return callAI<PlacementTestResult>({ action: 'generateTest', nativeLang });
 }
 

@@ -11,7 +11,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getPrioritizedGeminiModels } from '@/lib/geminiModels';
 
 export const dynamic = 'force-dynamic';
-export const runtime = 'edge';
+export const runtime = 'nodejs';
 
 interface ModelHealthResult {
   provider: 'Google Gemini' | 'Groq';
@@ -93,7 +93,8 @@ export async function GET(req: NextRequest) {
             message: isQuota ? '일일 쿼터 소진 (429 Quota Exceeded)' : `호출 응답 오류: ${errText}`
           });
         }
-      } catch (err: any) {
+      } catch (err: unknown) {
+        const note = err instanceof Error ? err.message : String(err);
         results.push({
           provider: 'Google Gemini',
           modelId: target.id,
@@ -101,7 +102,7 @@ export async function GET(req: NextRequest) {
           isAvailable: false,
           httpStatus: 0,
           latencyMs: Date.now() - pingStart,
-          message: `연결 타임아웃 또는 네트워크 오류: ${err?.message || String(err)}`
+          message: `연결 타임아웃 또는 네트워크 오류: ${note}`
         });
       }
     }
@@ -169,7 +170,8 @@ export async function GET(req: NextRequest) {
             message: `호출 오류: ${errText}`
           });
         }
-      } catch (err: any) {
+      } catch (err: unknown) {
+        const note = err instanceof Error ? err.message : String(err);
         results.push({
           provider: 'Groq',
           modelId: target.id,
@@ -177,7 +179,7 @@ export async function GET(req: NextRequest) {
           isAvailable: false,
           httpStatus: 0,
           latencyMs: Date.now() - pingStart,
-          message: `연결 타임아웃 또는 네트워크 오류: ${err?.message || String(err)}`
+          message: `연결 타임아웃 또는 네트워크 오류: ${note}`
         });
       }
     }

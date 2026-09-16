@@ -82,9 +82,9 @@ export default function TestPage() {
       setCurrentLevelIdx(0); setCurrentQIdx(0); setAnswers({}); setSelectedAnswer(null);
       setTestData(data);
       setStep('testing');      // 테스트 문제 화면 전환
-    } catch (err: any) {
+    } catch (err: unknown) {
       setStep('intro');
-      triggerAlert(`테스트 로딩 실패: ${err?.message || JSON.stringify(err)}`, '테스트 로딩 실패', 'error');
+      triggerAlert(`테스트 로딩 실패: ${err instanceof Error ? err.message : JSON.stringify(err)}`, '테스트 로딩 실패', 'error');
     }
   };
 

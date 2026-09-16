@@ -25,6 +25,22 @@ import TutorPanel, { type TutorSelection } from '@/components/reader/TutorPanel'
 import { articleSummary } from '@/lib/learning';
 
 // 사전 조회 데이터를 담을 구조 인터페이스
+type ReaderFontSize = 'small' | 'normal' | 'large' | 'xlarge';
+
+// 브라우저 음성 인식 API 최소 타입 정의 (Web Speech API)
+type SpeechRecognitionLike = {
+  lang: string;
+  interimResults: boolean;
+  maxAlternatives: number;
+  onstart: (() => void) | null;
+  onresult: ((event: { results: ArrayLike<ArrayLike<{ transcript: string }>> }) => void) | null;
+  onerror: ((event: { error: string }) => void) | null;
+  onend: (() => void) | null;
+  start: () => void;
+  stop: () => void;
+};
+type SpeechRecognitionConstructor = new () => SpeechRecognitionLike;
+
 // 다국어 번역 사전 정의
 const TRANSLATIONS = {
   ko: {
@@ -168,7 +184,7 @@ export default function ArticleReader({ initialArticle }: { initialArticle: Arti
   // [신규 기능] 툴팁 사전 및 독해 뷰어 커스텀 설정 상태 변수들
   const [tooltipPosition, setTooltipPosition] = useState<{ top: number; left: number } | null>(null);
   const [showAdvancedModal, setShowAdvancedModal] = useState<boolean>(false);
-  const [fontSize, setFontSize] = useState<string>('normal');
+  const [fontSize, setFontSize] = useState<ReaderFontSize>('normal');
   const [lineHeight, setLineHeight] = useState<number>(2.2);
   const [readerTheme, setReaderTheme] = useState<string>(() => {
     // SSR 환경 대응을 위한 다크 테마 디폴트 설정
@@ -271,13 +287,14 @@ export default function ArticleReader({ initialArticle }: { initialArticle: Arti
       if (recordingParaIdx === pIdx) return;
     }
 
-    const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
-    if (!SpeechRecognition) {
+    const w = window as typeof window & { SpeechRecognition?: SpeechRecognitionConstructor; webkitSpeechRecognition?: SpeechRecognitionConstructor };
+    const SpeechRecognitionCtor = w.SpeechRecognition ?? w.webkitSpeechRecognition;
+    if (!SpeechRecognitionCtor) {
       triggerAlert('이 브라우저는 음성 인식을 지원하지 않습니다. Chrome 또는 Safari 브라우저 사용을 권장합니다.', '지원 불가', 'error');
       return;
     }
 
-    const rec = new SpeechRecognition();
+    const rec = new SpeechRecognitionCtor();
     rec.lang = 'ko-KR';
     rec.interimResults = false;
     rec.maxAlternatives = 1;
@@ -286,7 +303,7 @@ export default function ArticleReader({ initialArticle }: { initialArticle: Arti
       setRecordingParaIdx(pIdx);
     };
 
-    rec.onresult = (event: any) => {
+    rec.onresult = (event) => {
       const resultText = event.results[0][0].transcript;
       const score = calculateSimilarity(originalText, resultText);
       setParaScores(prev => ({
@@ -295,7 +312,7 @@ export default function ArticleReader({ initialArticle }: { initialArticle: Arti
       }));
     };
 
-    rec.onerror = (event: any) => {
+    rec.onerror = (event) => {
       console.error('Speech recognition error:', event.error);
       if (event.error !== 'no-speech') {
         triggerAlert(`음성 인식 중 에러가 발생했습니다: ${event.error}`, '인식 에러', 'error');
@@ -330,7 +347,7 @@ export default function ArticleReader({ initialArticle }: { initialArticle: Arti
 
     // [신규 기능] 독서 뷰어 설정 로컬 스토리지 로드
     const savedSize = localStorage.getItem('koreading_font_size');
-    if (savedSize) setFontSize(savedSize);
+    if (savedSize === 'small' || savedSize === 'normal' || savedSize === 'large' || savedSize === 'xlarge') setFontSize(savedSize);
     const savedLine = localStorage.getItem('koreading_line_height');
     if (savedLine) setLineHeight(parseFloat(savedLine));
     const savedTheme = localStorage.getItem('koreading_reader_theme');
@@ -377,7 +394,7 @@ export default function ArticleReader({ initialArticle }: { initialArticle: Arti
   }, [id, user, router, initialArticle, closePopup]);
 
   // [신규 기능] 독서 뷰어 커스텀 설정 갱신 헬퍼 함수
-  const updateFontSize = (size: string) => {
+  const updateFontSize = (size: ReaderFontSize) => {
     setFontSize(size);
     localStorage.setItem('koreading_font_size', size);
   };
@@ -525,9 +542,9 @@ export default function ArticleReader({ initialArticle }: { initialArticle: Arti
       setTimeout(() => {
         router.push('/library');
       }, 1500);
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error(err);
-      triggerAlert(`삭제 실패: ${err?.message || JSON.stringify(err)}`, '오류', 'error');
+      triggerAlert(`삭제 실패: ${err instanceof Error ? err.message : JSON.stringify(err)}`, '오류', 'error');
     }
   };
 
@@ -667,7 +684,7 @@ export default function ArticleReader({ initialArticle }: { initialArticle: Arti
           <div style={{ marginBottom: '16px' }}>
             <ReaderControls
               content={article.content}
-              fontSize={fontSize as any}
+              fontSize={fontSize}
               onFontSizeChange={(size) => updateFontSize(size)}
             />
           </div>
@@ -685,7 +702,7 @@ export default function ArticleReader({ initialArticle }: { initialArticle: Arti
         {article.hookQuote ? (
           <EditorialHeroCard
             hookQuote={article.hookQuote}
-            genre={(article as any).genre}
+            genre={article.genre}
             topicLabel={topicInfo?.label}
             topicEmoji={topicInfo?.emoji}
             estimatedMinutes={article.estimatedMinutes}
@@ -700,7 +717,7 @@ export default function ArticleReader({ initialArticle }: { initialArticle: Arti
           />
         ) : (
           <EditorialHeroCard
-            genre={(article as any).genre}
+            genre={article.genre}
             topicLabel={topicInfo?.label}
             topicEmoji={topicInfo?.emoji}
             estimatedMinutes={article.estimatedMinutes}
@@ -798,8 +815,8 @@ export default function ArticleReader({ initialArticle }: { initialArticle: Arti
         <ReaderBody paragraphs={paragraphs} article={article} fontSize={fontSize} lineHeight={lineHeight} savedWords={savedWords} recordingParaIdx={recordingParaIdx} paraScores={paraScores} onWordClick={handleWordClick} onWordEnter={handleWordMouseEnter} onWordLeave={handleWordMouseLeave} onSpeak={speakText} onTutor={handleOpenTutor} onMic={handleMicClick} />
 
         {/* 🤔 생각해볼 거리 / 당신의 선택은? */}
-        {(article as any).discussionPrompt && (
-          <DiscussionPromptCard prompt={(article as any).discussionPrompt} />
+        {article.discussionPrompt && (
+          <DiscussionPromptCard prompt={article.discussionPrompt} />
         )}
 
         {/* 독자 평가 평점 제출 카드 */}
@@ -1313,12 +1330,12 @@ export default function ArticleReader({ initialArticle }: { initialArticle: Arti
           <div style={{ marginBottom: '16px' }}>
             <div style={{ fontSize: '0.75rem', fontWeight: 700, color: 'var(--text-muted)', marginBottom: '8px' }}>글자 크기</div>
             <div style={{ display: 'flex', gap: '6px' }}>
-              {[
+              {([
                 { id: 'small', label: '가-' },
                 { id: 'normal', label: '가' },
                 { id: 'large', label: '가+' },
                 { id: 'xlarge', label: '가++' },
-              ].map(size => (
+              ] as const).map(size => (
                 <button
                   key={size.id}
                   onClick={() => updateFontSize(size.id)}

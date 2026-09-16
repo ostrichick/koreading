@@ -118,9 +118,9 @@ export async function GET(req: NextRequest) {
         });
       }
     }
-  } catch (err: any) {
+  } catch (err: unknown) {
     console.error('[System Audit] Firestore getAllArticles failed:', err);
-    dbError = err?.message || String(err);
+    dbError = err instanceof Error ? err.message : String(err);
   }
 
   const averageLength = articles.length > 0 
@@ -166,7 +166,8 @@ export async function GET(req: NextRequest) {
         latencyMs: Date.now() - pingStart,
         isLegalRequired: page.isLegal,
       });
-    } catch (err: any) {
+    } catch (err: unknown) {
+      const note = err instanceof Error ? err.message : String(err);
       pageHealthResults.push({
         path: page.path,
         url: targetUrl,
@@ -174,7 +175,7 @@ export async function GET(req: NextRequest) {
         ok: false,
         latencyMs: Date.now() - pingStart,
         isLegalRequired: page.isLegal,
-        error: err?.message || String(err)
+        error: note
       });
     }
   }
@@ -215,13 +216,14 @@ export async function GET(req: NextRequest) {
         message: `sitemap.xml 응답 실패 (HTTP ${sitemapRes.status})`
       };
     }
-  } catch (err: any) {
+  } catch (err: unknown) {
+    const note = err instanceof Error ? err.message : String(err);
     sitemapCheck = {
       ok: false,
       totalListedUrls: 0,
       dynamicArticleUrls: 0,
       status: 'FAILED',
-      message: `sitemap.xml 검사 중 예외 발생: ${err?.message || String(err)}`
+      message: `sitemap.xml 검사 중 예외 발생: ${note}`
     };
   }
 

@@ -7,14 +7,14 @@ import { aiRequestSchema, articleSchema, basicWordSchema, advancedWordSchema, pl
  * 1순위로 Groq (Gemma 2, Llama 3 등) 엔진을 호출하며, 2순위 비상망으로 Gemini 2.5/2.0/1.5 Flash 폴백망을 가동합니다.
  * 텍스트 생성, 레벨 테스트 출제, 정밀 문법 형태소 분석 및 예문 사전 검색을 처리합니다.
  * @why AI 서비스들의 API 키 유출을 방지하고 백엔드 서버 단에서 쿼터 초과(429) 시 지능적으로 우회 및 교차 이중화 네트워크를 완성하기 위해 안전한 단일 엔드포인트 게이트웨이로 설계되었습니다.
- * @perf Edge Runtime으로 배포되어 Vercel의 엣지 네트워크에서 콜드 스타트 없이 즉시 실행됩니다.
+ * @perf Vercel Serverless(Node.js) 런타임으로 배포되어 Gemini 모델 리스트 동기화 및 폴백 네트워크를 안정적으로 구동합니다.
  */
 
-// Edge Runtime: Vercel 엣지 네트워크에서 직접 실행 → 콜드 스타트 제거, 응답 지연 최소화
-export const runtime = 'edge';
+// Node.js Runtime: Gemini SDK 폴백 체인 및 예외 처리의 안정성 확보 (Edge Runtime 폐기 예정 경고 해소)
+export const runtime = 'nodejs';
 
 import { NextRequest, NextResponse } from 'next/server';
-import { GoogleGenerativeAI } from '@google/generative-ai';
+import { GoogleGenerativeAI, type GenerativeModel } from '@google/generative-ai';
 import type { CEFRLevel, NativeLanguage } from '@/lib/gemini';
 import { TOPICS } from '@/lib/gemini';
 import { getRandomSubTopic, getGenreInstruction } from '@/lib/topicSeeds';
@@ -32,9 +32,11 @@ export async function POST(req: NextRequest) {
     const checked = aiRequestSchema.safeParse(await boundedJson(req));
     if (!checked.success) return NextResponse.json({ error: 'Invalid AI request' }, { status: 400 });
     const body = checked.data;
+    const action = body.action;
+    // common 스키마 필드: 모든 액션에서 존재합니다.
+    const { customApiKey, nativeLang } = body;
     const ip = (req.headers.get('x-vercel-forwarded-for') || req.headers.get('x-forwarded-for') || 'local').split(',')[0].trim();
     if (!await checkAiQuota(ip)) return NextResponse.json({ error: 'AI usage limit reached. Please retry after the limit resets.' }, { status: 429 });
-    const { action, level, topic, nativeLang, word, sentence, customApiKey, paragraph, userMessage, chatHistory, customKeyword, genre, recentTitles } = body as any;
     // 사용자가 직접 입력한 개인 API Key가 있다면 이를 최우선으로 사용하고, 없으면 서버 환경변수 키를 사용합니다.
     const activeApiKey = (customApiKey && customApiKey.trim()) || process.env.GEMINI_API_KEY || '';
     if (!activeApiKey && !process.env.GROQ_API_KEY) {
@@ -61,7 +63,7 @@ export async function POST(req: NextRequest) {
     const { articleModels, dictionaryModels } = await getPrioritizedGeminiModels(activeApiKey);
 
     // 모델 인스턴스 지연 생성 캐시 (빠른 장애 격리를 위해 9초 타임아웃 적용)
-    const modelCache = new Map<string, any>();
+    const modelCache = new Map<string, GenerativeModel>();
     const getModel = (modelId: string, timeout = 9000) => {
       if (!modelCache.has(modelId)) {
         modelCache.set(modelId, genAI.getGenerativeModel({ model: modelId, systemInstruction }, { timeout }));
@@ -134,8 +136,8 @@ export async function POST(req: NextRequest) {
           });
           validateResult(result.response.text(), advanced);
           return { text: result.response.text(), modelUsed: target.name };
-        } catch (err: any) {
-          const msg = err?.message || String(err);
+        } catch (err: unknown) {
+          const msg = err instanceof Error ? err.message : String(err);
           console.warn(`[${target.name} error]: ${msg}`);
           if (isRetryableError(msg)) {
             await sleep(300);
@@ -154,6 +156,7 @@ export async function POST(req: NextRequest) {
     //      (2단계: 장르/시점 다변화 + 기존 글 중복 방지)
     // ═══════════════════════════════════════════════════
     if (action === 'generateArticle') {
+      const { level, topic, customKeyword, genre, recentTitles } = body;
       // CEFR 레벨별 가이드라인 매핑
       const levelConfig: Record<CEFRLevel, string> = {
         A1: '가장 기초적인 한국어 어휘만 사용하십시오. 단순한 문장 구조 (문장당 4~6개 단어). 쉬운 현재 시제 위주. 텍스트 전체 길이는 약 400~500자 크기로 서술하십시오. 한 문장마다 끊어 쓰지 말고, 4~6개의 문장이 뭉친 하나의 탄탄한 문단으로 구성하십시오.',
@@ -183,9 +186,9 @@ export async function POST(req: NextRequest) {
 
       // 3) 도서관 최근 글 중복 방지 지침 (Negative Prompting)
       let duplicateAvoidanceInstruction = '';
-      if (recentTitles && Array.isArray(recentTitles) && recentTitles.length > 0) {
+      if (recentTitles && recentTitles.length > 0) {
         const titleList = recentTitles
-          .filter((t: any) => typeof t === 'string' && t.trim())
+          .filter(t => typeof t === 'string' && t.trim())
           .slice(0, 10)
           .map((t: string) => `- "${t.trim()}"`)
           .join('\n');
@@ -261,8 +264,8 @@ ${pedagogicalGuide}
           resultText = r.response.text();
           modelUsed = target.name;
           logs.push(`✅ ${target.name} 모델로 순수 한글 생성 성공!`);
-        } catch (err: any) {
-          const msg = err?.message || String(err);
+        } catch (err: unknown) {
+          const msg = err instanceof Error ? err.message : String(err);
           if (isRetryableError(msg)) {
             logs.push(`⏳ ${target.name} 일시 지연/과부하/쿼터 초과. 다음 고성능 모델로 전환...`);
             await sleep(100);
@@ -314,8 +317,8 @@ ${pedagogicalGuide}
             } else {
               logs.push(`⚠️ ${gm.name} 상태 (HTTP ${res.status})`);
             }
-          } catch (e: any) {
-            logs.push(`⚠️ ${gm.name} 전환: ${e?.message || 'Failed'}`);
+          } catch (e: unknown) {
+            logs.push(`⚠️ ${gm.name} 전환: ${e instanceof Error ? e.message : 'Failed'}`);
           }
         }
       }
@@ -369,7 +372,7 @@ ${pedagogicalGuide}
     // 🔍 2. 독해 본문 단어 사전 검색 및 분석 (lookupWord)
     // ═══════════════════════════════════════════════════
     } else if (action === 'lookupWord') {
-      const type = body.action === 'lookupWord' ? body.type : 'all';
+      const { type, word, sentence } = body;
       const langMap: Record<string, string> = { en: 'English', es: 'Spanish', ja: 'Japanese', zh: 'Chinese' };
       const langName = langMap[nativeLang] || 'English';
 
@@ -526,14 +529,15 @@ A1, A2, B1, B2, C1, C2 순서로 모두 포함하고 각각 정확히 두 문제
     // 💬 4. 1:1 AI 튜터 문단별 코칭 대화 (tutorChat)
     // ═══════════════════════════════════════════════════
     } else if (action === 'tutorChat') {
+      const { level, paragraph, userMessage, chatHistory } = body;
       const langMap: Record<string, string> = { en: 'English', es: 'Spanish', ja: 'Japanese', zh: 'Chinese' };
       const langName = langMap[nativeLang] || 'English';
 
       let historyText = '';
       if (chatHistory && chatHistory.length > 0) {
-        historyText = chatHistory.map((msg: any) => {
+        historyText = chatHistory.map(msg => {
           const sender = msg.role === 'user' ? '학습자 (User)' : 'AI 튜터 (Tutor)';
-          const text = msg.parts?.[0]?.text || msg.content || '';
+          const text = msg.parts?.[0]?.text || '';
           return `[${sender}]: ${text}`;
         }).join('\n\n');
       }
@@ -569,7 +573,9 @@ ${historyText || "(이전 대화 없음)"}
     }
 
     return NextResponse.json({ error: 'Unknown action' }, { status: 400 });
-  } catch (err: any) {
-    return NextResponse.json({ error: err?.status ? err.message : 'AI response unavailable. Please retry.' }, { status: err?.status || 503 });
+  } catch (err: unknown) {
+    const status = (err as { status?: number } | null)?.status || 503;
+    const message = status !== 503 && err instanceof Error ? err.message : 'AI response unavailable. Please retry.';
+    return NextResponse.json({ error: message }, { status });
   }
 }
