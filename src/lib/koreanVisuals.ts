@@ -118,6 +118,15 @@ export async function getRealKoreanPhoto(
     }
   }
 
+  // 1-2. 한국어 위키에서 사진을 못 찾은 경우, 영어 위키피디아(en.wikipedia.org)에서도 2차 검색
+  for (const word of candidates) {
+    if (!word || word.length < 2) continue;
+    const enPhoto = await fetchWikiPhoto(word, 'en');
+    if (enPhoto && !enPhoto.isSvg) {
+      return { url: enPhoto.url, description: enPhoto.description };
+    }
+  }
+
   if (fallbackSvgMatch) {
     return fallbackSvgMatch;
   }

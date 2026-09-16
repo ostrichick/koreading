@@ -24,7 +24,7 @@ interface ArticleIllustrationProps {
 export default function ArticleIllustration({
   src,
   alt,
-  badgeText = '🎨 AI 맞춤 삽화',
+  badgeText = '📷 시각 자료',
   caption,
   aspectRatio = '16 / 9',
   style = {},
@@ -59,29 +59,28 @@ export default function ArticleIllustration({
       {!loaded && (
         <div
           style={{
-            position: 'absolute',
-            inset: 0,
+            width: '100%',
+            height: '100%',
             display: 'flex',
             flexDirection: 'column',
             alignItems: 'center',
             justifyContent: 'center',
-            gap: '10px',
-            background: 'linear-gradient(110deg, var(--bg-card) 8%, var(--bg-secondary) 18%, var(--bg-card) 33%)',
+            background: 'linear-gradient(90deg, var(--bg-card) 25%, var(--bg-secondary) 50%, var(--bg-card) 75%)',
             backgroundSize: '200% 100%',
-            animation: 'shimmer 1.6s linear infinite',
+            animation: 'illustration-shimmer 1.8s infinite linear',
             color: 'var(--text-muted)',
             fontSize: '0.85rem',
-            zIndex: 1,
+            gap: '8px',
           }}
         >
           <style>{`
-            @keyframes shimmer {
+            @keyframes illustration-shimmer {
               0% { background-position: -200% 0; }
               100% { background-position: 200% 0; }
             }
           `}</style>
-          <span style={{ fontSize: '1.5rem', opacity: 0.8 }}>🎨</span>
-          <span style={{ fontWeight: 500 }}>주제 맞춤 일러스트를 불러오는 중...</span>
+          <span style={{ fontSize: '1.5rem', opacity: 0.8 }}>📷</span>
+          <span style={{ fontWeight: 500 }}>주제 맞춤 시각 자료를 불러오는 중...</span>
         </div>
       )}
 
