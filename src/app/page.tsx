@@ -1,14 +1,9 @@
 'use client';
 
-import { useState } from 'react';
 import Link from 'next/link';
 import Image from 'next/image';
-import { useAuth } from '@/contexts/AuthContext';
 
-/**
- * 영어 텍스트를 기본 표출하고, 마우스 호버 시 한국어 번역 텍스트로 자연스럽게 페이드 전환하는 컴포넌트입니다.
- * CSS Grid(동일 그리드 영역 1/1/2/2 배치) 기법을 활용하여 레이아웃이 튀거나 흔들리지(Layout Shift) 않도록 보장합니다.
- */
+/** 영어와 한국어 안내를 터치·키보드 이용자에게도 동일하게 제공합니다. */
 function BilingualText({
   en,
   ko,
@@ -18,45 +13,18 @@ function BilingualText({
   ko: string;
   style?: React.CSSProperties;
 }) {
-  const [hovered, setHovered] = useState(false);
   return (
     <span
-      onMouseEnter={() => setHovered(true)}
-      onMouseLeave={() => setHovered(false)}
       style={{
-        cursor: 'default',
-        display: 'grid',
-        gridTemplateColumns: '1fr',
-        gridTemplateRows: '1fr',
-        transition: 'all 0.3s ease',
-        position: 'relative',
+        display: 'flex',
+        flexDirection: 'column',
         alignItems: 'center',
-        justifyContent: 'center',
+        gap: '4px',
         ...style,
       }}
     >
-      {/* 기본 영어 상태 텍스트 */}
-      <span style={{
-        gridArea: '1 / 1 / 2 / 2',
-        transition: 'opacity 0.25s ease, transform 0.25s ease, visibility 0.25s ease',
-        opacity: hovered ? 0 : 1,
-        transform: hovered ? 'translateY(-4px)' : 'translateY(0)',
-        visibility: hovered ? 'hidden' : 'visible',
-      }}>
-        {en}
-      </span>
-      {/* 호버 시 페이드인되는 한국어 상태 텍스트 */}
-      <span style={{
-        gridArea: '1 / 1 / 2 / 2',
-        transition: 'opacity 0.25s ease, transform 0.25s ease, visibility 0.25s ease',
-        opacity: hovered ? 1 : 0,
-        transform: hovered ? 'translateY(0)' : 'translateY(4px)',
-        visibility: hovered ? 'visible' : 'hidden',
-        color: 'var(--accent-primary)',
-        fontFamily: 'Noto Sans KR, sans-serif',
-      }}>
-        {ko}
-      </span>
+      <span lang="en">{en}</span>
+      <span lang="ko" style={{ color: 'var(--accent-primary)', fontFamily: 'Noto Sans KR, sans-serif', fontSize: '0.9em' }}>{ko}</span>
     </span>
   );
 }
@@ -64,30 +32,14 @@ function BilingualText({
 // 서비스의 인트로/랜딩 첫 화면을 그리는 HomePage 컴포넌트입니다.
 // 로고 클릭 시 항상 이 메인 화면으로 돌아올 수 있도록 자동 리다이렉트를 제거했습니다.
 export default function HomePage() {
-  const { user, loading } = useAuth();
-
-  // 회원 로그인 상태를 조회하고 있는 로딩 중 화면
-  if (loading) return (
-    <div className="loading-wrapper" style={{ minHeight: '100vh' }}>
-      <div className="loading-spinner" />
-    </div>
-  );
-
   // 서비스 특징 카드 데이터 모음
   const features = [
     {
-      icon: '🎯',
-      en: 'Level Test',
-      ko: '레벨 테스트',
-      descEn: 'Find a suggested starting level with an AI-generated reading practice test.',
-      descKo: 'AI 읽기 연습 문제로 시작 난이도를 추천받아요. 공인 평가가 아닙니다.',
-    },
-    {
       icon: '📚',
-      en: 'i+1 Texts',
-      ko: 'i+1 원리 텍스트',
-      descEn: '90% familiar + 10% new vocabulary — the proven formula for language acquisition.',
-      descKo: '90% 아는 어휘 + 10% 새 어휘 — 언어 습득에 검증된 방법입니다.',
+      en: 'Level-Selected Texts',
+      ko: '레벨 선택 독해 자료',
+      descEn: 'Choose an A1–C2 reading level and explore AI-generated practice texts. Level suitability is not independently validated.',
+      descKo: 'A1~C2 난이도를 직접 선택해 AI 독해 자료로 연습하세요. 실제 레벨 적합도는 별도 검증되지 않았습니다.',
     },
     {
       icon: '👆',
@@ -107,15 +59,15 @@ export default function HomePage() {
       icon: '✅',
       en: 'Track Progress',
       ko: '학습 진도 저장',
-      descEn: 'See which texts you\'ve read. Pick up exactly where you left off.',
+      descEn: 'See which texts you have marked as read.',
       descKo: '읽은 글이 표시되어 학습 기록을 한눈에 관리할 수 있어요.',
     },
     {
       icon: '🌏',
-      en: 'EN & ES Support',
-      ko: '영어 & 스페인어',
-      descEn: 'Full translations in English and Spanish — choose what works for you.',
-      descKo: '영어 또는 스페인어로 맞춤 번역을 제공합니다.',
+      en: '4 Languages',
+      ko: '4개 언어',
+      descEn: 'Dictionary translations are available in English, Spanish, Japanese and Chinese.',
+      descKo: '단어 사전은 영어·스페인어·일본어·중국어 번역을 지원합니다.',
     },
   ];
 
@@ -138,7 +90,7 @@ export default function HomePage() {
 
           {/* 서브 설명 뱃지 */}
           <div style={{ display: 'inline-flex', alignItems: 'center', gap: '8px', padding: '6px 16px', background: 'rgba(217,119,6,0.08)', border: '1px solid var(--border-medium)', borderRadius: '100px', fontSize: '0.8rem', color: 'var(--accent-primary)', marginBottom: '28px', fontWeight: 600 }}>
-            ✨ i+1 Principle · Korean Reading
+            AI-powered Korean Reading Practice
           </div>
 
           {/* 메인 헤드라인 타이틀 */}
@@ -146,41 +98,41 @@ export default function HomePage() {
             Read Korean.
             <br />
             <span style={{ background: 'var(--gradient-main)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent', backgroundClip: 'text' }}>
-              Actually acquire it.
+              Practice at your pace.
             </span>
           </h1>
 
           {/* 사용방법 힌트 */}
           <p style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginBottom: '32px', letterSpacing: '0.05em' }}>
-            ✦ Hover the text below to see Korean · 아래 텍스트에 마우스를 올려보세요 ✦
+            ✦ English and Korean guidance · 영어와 한국어 안내 ✦
           </p>
 
           {/* 레이아웃 시프트가 없는 2개 언어 실시간 페이드 자막 */}
           <div style={{ maxWidth: '640px', margin: '0 auto 48px' }}>
             <div style={{ fontSize: '1.15rem', color: 'var(--text-secondary)', display: 'flex', flexDirection: 'column', gap: '16px', textAlign: 'center', lineHeight: 1.6 }}>
-              <BilingualText en="Koreading gives you Korean texts perfectly matched to your level." ko="코리딩은 당신의 레벨에 딱 맞는 한국어 텍스트를 제공합니다." />
+              <BilingualText en="Choose a reading level and explore AI-generated Korean texts." ko="독해 난이도를 선택해 AI가 생성한 한국어 글을 읽어보세요." />
               <BilingualText en="Click any word for an instant dictionary lookup." ko="모르는 단어는 클릭 한 번으로 즉시 사전을 확인하세요." />
-              <BilingualText en="No login needed to start." ko="시작하는 데 로그인이 필요 없어요." />
+              <BilingualText en="Browse without logging in. AI generation is subject to limits." ko="로그인 없이 글을 찾아볼 수 있어요. AI 생성에는 이용 제한이 있습니다." />
             </div>
           </div>
 
           {/* 페이지 이동 유도 버튼 */}
           <div style={{ display: 'flex', gap: '16px', justifyContent: 'center', flexWrap: 'wrap' }}>
             <Link href="/library" className="btn btn-primary btn-lg">
-              📚 Start Reading — Free
+              📚 Browse Reading Texts
             </Link>
-            <Link href="/login" className="btn btn-secondary btn-lg">
-              🔑 Sign In
+            <Link href="/about" className="btn btn-secondary btn-lg">
+              About Koreading
             </Link>
           </div>
 
           {/* 주요 학습 통계/수치 요약 */}
           <div style={{ display: 'flex', gap: '48px', justifyContent: 'center', marginTop: '64px', flexWrap: 'wrap' }}>
             {[
-              { value: 'A1~C2', label: '6 CEFR Levels' },
+              { value: 'A1~C2', label: '6 Difficulty Labels' },
               { value: '8', label: 'Topic Categories' },
-              { value: '∞', label: 'AI-generated Texts' },
-              { value: 'Free', label: 'To Get Started' },
+              { value: 'AI', label: 'Generated Reading Practice' },
+              { value: '4', label: 'Dictionary Languages' },
             ].map(stat => (
               <div key={stat.label} style={{ textAlign: 'center' }}>
                 <div style={{ fontSize: '1.5rem', fontWeight: 800, background: 'var(--gradient-main)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent', backgroundClip: 'text' }}>
@@ -200,7 +152,7 @@ export default function HomePage() {
             Everything you need to read Korean
           </h2>
           <p style={{ textAlign: 'center', color: 'var(--text-muted)', marginBottom: '48px', fontSize: '0.9rem' }}>
-            Hover each card to see it in Korean
+            Explore reading features in English and Korean
           </p>
           <div className="grid-3">
             {features.map(f => (
@@ -217,7 +169,7 @@ export default function HomePage() {
             Ready to read Korean?
           </h2>
           <div style={{ color: 'var(--text-secondary)', marginBottom: '32px', display: 'flex', justifyContent: 'center' }}>
-            <BilingualText en="Read and generate Korean texts right away — no account needed." ko="로그인 없이 바로 한국어 글을 읽고 생성해보세요." />
+            <BilingualText en="Browse Korean texts without an account; AI generation has request limits." ko="계정 없이 한국어 글을 둘러볼 수 있어요. AI 생성에는 이용 제한이 있습니다." />
           </div>
           <Link href="/library" className="btn btn-primary btn-lg">
             🚀 Start Reading Now
@@ -228,36 +180,17 @@ export default function HomePage() {
   );
 }
 
-// 각 고유 기능 카드 컴포넌트 (BilingualHover 지원)
+// 각 고유 기능 카드 컴포넌트
 function FeatureCard({ icon, en, ko, descEn, descKo }: { icon: string; en: string; ko: string; descEn: string; descKo: string }) {
-  const [hovered, setHovered] = useState(false);
-
   return (
     <div
       className="card"
-      onMouseEnter={() => setHovered(true)}
-      onMouseLeave={() => setHovered(false)}
-      style={{ cursor: 'default', transition: 'all 0.25s ease' }}
     >
       <div style={{ fontSize: '2.5rem', marginBottom: '16px' }}>{icon}</div>
-      <h3 style={{
-        fontSize: '1.1rem',
-        marginBottom: '10px',
-        transition: 'all 0.25s ease',
-        color: hovered ? 'var(--accent-primary)' : 'var(--text-primary)',
-        fontFamily: hovered ? 'Noto Sans KR, sans-serif' : 'inherit',
-      }}>
-        {hovered ? ko : en}
-      </h3>
-      <p style={{
-        color: 'var(--text-secondary)',
-        fontSize: '0.875rem',
-        lineHeight: 1.7,
-        transition: 'all 0.25s ease',
-        fontFamily: hovered ? 'Noto Sans KR, sans-serif' : 'inherit',
-      }}>
-        {hovered ? descKo : descEn}
-      </p>
+      <h3 style={{ fontSize: '1.1rem', marginBottom: '4px', color: 'var(--text-primary)' }}>{en}</h3>
+      <p lang="ko" style={{ color: 'var(--accent-primary)', fontSize: '0.85rem', marginBottom: '10px' }}>{ko}</p>
+      <p style={{ color: 'var(--text-secondary)', fontSize: '0.875rem', lineHeight: 1.7 }}>{descEn}</p>
+      <p lang="ko" style={{ color: 'var(--text-secondary)', fontSize: '0.8rem', lineHeight: 1.7, marginTop: '8px' }}>{descKo}</p>
     </div>
   );
 }

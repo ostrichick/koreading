@@ -9,7 +9,8 @@ import {
   deleteVocabulary,
   getCustomCategories,
   addCustomCategory,
-  deleteCustomCategory 
+  deleteCustomCategory,
+  reviewVocabulary,
 } from '@/lib/db';
 import { TOPICS } from '@/lib/gemini';
 import { getGuestLang, getGuestLevel } from '@/lib/storage';
@@ -24,7 +25,16 @@ const TRANSLATIONS = {
     exportAnki: '📥 Anki용 CSV 내보내기',
     tabList: '📖 단어 목록',
     tabFlashcard: '🎴 플래시카드',
+    tabReview: '🧠 오늘의 복습',
     tabQuiz: '🧩 미니 퀴즈',
+    reviewToday: '오늘의 복습',
+    reviewDue: '복습할 단어 {count}개',
+    reviewEmpty: '오늘 복습할 단어가 없습니다. 새 글을 읽거나 내일 다시 확인해 보세요.',
+    reviewReveal: '정답 보기',
+    reviewAgain: '다시 볼래요',
+    reviewRemembered: '알았어요',
+    reviewComplete: '오늘의 복습 완료',
+    reviewContext: '원문 문맥',
     allTopics: '전체',
     emptyTitle: '단어장이 비어 있어요',
     emptyDesc: '텍스트를 읽으면서 모르는 단어를 저장해보세요!',
@@ -63,7 +73,16 @@ const TRANSLATIONS = {
     exportAnki: '📥 Export CSV for Anki',
     tabList: '📖 Word List',
     tabFlashcard: '🎴 Flashcards',
+    tabReview: '🧠 Today\'s Review',
     tabQuiz: '🧩 Mini Quiz',
+    reviewToday: 'Today\'s Review',
+    reviewDue: '{count} words due',
+    reviewEmpty: 'No words are due today. Read something new or check again tomorrow.',
+    reviewReveal: 'Show answer',
+    reviewAgain: 'Review again',
+    reviewRemembered: 'I remembered',
+    reviewComplete: 'Today\'s review complete',
+    reviewContext: 'Original context',
     allTopics: 'All',
     emptyTitle: 'Vocabulary is empty',
     emptyDesc: 'Save words you don\'t know while reading texts!',
@@ -102,7 +121,16 @@ const TRANSLATIONS = {
     exportAnki: '📥 Exportar CSV para Anki',
     tabList: '📖 Lista de palabras',
     tabFlashcard: '🎴 Tarjetas',
+    tabReview: '🧠 Repaso de hoy',
     tabQuiz: '🧩 Mini cuestionario',
+    reviewToday: 'Repaso de hoy',
+    reviewDue: '{count} palabras para repasar',
+    reviewEmpty: 'No hay palabras pendientes hoy. Lee algo nuevo o vuelve mañana.',
+    reviewReveal: 'Mostrar respuesta',
+    reviewAgain: 'Repasar de nuevo',
+    reviewRemembered: 'La recordé',
+    reviewComplete: 'Repaso de hoy completado',
+    reviewContext: 'Contexto original',
     allTopics: 'Todo',
     emptyTitle: 'El vocabulario está vacío',
     emptyDesc: '¡Guarda las palabras que no sepas mientras lees!',
@@ -141,7 +169,16 @@ const TRANSLATIONS = {
     exportAnki: '📥 Anki用CSV書き出し',
     tabList: '📖 単語一覧',
     tabFlashcard: '🎴 フラッシュカード',
+    tabReview: '🧠 今日の復習',
     tabQuiz: '🧩 ミニクイズ',
+    reviewToday: '今日の復習',
+    reviewDue: '復習する単語 {count}個',
+    reviewEmpty: '今日復習する単語はありません。新しい文章を読むか、明日また確認してください。',
+    reviewReveal: '答えを見る',
+    reviewAgain: 'もう一度',
+    reviewRemembered: '覚えていた',
+    reviewComplete: '今日の復習完了',
+    reviewContext: '元の文脈',
     allTopics: 'すべて',
     emptyTitle: '単語帳が空です',
     emptyDesc: 'テキストを読みながら知らない単語を保存しましょう！',
@@ -180,7 +217,16 @@ const TRANSLATIONS = {
     exportAnki: '📥 导出 Anki CSV',
     tabList: '📖 单词列表',
     tabFlashcard: '🎴 闪卡',
+    tabReview: '🧠 今日复习',
     tabQuiz: '🧩 迷你测试',
+    reviewToday: '今日复习',
+    reviewDue: '有 {count} 个单词待复习',
+    reviewEmpty: '今天没有需要复习的单词。可以阅读新文章或明天再来。',
+    reviewReveal: '显示答案',
+    reviewAgain: '再复习',
+    reviewRemembered: '我记得',
+    reviewComplete: '今日复习完成',
+    reviewContext: '原文语境',
     allTopics: '全部',
     emptyTitle: '单词本为空',
     emptyDesc: '阅读文章时保存你不认识的单词吧！',
@@ -215,7 +261,7 @@ const TRANSLATIONS = {
 };
 
 export default function VocabularyPage() {
-  const { user, profile } = useAuth();
+  const { user, profile, loading: authLoading } = useAuth();
   const router = useRouter();
 
   const activeNativeLang = profile?.nativeLanguage || getGuestLang() || 'en';
@@ -233,6 +279,9 @@ export default function VocabularyPage() {
 
   const [vocab, setVocab] = useState<VocabularyEntry[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [categoryError, setCategoryError] = useState(false);
+  const [retryKey, setRetryKey] = useState(0);
   const [selectedTopic, setSelectedTopic] = useState<string>('all');
   const [selectedEntry, setSelectedEntry] = useState<VocabularyEntry | null>(null);
 
@@ -247,20 +296,47 @@ export default function VocabularyPage() {
   const [isCorrect, setIsCorrect] = useState<boolean | null>(null);
   const [quizScore, setQuizScore] = useState<{ correct: number; total: number }>({ correct: 0, total: 0 });
 
+  const [reviewQueue, setReviewQueue] = useState<VocabularyEntry[]>([]);
+  const [reviewIdx, setReviewIdx] = useState(0);
+  const [reviewRevealed, setReviewRevealed] = useState(false);
+  const [reviewSaving, setReviewSaving] = useState(false);
+  const [reviewSession, setReviewSession] = useState({ remembered: 0, total: 0 });
+
   const [customCategories, setCustomCategories] = useState<string[]>([]);
   const [showCategoryModal, setShowCategoryModal] = useState<boolean>(false);
   const [newCategoryName, setNewCategoryName] = useState<string>('');
 
   useEffect(() => {
-    if (!user) { router.push('/login'); return; }
-    getVocabulary(user.uid).then(v => {
-      setVocab(v);
-      setLoading(false);
-    });
-    getCustomCategories(user.uid).then(cats => {
-      setCustomCategories(cats);
-    });
-  }, [user, router]);
+    if (authLoading) return;
+    if (!user) { router.replace('/login'); return; }
+    let cancelled = false;
+    const load = async () => {
+      setLoading(true);
+      setLoadError(null);
+      setCategoryError(false);
+      try {
+        const [wordsResult, categoriesResult] = await Promise.allSettled([
+          getVocabulary(user.uid),
+          getCustomCategories(user.uid),
+        ]);
+        if (cancelled) return;
+        if (wordsResult.status === 'fulfilled') setVocab(wordsResult.value);
+        else {
+          console.error('단어장 불러오기 실패:', wordsResult.reason);
+          setLoadError('단어장을 불러오지 못했습니다. 연결을 확인하고 다시 시도해 주세요.');
+        }
+        if (categoriesResult.status === 'fulfilled') setCustomCategories(categoriesResult.value);
+        else {
+          console.error('카테고리 불러오기 실패:', categoriesResult.reason);
+          setCategoryError(true);
+        }
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    };
+    void load();
+    return () => { cancelled = true; };
+  }, [authLoading, user, router, retryKey]);
 
   // 단어 삭제 핸들러
   const handleDeleteWord = async (entryId: string) => {
@@ -325,6 +401,60 @@ export default function VocabularyPage() {
       return entry.topic === selectedTopic;
     });
   }, [vocab, selectedTopic, isUncategorized]);
+
+  const isDueForReview = useCallback((entry: VocabularyEntry) => {
+    if (!entry.nextReviewAt) return true; // Legacy entries become immediately reviewable.
+    return entry.nextReviewAt.toMillis() <= Date.now();
+  }, []);
+
+  const dueVocab = useMemo(() => filteredVocab.filter(isDueForReview), [filteredVocab, isDueForReview]);
+
+  const startReviewSession = () => {
+    const due = filteredVocab.filter(isDueForReview).slice(0, 5);
+    setReviewQueue(due);
+    setReviewIdx(0);
+    setReviewRevealed(false);
+    setReviewSession({ remembered: 0, total: 0 });
+    setActiveTab('review');
+  };
+
+  const reviewEntry = reviewQueue[reviewIdx] || null;
+  const reviewPrompt = useMemo(() => {
+    if (!reviewEntry?.sourceSentence) return '';
+    const sourceWord = reviewEntry.sourceWord || reviewEntry.word;
+    if (sourceWord && reviewEntry.sourceSentence.includes(sourceWord)) {
+      return reviewEntry.sourceSentence.replace(sourceWord, '______');
+    }
+    if (reviewEntry.sourceSentence.includes(reviewEntry.word)) {
+      return reviewEntry.sourceSentence.replace(reviewEntry.word, '______');
+    }
+    return reviewEntry.sourceSentence;
+  }, [reviewEntry]);
+
+  const handleReviewGrade = async (remembered: boolean) => {
+    if (!user || !reviewEntry || reviewSaving) return;
+    setReviewSaving(true);
+    try {
+      const result = await reviewVocabulary(user.uid, reviewEntry.id, remembered);
+      setVocab(previous => previous.map(entry => entry.id === reviewEntry.id ? {
+        ...entry,
+        reviewIntervalDays: result.reviewIntervalDays,
+        successCount: result.successCount,
+        failureCount: result.failureCount,
+        nextReviewAt: result.nextReviewAt,
+      } : entry));
+      setReviewSession(previous => ({
+        remembered: previous.remembered + (remembered ? 1 : 0),
+        total: previous.total + 1,
+      }));
+      setReviewIdx(index => index + 1);
+      setReviewRevealed(false);
+    } catch (error) {
+      console.error('단어 복습 저장 실패:', error);
+    } finally {
+      setReviewSaving(false);
+    }
+  };
 
   // 플래시카드 무작위 셔플 기능 (Fisher-Yates 셔플)
   const handleShuffleCards = () => {
@@ -425,15 +555,29 @@ export default function VocabularyPage() {
   };
 
   // 단어 목록 다운로드 완료 대기 화면
-  if (loading) return (
+  if (authLoading || loading || !user) return (
     <div className="loading-wrapper" style={{ minHeight: '100vh' }}>
       <div className="loading-spinner" />
+    </div>
+  );
+
+  if (loadError) return (
+    <div className="container" role="alert" style={{ padding: '64px 24px', textAlign: 'center' }}>
+      <h1 style={{ marginBottom: '16px' }}>{t.title}</h1>
+      <p style={{ marginBottom: '20px' }}>{loadError}</p>
+      <button type="button" className="btn btn-primary" onClick={() => setRetryKey(key => key + 1)}>Retry / 다시 시도</button>
     </div>
   );
 
   return (
     <div style={{ minHeight: '100vh', padding: '40px 24px' }}>
       <div className="container">
+        {categoryError && (
+          <div role="alert" className="card" style={{ marginBottom: '16px' }}>
+            카테고리를 불러오지 못했습니다. 단어 목록은 이용할 수 있습니다. / Categories could not be loaded.
+            <button type="button" className="btn btn-secondary btn-sm" style={{ marginLeft: '12px' }} onClick={() => setRetryKey(key => key + 1)}>Retry / 다시 시도</button>
+          </div>
+        )}
         {/* 상단 제목 헤더 및 안키 CSV 내보내기 버튼 */}
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '16px', marginBottom: '24px' }}>
           <div>
@@ -476,16 +620,33 @@ export default function VocabularyPage() {
           </div>
         </div>
 
+        <button
+          type="button"
+          className="card"
+          onClick={startReviewSession}
+          style={{ width: '100%', textAlign: 'left', marginBottom: '24px', padding: '18px 20px', cursor: 'pointer', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '16px' }}
+          aria-label={`${t.reviewToday}: ${t.reviewDue.replace('{count}', Math.min(dueVocab.length, 5).toString())}`}
+        >
+          <span>
+            <strong style={{ display: 'block', marginBottom: '4px' }}>{t.reviewToday}</strong>
+            <span style={{ color: 'var(--text-secondary)', fontSize: '0.85rem' }}>
+              {dueVocab.length === 0 ? t.reviewEmpty : t.reviewDue.replace('{count}', Math.min(dueVocab.length, 5).toString())}
+            </span>
+          </span>
+          <span aria-hidden="true" style={{ color: 'var(--accent-primary)', fontWeight: 900 }}>→</span>
+        </button>
+
         {/* [복습 모드 활성화를 위한 신규 탭 메뉴 바] */}
         <div style={{ display: 'flex', gap: '8px', borderBottom: '1px solid var(--border-subtle)', marginBottom: '32px', overflowX: 'auto', paddingBottom: '2px' }}>
           {[
             { id: 'list', label: t.tabList },
+            { id: 'review', label: t.tabReview },
             { id: 'flashcard', label: t.tabFlashcard },
             { id: 'quiz', label: t.tabQuiz }
           ].map(tab => (
             <button
               key={tab.id}
-              onClick={() => setActiveTab(tab.id)}
+              onClick={() => tab.id === 'review' ? startReviewSession() : setActiveTab(tab.id)}
               style={{
                 background: 'none',
                 border: 'none',
@@ -577,8 +738,6 @@ export default function VocabularyPage() {
                   <div
                     key={entry.id}
                     className="card"
-                    style={{ cursor: 'pointer' }}
-                    onClick={() => setSelectedEntry(entry)} // 클릭 시 상세 모달 오픈
                   >
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '8px' }}>
                       <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
@@ -588,10 +747,9 @@ export default function VocabularyPage() {
                         )}
                       </div>
                       <button
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          handleDeleteWord(entry.id);
-                        }}
+                        type="button"
+                        onClick={() => handleDeleteWord(entry.id)}
+                        aria-label={`${t.deleteBtn}: ${entry.word}`}
                         style={{
                           background: 'none',
                           border: 'none',
@@ -609,6 +767,12 @@ export default function VocabularyPage() {
                       </button>
                     </div>
 
+                    <button
+                      type="button"
+                      onClick={() => setSelectedEntry(entry)}
+                      aria-label={`${entry.word} — ${entry.translation}`}
+                      style={{ display: 'block', width: '100%', textAlign: 'left', border: 'none', padding: 0, background: 'transparent', cursor: 'pointer', color: 'inherit' }}
+                    >
                     <div style={{
                       fontSize: '1.4rem',
                       fontWeight: 900,
@@ -643,11 +807,64 @@ export default function VocabularyPage() {
                     }}>
                       {entry.definition}
                     </div>
+                    </button>
                   </div>
                 );
               })}
             </div>
           )
+        )}
+
+        {/* ─── 오늘의 간격 반복 복습 ─── */}
+        {activeTab === 'review' && (
+          reviewQueue.length === 0 ? (
+            <div className="empty-state">
+              <div className="empty-state-icon">🧠</div>
+              <div className="empty-state-title">{t.reviewComplete}</div>
+              <div className="empty-state-desc">{t.reviewEmpty}</div>
+              <a href="/library" className="btn btn-primary mt-4">{t.toLibrary}</a>
+            </div>
+          ) : reviewIdx >= reviewQueue.length ? (
+            <div className="card" style={{ maxWidth: '560px', margin: '0 auto', textAlign: 'center', padding: '40px 28px' }}>
+              <div style={{ fontSize: '2.5rem', marginBottom: '12px' }}>✓</div>
+              <h2 style={{ fontSize: '1.4rem', marginBottom: '8px' }}>{t.reviewComplete}</h2>
+              <p style={{ color: 'var(--text-secondary)', marginBottom: '20px' }}>
+                {reviewSession.remembered} / {reviewSession.total}
+              </p>
+              <a href="/library" className="btn btn-primary" style={{ justifyContent: 'center' }}>{t.toLibrary}</a>
+            </div>
+          ) : reviewEntry ? (
+            <div style={{ maxWidth: '620px', margin: '0 auto', display: 'grid', gap: '16px' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', color: 'var(--text-muted)', fontSize: '0.82rem' }}>
+                <span>{t.reviewToday}</span>
+                <strong>{reviewIdx + 1} / {reviewQueue.length}</strong>
+              </div>
+              <div className="card" style={{ padding: '32px 26px', textAlign: 'center' }}>
+                {reviewEntry.sourceSentence ? (
+                  <>
+                    <div style={{ color: 'var(--text-muted)', fontSize: '0.76rem', fontWeight: 700, marginBottom: '12px' }}>{t.reviewContext}</div>
+                    <p lang="ko" style={{ fontFamily: 'Noto Sans KR, sans-serif', fontSize: '1.2rem', lineHeight: 1.9, margin: '0 0 18px' }}>{reviewPrompt}</p>
+                  </>
+                ) : (
+                  <p style={{ color: 'var(--text-secondary)', margin: '0 0 18px' }}>{t.quizQuestionDesc}</p>
+                )}
+
+                {!reviewRevealed ? (
+                  <button type="button" className="btn btn-primary" onClick={() => setReviewRevealed(true)}>{t.reviewReveal}</button>
+                ) : (
+                  <div role="status" style={{ borderTop: '1px solid var(--border-subtle)', paddingTop: '20px' }}>
+                    <h2 lang="ko" style={{ fontSize: '2rem', marginBottom: '6px' }}>{reviewEntry.word}</h2>
+                    <p style={{ color: 'var(--accent-primary)', fontWeight: 700, marginBottom: '8px' }}>{reviewEntry.translation}</p>
+                    <p lang="ko" style={{ color: 'var(--text-secondary)', lineHeight: 1.7, marginBottom: '18px' }}>{reviewEntry.definition}</p>
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
+                      <button type="button" className="btn btn-secondary" disabled={reviewSaving} onClick={() => void handleReviewGrade(false)}>{t.reviewAgain}</button>
+                      <button type="button" className="btn btn-primary" disabled={reviewSaving} onClick={() => void handleReviewGrade(true)}>{t.reviewRemembered}</button>
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
+          ) : null
         )}
 
         {/* ─── 탭 2: 3D 플래시카드 학습 ─── */}
@@ -664,6 +881,14 @@ export default function VocabularyPage() {
               <div 
                 className={`flashcard-container ${isFlipped ? 'is-flipped' : ''}`}
                 onClick={() => setIsFlipped(!isFlipped)}
+                role="button"
+                tabIndex={0}
+                aria-label={`${shuffledVocab[cardIdx].word}: ${t.flipCard}`}
+                aria-pressed={isFlipped}
+                onKeyDown={e => {
+                  if (e.target !== e.currentTarget) return;
+                  if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setIsFlipped(flipped => !flipped); }
+                }}
               >
                 <div className="flashcard-inner">
                   {/* 카드 앞면 (단어 + 로마자 발음 표기 + TTS 버튼) */}

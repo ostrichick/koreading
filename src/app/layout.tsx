@@ -3,7 +3,6 @@ import './globals.css';
 import { AuthProvider } from '@/contexts/AuthContext';
 import NavBar from '@/components/NavBar';
 import Footer from '@/components/Footer';
-import SeoTextBlock from '@/components/SeoTextBlock';
 
 // ─── 사이트 기본 정보 상수 ───
 const SITE_URL = 'https://koreading.vercel.app';
@@ -15,9 +14,9 @@ const SITE_NAME = 'Koreading';
  * 영어권 사용자와 AI 검색 엔진(GEO) 모두를 타깃합니다.
  */
 const SITE_DESCRIPTION =
-  'AI-powered Korean reading platform for all levels. Practice authentic Korean texts from A1 to C2, look up words instantly, and build your vocabulary — for free. | AI 기반 맞춤형 한국어 독해 학습 플랫폼. CEFR A1~C2 레벨별 한국어 텍스트 읽기 연습.';
+  'AI-powered Korean reading practice. Generate Korean texts for a selected A1–C2 level, look up words, and save vocabulary. | 선택 수준별 AI 한국어 독해·단어 학습.';
 
-const OG_IMAGE = `${SITE_URL}/og-image.png`;
+const OG_IMAGE = `${SITE_URL}/logo.png`;
 
 /**
  * Next.js 루트 레이아웃의 SEO 메타데이터 설정입니다.
@@ -42,7 +41,7 @@ export const metadata: Metadata = {
     'AI Korean tutor', 'Korean vocabulary builder', 'Korean grammar practice',
     // 한국어 키워드
     '한국어 학습', '한국어 읽기', '한국어 독해', '한국어 공부',
-    '한국어 레벨 테스트', '한국어 단어장', 'K-content Korean',
+    '한국어 단어장', 'K-content Korean',
   ],
   authors: [{ name: 'Koreading', url: 'https://koreading.vercel.app' }],
   creator: 'Koreading',
@@ -73,12 +72,10 @@ export const metadata: Metadata = {
     siteName: SITE_NAME,
     title: `${SITE_NAME} — Learn Korean Reading with AI`,
     description:
-      'AI-powered Korean reading platform for all levels. Practice authentic Korean texts from A1 to C2, look up words instantly, and build your vocabulary — completely free.',
+      'AI-powered Korean reading practice with level-selected texts, word lookup, and vocabulary tools.',
     images: [
       {
         url: OG_IMAGE,
-        width: 1200,
-        height: 630,
         alt: 'Koreading — AI-powered Korean reading practice platform',
       },
     ],
@@ -86,7 +83,7 @@ export const metadata: Metadata = {
 
   // ── Twitter Card ──
   twitter: {
-    card: 'summary_large_image',
+    card: 'summary',
     title: `${SITE_NAME} — Learn Korean Reading with AI`,
     description:
       'Practice Korean reading at your level with AI. A1 to C2 texts, instant dictionary, free vocabulary builder.',
@@ -124,7 +121,7 @@ const jsonLdWebsite = {
   name: SITE_NAME,
   url: SITE_URL,
   description:
-    'AI-powered Korean reading platform for all levels. Practice authentic Korean texts from A1 to C2, look up words instantly, and build your vocabulary — for free.',
+    'AI-powered Korean reading practice with level-selected texts and vocabulary tools.',
   inLanguage: ['ko', 'en'],
   publisher: {
     '@type': 'Organization',
@@ -136,14 +133,6 @@ const jsonLdWebsite = {
       width: 512,
       height: 512,
     },
-  },
-  potentialAction: {
-    '@type': 'SearchAction',
-    target: {
-      '@type': 'EntryPoint',
-      urlTemplate: `${SITE_URL}/library?q={search_term_string}`,
-    },
-    'query-input': 'required name=search_term_string',
   },
 };
 
@@ -182,57 +171,6 @@ const jsonLdApp = {
   },
 };
 
-/**
- * JSON-LD: FAQPage 스키마 (GEO 최적화)
- * ChatGPT Search, Perplexity, Gemini 등 AI 검색 엔진이 사이트 정보를 질의응답 형태로 추출할 수 있게 합니다.
- */
-const jsonLdFaq = {
-  '@context': 'https://schema.org',
-  '@type': 'FAQPage',
-  mainEntity: [
-    {
-      '@type': 'Question',
-      name: 'What is Koreading?',
-      acceptedAnswer: {
-        '@type': 'Answer',
-        text: 'Koreading is a free AI-powered Korean reading practice platform. It provides personalized Korean texts for all levels from A1 to C2 (CEFR), with an instant dictionary and vocabulary notebook to help you improve your Korean reading skills.',
-      },
-    },
-    {
-      '@type': 'Question',
-      name: 'Is Koreading free?',
-      acceptedAnswer: {
-        '@type': 'Answer',
-        text: 'Yes, Koreading is completely free to use. You can read AI-generated Korean texts, look up words, and save vocabulary without any subscription or payment.',
-      },
-    },
-    {
-      '@type': 'Question',
-      name: 'What Korean level is Koreading for?',
-      acceptedAnswer: {
-        '@type': 'Answer',
-        text: 'Koreading supports all Korean proficiency levels from absolute beginner (A1) to advanced (C2) based on the CEFR framework. The AI generates texts tailored to your current level.',
-      },
-    },
-    {
-      '@type': 'Question',
-      name: 'How can I practice Korean reading online?',
-      acceptedAnswer: {
-        '@type': 'Answer',
-        text: 'You can practice Korean reading online at koreading.vercel.app. The platform provides AI-generated Korean texts on various topics, an instant word lookup feature, and a vocabulary builder to help you learn Korean reading efficiently.',
-      },
-    },
-    {
-      '@type': 'Question',
-      name: 'Can beginners use Koreading to learn Korean?',
-      acceptedAnswer: {
-        '@type': 'Answer',
-        text: 'Absolutely. Koreading is designed for all levels including complete beginners. Select A1 level and the AI will generate simple Korean texts with vocabulary support to help you start reading Korean from day one.',
-      },
-    },
-  ],
-};
-
 // ── 루트 레이아웃 컴포넌트 ──
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
@@ -247,10 +185,6 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
           type="application/ld+json"
           dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLdApp) }}
         />
-        <script
-          type="application/ld+json"
-          dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLdFaq) }}
-        />
         {/* Google AdSense 코드 삽입 위치 (심사 통과 후 아래 주석을 실제 코드로 교체하세요) */}
         {/* <script async src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=YOUR_ADSENSE_PUBLISHER_ID" crossOrigin="anonymous" /> */}
       </head>
@@ -261,8 +195,6 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
           <NavBar />
           {/* 각 개별 페이지별 콘텐츠가 렌더링되는 본문 영역 */}
           <main className="page-wrapper" style={{ flex: 1 }}>
-            {/* 구글 크롤러가 JS 없이도 읽을 수 있는 영어 SEO 텍스트 블록 (화면에는 보이지 않음) */}
-            <SeoTextBlock />
             {children}
           </main>
           {/* 하단 공통 푸터 (Privacy Policy, Terms, About 링크 포함) */}

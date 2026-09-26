@@ -19,13 +19,13 @@ const features = [
   {
     icon: '🎯',
     title: 'i+1 Input Hypothesis',
-    desc: 'Based on linguist Stephen Krashen\'s Input Hypothesis: reading texts that are just slightly above your current level (i+1) is the most effective way to acquire a language naturally.',
+    desc: 'Inspired by linguist Stephen Krashen\'s Input Hypothesis: choose reading material around your current level and look up unfamiliar words. The generated texts have not been independently evaluated for level accuracy.',
     titleKo: 'i+1 원리 기반 학습',
   },
   {
     icon: '🤖',
     title: 'AI-Generated Korean Texts',
-    desc: 'Powered by Groq LPU and Google Gemini AI, Koreading generates unlimited Korean reading texts across 8 topic categories — all perfectly tailored to your CEFR level.',
+    desc: 'Powered by Google Gemini AI with an optional Groq fallback, Koreading generates reading practice across 8 topic categories and selectable A1–C2 difficulty labels. Requests are subject to availability and limits.',
     titleKo: 'AI 맞춤 콘텐츠',
   },
   {
@@ -39,12 +39,6 @@ const features = [
     title: 'Personal Vocabulary Notebook',
     desc: 'Save words while reading and review them anytime in your personal vocabulary notebook. Organize by custom categories for systematic vocabulary building.',
     titleKo: '개인 단어장',
-  },
-  {
-    icon: '📊',
-    title: 'CEFR Level Test',
-    desc: 'Take a 10-minute AI-generated placement test to accurately identify your Korean level from A1 (complete beginner) to C2 (mastery), based on the European CEFR framework.',
-    titleKo: 'CEFR 레벨 테스트',
   },
   {
     icon: '🌏',
@@ -83,7 +77,7 @@ export default function AboutPage() {
           </h1>
           <p style={{ fontSize: '1.1rem', color: 'var(--text-secondary)', lineHeight: 1.8, marginBottom: '8px' }}>
             Koreading is a <strong style={{ color: 'var(--text-primary)' }}>free, AI-powered Korean reading platform</strong> that helps
-            learners worldwide improve their Korean reading skills naturally — by reading real, level-matched Korean texts.
+            learners worldwide practice Korean reading with AI-generated texts at a chosen difficulty level.
           </p>
           <p style={{ fontSize: '0.95rem', color: 'var(--text-muted)', lineHeight: 1.7, marginBottom: '32px' }}>
             한국어 독해 학습 플랫폼 · Plataforma de lectura en coreano · 韓国語読解学習プラットフォーム · 韩语阅读学习平台
@@ -104,7 +98,7 @@ export default function AboutPage() {
             <p style={{ color: 'var(--text-secondary)', lineHeight: 1.9, fontSize: '1rem', marginBottom: '12px' }}>
               Languages are not memorized from textbooks — they are <em>acquired</em> by reading and comprehending real stories.
               Koreading uses AI to generate engaging Korean texts on topics you actually care about (K-dramas, Korean history,
-              food, daily life, and more), matched precisely to your current proficiency level.
+              food, daily life, and more). You can choose a difficulty label, though the texts are not independently CEFR-certified.
             </p>
             <p style={{ color: 'var(--text-secondary)', lineHeight: 1.9, fontSize: '1rem' }}>
               With an instant word lookup on every word, you stay in the flow of reading instead of breaking concentration to
@@ -119,7 +113,7 @@ export default function AboutPage() {
         <div className="container">
           <h2 style={{ textAlign: 'center', fontSize: '2rem', fontWeight: 900, marginBottom: '12px' }}>Key Features</h2>
           <p style={{ textAlign: 'center', color: 'var(--text-secondary)', marginBottom: '48px', fontSize: '0.95rem' }}>
-            Everything you need to read Korean and build vocabulary — completely free
+            Reading practice and vocabulary tools, with AI request limits
           </p>
           <div className="grid-3">
             {features.map((f) => (
@@ -154,7 +148,7 @@ export default function AboutPage() {
         <div className="container" style={{ maxWidth: '760px' }}>
           <h2 style={{ fontSize: '1.5rem', fontWeight: 800, marginBottom: '24px', textAlign: 'center' }}>Built With</h2>
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: '10px', justifyContent: 'center' }}>
-            {['Next.js 15 (App Router)', 'Firebase Auth', 'Cloud Firestore', 'Google Gemini AI', 'Groq LPU (Llama/Gemma)', 'Vercel', 'TypeScript'].map(tech => (
+            {['Next.js 16 (App Router)', 'Firebase Auth', 'Cloud Firestore', 'Google Gemini AI', 'Groq (optional fallback)', 'Vercel', 'TypeScript'].map(tech => (
               <span key={tech} style={{ padding: '8px 18px', background: 'rgba(217,119,6,0.08)', border: '1px solid rgba(217,119,6,0.2)', borderRadius: '100px', fontSize: '0.85rem', color: 'var(--text-secondary)' }}>{tech}</span>
             ))}
           </div>
@@ -187,7 +181,7 @@ export default function AboutPage() {
         <div className="container" style={{ maxWidth: '500px' }}>
           <h2 style={{ fontSize: '1.8rem', fontWeight: 900, marginBottom: '16px' }}>Start Reading Korean Today</h2>
           <p style={{ color: 'var(--text-secondary)', marginBottom: '32px', fontSize: '0.95rem', lineHeight: 1.7 }}>
-            No login required. Start reading and generating level-matched Korean stories freely right away.
+            Browse reading texts without logging in. AI generation is available subject to request limits.
           </p>
           <div style={{ display: 'flex', gap: '12px', justifyContent: 'center', flexWrap: 'wrap' }}>
             <Link href="/library" className="btn btn-primary btn-lg">📚 Browse Library & Read</Link>

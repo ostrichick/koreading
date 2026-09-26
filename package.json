@@ -10,8 +10,8 @@
     "test": "node --import tsx --test tests/*.test.ts",
     "typecheck": "tsc --noEmit --incremental false",
     "test:browser": "playwright test",
-    "test:integration": "node --require ./tests/server-only.cjs --import tsx --test tests/security.integration.ts",
-    "test:emulators": "npx firebase-tools emulators:exec --only firestore --project demo-koreading \"npm run test:integration\""
+    "test:integration": "node --require ./tests/server-only.cjs --import tsx --test --test-concurrency=1 tests/security.integration.ts tests/account-deletion.integration.ts",
+    "test:emulators": "npx firebase-tools@15.31.0 emulators:exec --only firestore --project demo-koreading \"npm run test:integration\""
   },
   "dependencies": {
     "@google/generative-ai": "^0.15.0",

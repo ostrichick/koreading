@@ -6,14 +6,16 @@
  * @why 다양한 수준의 전 세계 한국어 학습자들이 자신에게 최적화된 자료를 주도적으로 탐색 및 생성하고 학습 의지를 극대화할 수 있는 핵심 게이트웨이 역할을 수행하기 위해 존재합니다.
  */
 
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/contexts/AuthContext';
-import { TOPICS, CEFRLevel, NativeLanguage, generateArticle } from '@/lib/gemini';
+import { TOPICS, CEFRLevel, NativeLanguage, generateArticle, type GenerateArticleOptions } from '@/lib/gemini';
 import { GENRE_OPTIONS } from '@/lib/topicSeeds';
-import { saveArticle, getReadArticles, createOrUpdateUser, Article } from '@/lib/db';
+import { saveArticle, getDraftArticles, publishDraft, getReadArticles, getArticleProgressList, createOrUpdateUser, Article, type ArticleProgress } from '@/lib/db';
+import { approvedImageUrls } from '@/lib/articlePublishing';
+import { isAdminEmail } from '@/lib/adminConfig';
 import { getGuestLevel, getGuestLang, setGuestLang } from '@/lib/storage';
-import { articleSummary } from '@/lib/learning';
+import { articleSummary, deriveLearningProfile, recommendReading } from '@/lib/learning';
 import AlertModal from '@/components/AlertModal';
 
 // CEFR 기반 레벨 필터 목록
@@ -27,6 +29,11 @@ const LEVEL_LABELS: Record<CEFRLevel, string> = {
   B2: '중상급 (B2)',
   C1: '고급 (C1)',
   C2: '최고급 (C2)',
+};
+type SeriesContinuation = NonNullable<GenerateArticleOptions['seriesContext']> & {
+  level?: CEFRLevel;
+  topic?: string;
+  genre?: string;
 };
 
 // 다국어 번역 사전 정의
@@ -48,6 +55,11 @@ const TRANSLATIONS = {
     createCustomReading: '✨ 맞춤형 읽기 자료 생성',
     setApiKeyTitle: '🔑 개인 Gemini API Key 설정',
     generateNow: '✨ 조건 선택하고 바로 만들기',
+    nextRecommended: '다음으로 추천',
+    recommendReason: '최근 학습 기록에 맞는 난이도예요.',
+    recentUnderstanding: '최근 이해도',
+    practiceWeakPoint: '다시 연습할 표현',
+    startReading: '읽기 시작',
   },
   en: {
     newText: '✨ Create New Text',
@@ -66,6 +78,11 @@ const TRANSLATIONS = {
     createCustomReading: '✨ Create Custom Reading',
     setApiKeyTitle: '🔑 Set Gemini API Key',
     generateNow: '✨ Choose Conditions & Generate',
+    nextRecommended: 'Recommended Next',
+    recommendReason: 'This difficulty matches your recent learning record.',
+    recentUnderstanding: 'Recent comprehension',
+    practiceWeakPoint: 'Practice again',
+    startReading: 'Start reading',
   },
   es: {
     newText: '✨ Crear nuevo texto',
@@ -84,6 +101,11 @@ const TRANSLATIONS = {
     createCustomReading: '✨ Crear lectura personalizada',
     setApiKeyTitle: '🔑 Configurar Gemini API Key',
     generateNow: '✨ Seleccionar condiciones y crear ahora',
+    nextRecommended: 'Siguiente recomendación',
+    recommendReason: 'Esta dificultad coincide con tu aprendizaje reciente.',
+    recentUnderstanding: 'Comprensión reciente',
+    practiceWeakPoint: 'Practicar de nuevo',
+    startReading: 'Empezar a leer',
   },
   ja: {
     newText: '✨ 新しいテキストを作成',
@@ -102,6 +124,11 @@ const TRANSLATIONS = {
     createCustomReading: '✨ カスタム読解作成',
     setApiKeyTitle: '🔑 Gemini APIキー設定',
     generateNow: '✨ 条件を選択して今すぐ作成',
+    nextRecommended: '次のおすすめ',
+    recommendReason: '最近の学習記録に合った難易度です。',
+    recentUnderstanding: '最近の理解度',
+    practiceWeakPoint: 'もう一度練習',
+    startReading: '読む',
   },
   zh: {
     newText: '✨ 创建新文本',
@@ -120,6 +147,11 @@ const TRANSLATIONS = {
     createCustomReading: '✨ 创建自定义阅读',
     setApiKeyTitle: '🔑 设置 Gemini API Key',
     generateNow: '✨ 立即选择条件生成',
+    nextRecommended: '下一篇推荐',
+    recommendReason: '这个难度符合你最近的学习记录。',
+    recentUnderstanding: '近期理解度',
+    practiceWeakPoint: '再次练习',
+    startReading: '开始阅读',
   }
 };
 
@@ -131,7 +163,11 @@ export default function LibraryPage() {
   const [selectedLevel, setSelectedLevel] = useState<CEFRLevel | 'all'>('all'); // 현재 조회 선택된 레벨
   const [selectedTopic, setSelectedTopic] = useState<string>('all');           // 현재 조회 선택된 토픽
   const [articles, setArticles] = useState<Article[]>([]);                      // 도서관 기사 리스트
+  const [drafts, setDrafts] = useState<Article[]>([]);                          // 로그인 회원만 볼 수 있는 비공개 글
+  const [draftError, setDraftError] = useState('');
+  const [publishingId, setPublishingId] = useState<string | null>(null);
   const [readArticles, setReadArticles] = useState<string[]>([]);              // 유저가 다 읽은 기사 ID 배열
+  const [progressRecords, setProgressRecords] = useState<(ArticleProgress & { articleId: string })[]>([]);
   const [loadingArticles, setLoadingArticles] = useState(false);               // 기사 목록 로딩 토글
   const articleCacheRef = useRef<Record<string, Article[]>>({});
   const [nextCursor, setNextCursor] = useState<string | null>(null);
@@ -139,7 +175,6 @@ export default function LibraryPage() {
   const requestId = useRef(0);
   const loadLock = useRef(false);               // 레벨별 아티클 캐시 Ref
   const [generating, setGenerating] = useState(false);                         // AI 기사 생성 대기 토글
-  const [genLogs, setGenLogs] = useState<string[]>([]);                        // AI 생성 중 로그 출력 내용
   const [userLevel, setUserLevel] = useState<CEFRLevel | null>(null);          // 로그인 유저의 레벨 정보
 
   // 정렬 순서 상태값 ('rating': 별점 높은 순, 'newest': 최신순)
@@ -151,6 +186,7 @@ export default function LibraryPage() {
   const [genTopics, setGenTopics] = useState<string[]>([]);
   const [customKeyword, setCustomKeyword] = useState('');                      // 사용자 지정 관심 키워드
   const [selectedGenre, setSelectedGenre] = useState('random');                // 글 스타일/장르
+  const [seriesContinuation, setSeriesContinuation] = useState<SeriesContinuation | null>(null);
 
   // 알림 모달 제어 상태들
   const [alertOpen, setAlertOpen] = useState(false);
@@ -191,6 +227,36 @@ export default function LibraryPage() {
       setCurrentLang(savedLang);
     }
   }, [profile]);
+
+  useEffect(() => {
+    const raw = sessionStorage.getItem('koreading_series_continuation');
+    if (!raw) return;
+    try {
+      const value = JSON.parse(raw) as Partial<SeriesContinuation>;
+      const validId = typeof value.seriesId === 'string' && /^[\w-]{1,128}$/.test(value.seriesId);
+      const validEpisode = Number.isInteger(value.episodeNumber) && Number(value.episodeNumber) >= 1 && Number(value.episodeNumber) <= 100;
+      if (!validId || !validEpisode) throw new Error('Invalid continuation');
+      const next: SeriesContinuation = {
+        seriesId: value.seriesId!,
+        episodeNumber: value.episodeNumber!,
+        ...(typeof value.seriesTitle === 'string' ? { seriesTitle: value.seriesTitle.slice(0, 200) } : {}),
+        ...(typeof value.previousArticleId === 'string' ? { previousArticleId: value.previousArticleId.slice(0, 128) } : {}),
+        ...(typeof value.previousTitle === 'string' ? { previousTitle: value.previousTitle.slice(0, 200) } : {}),
+        ...(typeof value.previousContent === 'string' ? { previousContent: value.previousContent.slice(0, 5000) } : {}),
+        ...(typeof value.previousChoice === 'string' ? { previousChoice: value.previousChoice.slice(0, 500) } : {}),
+        ...(LEVELS.includes(value.level as CEFRLevel) ? { level: value.level as CEFRLevel } : {}),
+        ...(typeof value.topic === 'string' && TOPICS.some(topic => topic.id === value.topic) ? { topic: value.topic } : {}),
+        ...(typeof value.genre === 'string' && GENRE_OPTIONS.some(option => option.id === value.genre) ? { genre: value.genre } : {}),
+      };
+      setSeriesContinuation(next);
+      if (next.level) setGenLevels([next.level]);
+      if (next.topic) setGenTopics([next.topic]);
+      if (next.genre) setSelectedGenre(next.genre);
+      setShowGenModal(true);
+    } catch {
+      sessionStorage.removeItem('koreading_series_continuation');
+    }
+  }, []);
 
   // 사용자가 개인 API Key를 설정하고 저장할 때 실행되는 핸들러
   const handleSaveApiKey = () => {
@@ -271,11 +337,41 @@ export default function LibraryPage() {
   // 로그인 회원일 경우 읽은 아티클 목록 갱신
   useEffect(() => {
     if (user) {
-      getReadArticles(user.uid).then(setReadArticles).catch(() => setReadArticles([]));
+      Promise.all([getReadArticles(user.uid), getArticleProgressList(user.uid)])
+        .then(([readIds, progress]) => { setReadArticles(readIds); setProgressRecords(progress); })
+        .catch(() => { setReadArticles([]); setProgressRecords([]); });
     } else {
       setReadArticles([]);
+      setProgressRecords([]);
     }
   }, [user]);
+
+  useEffect(() => {
+    if (!user) { setDrafts([]); setDraftError(''); return; }
+    let active = true;
+    getDraftArticles(user.uid).then(items => { if (active) setDrafts(items); })
+      .catch(() => { if (active) setDraftError('비공개 글을 불러오지 못했습니다. 새로고침 후 다시 시도해 주세요.'); });
+    return () => { active = false; };
+  }, [user]);
+
+  const openDraft = (draft: Article) => {
+    sessionStorage.setItem('koreading_guest_article', JSON.stringify(draft));
+    router.push('/read/guest');
+  };
+
+  const handlePublishDraft = async (draft: Article) => {
+    if (!user || publishingId) return;
+    setPublishingId(draft.id);
+    try {
+      await publishDraft(draft.id);
+      setDrafts(previous => previous.filter(item => item.id !== draft.id));
+      triggerAlert('관리자 게시가 완료되었습니다. 공개 도서관 캐시는 약 1분 후 갱신될 수 있습니다.', '게시 완료', 'success');
+    } catch (error) {
+      triggerAlert(error instanceof Error ? error.message : '게시하지 못했습니다.', '게시 실패', 'error');
+    } finally {
+      setPublishingId(null);
+    }
+  };
 
   // AI 텍스트 생성 버튼 클릭 이벤트 핸들러
   const handleGenerate = async () => {
@@ -298,25 +394,9 @@ export default function LibraryPage() {
     const recentTitles = articles.slice(0, 10).map(a => a.title).filter(Boolean);
 
     setGenerating(true);
-    setGenLogs([]);
-
-    // AI 생성 진행 상황을 사용자에게 단계별로 실시간 중계하는 타이머
-    const stepTimers: NodeJS.Timeout[] = [];
-    stepTimers.push(setTimeout(() => {
-      setGenLogs(prev => [...prev, '⚡ 최신 고성능 모델(Gemini 3.8/3.7/3.6/3.5) 연결 요청 중...']);
-    }, 80));
-    stepTimers.push(setTimeout(() => {
-      setGenLogs(prev => [...prev, '✍️ CEFR 난이도 및 장르/소재 기반 맞춤형 스토리텔링 집필 중...']);
-    }, 1400));
-    stepTimers.push(setTimeout(() => {
-      setGenLogs(prev => [...prev, '🔍 100% 순수 한글 검증 (외래어·한자 원천 배제) 중...']);
-    }, 3000));
-    stepTimers.push(setTimeout(() => {
-      setGenLogs(prev => [...prev, '🎯 핵심 어휘 5선 추출 및 독해 후크 질문 구성 중...']);
-    }, 4800));
 
     try {
-      // client wrapper function 호출 (동적 옵션 및 진행 로그 콜백 연동)
+      // API responds only when generation finishes; no fabricated live model progress.
       const data = await generateArticle(
         level,
         topic,
@@ -325,33 +405,43 @@ export default function LibraryPage() {
           customKeyword: customKeyword.trim() || undefined,
           genre: selectedGenre,
           recentTitles,
-        },
-        (logMsg) => {
-          setGenLogs(prev => [...prev, logMsg]);
+          seriesContext: seriesContinuation ? {
+            seriesId: seriesContinuation.seriesId,
+            seriesTitle: seriesContinuation.seriesTitle,
+            episodeNumber: seriesContinuation.episodeNumber,
+            previousArticleId: seriesContinuation.previousArticleId,
+            previousTitle: seriesContinuation.previousTitle,
+            previousContent: seriesContinuation.previousContent,
+            previousChoice: seriesContinuation.previousChoice,
+          } : undefined,
         }
       );
+      if (seriesContinuation) {
+        sessionStorage.removeItem('koreading_series_continuation');
+        setSeriesContinuation(null);
+      }
       
       if (!user) {
         sessionStorage.setItem('koreading_guest_article', JSON.stringify({ ...data, id: 'guest' }));
         setShowGenModal(false); router.push('/read/guest'); return;
       }
       try {
-        // Firestore 아티클 저장
+        // 로그인 회원의 생성 글은 공개 도서관이 아닌 개인 초안에 영구 보관합니다.
         const id = await saveArticle(data);
-        articleCacheRef.current = {}; // 새 아티클이 생성되었으므로 캐시 초기화
+        const draft = { ...data, id, imageUrls: approvedImageUrls(data.imageUrls) } as Article;
+        setDrafts(previous => [draft, ...previous]);
+        sessionStorage.setItem('koreading_guest_article', JSON.stringify(draft));
         setShowGenModal(false);
-        setGenLogs([]);
-        router.push(`/read/${id}`); // 완료 시 회원용 독해로 포워딩
+        router.push('/read/guest'); // 본인만 열람 가능한 세션 독해 화면
       } catch (dbErr: unknown) {
         console.warn('Firestore 저장 실패, 임시 로컬 저장소로 백업합니다:', dbErr);
         
         // Firestore 권한이 모자랄 경우 (비로그인, 혹은 DB 규칙 상 미인증 시) 게스트 로컬 세션에 보관
         sessionStorage.setItem('koreading_guest_article', JSON.stringify({ ...data, id: 'guest' }));
         setShowGenModal(false);
-        setGenLogs([]);
         
         triggerAlert(
-          '글을 도서관에 저장하지 못했습니다. 생성된 글은 이 탭의 임시 읽기 페이지에서 읽을 수 있습니다.',
+          '글을 개인 보관함에 저장하지 못했습니다. 생성된 글은 이 탭의 임시 읽기 페이지에서 읽을 수 있습니다.',
           '저장 실패',
           'warning'
         );
@@ -359,7 +449,9 @@ export default function LibraryPage() {
         router.push('/read/guest'); // 게스트용 임시 독해로 포워딩
       }
     } catch (err: unknown) {
-      console.error(err);
+      // The API intentionally hides credentials, prompts and raw provider errors.
+      // Keep the browser console equally limited to a fixed failure category.
+      console.warn('Article generation failed');
       const errMsg = err instanceof Error ? err.message : JSON.stringify(err);
       const serverLogs: string[] = Array.isArray((err as { _logs?: unknown })._logs)
         ? (err as { _logs: string[] })._logs
@@ -374,9 +466,9 @@ export default function LibraryPage() {
 
       let helpfulGuide: string;
       if (isQuotaError) {
-        helpfulGuide = `🚨 [API 쿼터 제한 초과 에러]\n\n현재 서버의 무료 Gemini API 키 할당량이 전부 소진되었습니다.\n\n💡 해결 방법:\n도서관 화면 상단의 [🔑 API Key 설정] 버튼을 눌러 본인의 무료 Gemini API Key를 등록하시면, 개인 제공사 할당량을 사용할 수 있습니다. 서비스 한도와 제공사 요금은 계속 적용됩니다.${logBlock}`;
+        helpfulGuide = `AI 사용량 제한에 도달했습니다. 서비스 전체 또는 요청 그룹의 제한일 수 있으며, 개인 Gemini API Key를 등록해도 서비스 제한은 우회할 수 없습니다. 제한이 해제된 뒤 다시 시도해 주세요.${logBlock}`;
       } else if (is503Error) {
-        helpfulGuide = `⏳ [서버 일시 지연 에러]\n\nAI 제공사(Google Gemini)의 일시적인 서비스 지연이 발생했습니다.\n\n💡 해결 방법:\n• 잠시 후 다시 시도해 보세요.\n• 도서관 상단의 [🔑 API Key 설정]에서 본인의 Gemini API Key를 등록하시면 개인 쿼터로 분리되어 더욱 안정적입니다!${logBlock}`;
+        helpfulGuide = `AI 요청을 완료하지 못했습니다. 서버 설정, 공유 사용량 제한 서비스, 제공사 장애 또는 요청 시간 초과 등이 원인일 수 있습니다. 잠시 후 다시 시도해 주세요. 개인 API Key가 해결을 보장하지는 않습니다.${logBlock}`;
       } else {
         helpfulGuide = `텍스트 생성에 실패했습니다: ${errMsg}${logBlock}`;
       }
@@ -415,6 +507,16 @@ export default function LibraryPage() {
     const matchTopic = selectedTopic === 'all' || a.topicCategory === selectedTopic;
     return matchLevel && matchTopic;
   });
+
+  const adaptiveProfile = useMemo(() => {
+    if (!user || !userLevel) return null;
+    return deriveLearningProfile(progressRecords, userLevel);
+  }, [progressRecords, user, userLevel]);
+
+  const recommendedArticle = useMemo(() => {
+    if (!adaptiveProfile) return null;
+    return recommendReading(articles, adaptiveProfile, readArticles);
+  }, [adaptiveProfile, articles, readArticles]);
 
   const isGuest = !user;
 
@@ -556,6 +658,78 @@ export default function LibraryPage() {
             </div>
             <a href="/login" className="btn btn-sm btn-primary">{t.loginToSave}</a>
           </div>
+        )}
+
+        {user && (
+          <section style={{ marginBottom: '32px', padding: '18px', border: '1px solid var(--border-medium)', borderRadius: 'var(--radius-md)', background: 'var(--bg-card)' }}>
+            <h2 style={{ marginBottom: '8px', fontSize: '1.1rem' }}>내 비공개 읽기 자료</h2>
+            <p style={{ marginBottom: '14px', color: 'var(--text-secondary)', fontSize: '0.85rem' }}>
+              새로 생성한 글은 내 계정에 비공개로 저장됩니다. 공개 도서관에는 관리자만 별도로 게시할 수 있습니다.
+            </p>
+            {draftError && <p role="alert">{draftError}</p>}
+            {drafts.length === 0 ? (
+              <p style={{ color: 'var(--text-muted)', fontSize: '0.85rem' }}>저장된 비공개 글이 없습니다.</p>
+            ) : (
+              <div style={{ display: 'grid', gap: '10px' }}>
+                {drafts.map(draft => (
+                  <div key={draft.id} style={{ display: 'flex', justifyContent: 'space-between', gap: '12px', alignItems: 'center', flexWrap: 'wrap', borderTop: '1px solid var(--border-subtle)', paddingTop: '10px' }}>
+                    <div style={{ flex: '1 1 360px' }}>
+                      <div><strong>{draft.title}</strong><span style={{ color: 'var(--text-muted)', marginLeft: '8px', fontSize: '0.8rem' }}>{draft.level} · 비공개</span></div>
+                      {user.emailVerified && user.email && isAdminEmail(user.email) && draft.comprehensionQuiz?.length === 3 && (
+                        <details style={{ marginTop: '8px', fontSize: '0.8rem', color: 'var(--text-secondary)' }}>
+                          <summary style={{ cursor: 'pointer', fontWeight: 700 }}>학습 퀴즈 3문항 검수</summary>
+                          <ol style={{ margin: '8px 0 0 18px', padding: 0 }}>
+                            {draft.comprehensionQuiz.map((question, index) => (
+                              <li key={`${question.kind}-${index}`} style={{ marginBottom: '8px' }}>
+                                <div lang="ko">{question.question}</div>
+                                <div style={{ color: 'var(--text-muted)' }}>정답: {question.options[question.correct]} · 근거 문단 {question.paragraphIndex + 1}</div>
+                              </li>
+                            ))}
+                          </ol>
+                        </details>
+                      )}
+                    </div>
+                    <div style={{ display: 'flex', gap: '8px' }}>
+                      <button type="button" className="btn btn-sm btn-ghost" onClick={() => openDraft(draft)}>읽기</button>
+                      {user.emailVerified && user.email && isAdminEmail(user.email) && (
+                        <button type="button" className="btn btn-sm btn-primary" disabled={publishingId !== null} onClick={() => void handlePublishDraft(draft)}>
+                          {publishingId === draft.id ? '게시 중…' : '관리자 공개 게시'}
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </section>
+        )}
+
+        {user && adaptiveProfile && recommendedArticle && (
+          <section className="card" aria-labelledby="personal-recommendation-title" style={{ marginBottom: '32px', padding: '20px 22px' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '16px', flexWrap: 'wrap' }}>
+              <div style={{ flex: '1 1 420px' }}>
+                <div style={{ color: 'var(--accent-primary)', fontWeight: 800, fontSize: '0.76rem', letterSpacing: '.06em', marginBottom: '6px' }}>PERSONALIZED</div>
+                <h2 id="personal-recommendation-title" style={{ fontSize: '1.2rem', margin: '0 0 8px' }}>{t.nextRecommended}</h2>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap', marginBottom: '8px' }}>
+                  <strong lang="ko" style={{ fontSize: '1.05rem' }}>{recommendedArticle.title}</strong>
+                  <span className={`level-badge level-${recommendedArticle.level}`}>{recommendedArticle.level}</span>
+                </div>
+                <p style={{ color: 'var(--text-secondary)', fontSize: '0.86rem', margin: 0 }}>{t.recommendReason}</p>
+                <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap', marginTop: '10px', color: 'var(--text-muted)', fontSize: '0.8rem' }}>
+                  {adaptiveProfile.recentComprehensionRate !== null && (
+                    <span>{t.recentUnderstanding}: <strong>{adaptiveProfile.recentComprehensionRate}%</strong></span>
+                  )}
+                  {adaptiveProfile.estimatedLevel !== adaptiveProfile.declaredLevel && (
+                    <span>{adaptiveProfile.declaredLevel} → <strong>{adaptiveProfile.estimatedLevel}</strong></span>
+                  )}
+                  {adaptiveProfile.weakGrammarTags[0] && (
+                    <span>{t.practiceWeakPoint}: <strong lang="ko">{adaptiveProfile.weakGrammarTags[0]}</strong></span>
+                  )}
+                </div>
+              </div>
+              <a href={`/read/${recommendedArticle.id}`} className="btn btn-primary" style={{ justifyContent: 'center' }}>{t.startReading}</a>
+            </div>
+          </section>
         )}
 
         {/* 정렬 바 및 레벨 필터 바 */}
@@ -740,7 +914,9 @@ export default function LibraryPage() {
             </div>
 
             <p style={{ color: 'var(--text-secondary)', fontSize: '0.85rem', marginBottom: '24px', lineHeight: 1.5 }}>
-              체크박스로 레벨과 주제를 원하는 대로 선택하세요. 선택된 조건 내에서 무작위 조합으로 AI 맞춤 텍스트가 즉시 생성되며, 생성된 자료는 도서관에 보존됩니다.
+              {seriesContinuation
+                ? `이전 선택을 이어 ${seriesContinuation.episodeNumber}화를 만듭니다. 레벨과 주제는 필요하면 바꿀 수 있습니다.`
+                : '체크박스로 레벨과 주제를 선택하세요. 로그인 회원이 생성한 자료는 개인 비공개 보관함에 저장되며, 게스트 자료는 현재 탭에만 임시 저장됩니다.'}
             </p>
 
             {/* 레벨 선택 다중 조건 토픽 목록 */}
@@ -911,7 +1087,7 @@ export default function LibraryPage() {
               </div>
             </div>
 
-            {/* 📡 실시간 AI 백그라운드 모델 & 생성 파이프라인 로그 패널 */}
+            {/* The API does not stream model steps; only show an actual pending indicator. */}
             {generating && (
               <div style={{
                 marginBottom: '16px',
@@ -919,58 +1095,17 @@ export default function LibraryPage() {
                 border: '1px solid var(--border-medium)',
                 borderRadius: 'var(--radius-md)',
                 padding: '14px 16px',
-                fontFamily: '"Fira Code", "Cascadia Code", "Consolas", monospace',
-                fontSize: '0.75rem',
-                lineHeight: 1.8,
+                fontSize: '0.85rem',
+                lineHeight: 1.6,
               }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
-                  <div style={{ color: 'var(--text-muted)', fontSize: '0.7rem', fontWeight: 700, letterSpacing: '0.05em' }}>📡 AI 모델 파이프라인 & 작업 진행 로그</div>
-                  <span style={{ color: 'var(--accent-primary)', fontSize: '0.68rem', fontWeight: 600 }}>진행 중...</span>
-                </div>
-
-                {/* 가동 중인 모델 체인 및 우선순위 안내 */}
-                <div style={{ background: 'rgba(0,0,0,0.12)', border: '1px solid var(--border-subtle)', borderRadius: '6px', padding: '8px 12px', marginBottom: '10px', fontSize: '0.72rem', lineHeight: 1.6 }}>
-                  <div style={{ color: '#818cf8', fontWeight: 600 }}>⚡ 1순위: 최신 플래그십 (Gemini 3.8 / 3.7 / 3.6 / 3.5 Flash)</div>
-                  <div style={{ color: 'var(--text-secondary)' }}>🛡️ 2순위: 500 RPD 쿼터 안전망 (Gemini 3.5 / 3.1 Flash Lite)</div>
-                  <div style={{ color: 'var(--text-muted)' }}>🔄 3순위: 백업 폴백 체인 (Gemini 2.5 Flash → Groq GPT-OSS 120B)</div>
-                </div>
-
-                {/* 실제 작업 단계 및 서버 응답 로그 */}
-                {genLogs.length > 0 ? (
-                  <div>
-                    {genLogs.map((log, i) => (
-                      <div key={i} style={{
-                        color: log.includes('✅') ? '#10b981'
-                             : log.includes('❌') || log.includes('💀') ? '#ef4444'
-                             : log.includes('⚠️') ? '#f59e0b'
-                             : log.includes('⏳') ? '#818cf8'
-                             : log.includes('✍️') || log.includes('🔍') || log.includes('🎯') ? 'var(--text-primary)'
-                             : 'var(--text-secondary)',
-                        padding: '1px 0',
-                        fontWeight: log.includes('✅') ? 700 : 500,
-                      }}>
-                        {log}
-                      </div>
-                    ))}
-                  </div>
-                ) : (
-                  <div>
-                    <div style={{ color: '#818cf8', padding: '1px 0' }}>⚡ 최신 고성능 모델(Gemini 3.8/3.7/3.6/3.5) 연결 중...</div>
-                    <div style={{ color: 'var(--text-secondary)', padding: '1px 0' }}>✍️ CEFR 맞춤형 난이도 & 장르 스토리텔링 지문 작성 중...</div>
-                    <div style={{ color: 'var(--text-secondary)', padding: '1px 0' }}>🔍 100% 순수 한글 검증 (외래어·한자 원천 배제)</div>
-                    <div style={{ color: 'var(--text-secondary)', padding: '1px 0' }}>🎯 핵심 어휘 5선 추출 및 독해 후크 질문 구성</div>
-                  </div>
-                )}
-                <div style={{ color: 'var(--accent-primary)', animation: 'pulse 1.5s ease-in-out infinite', marginTop: '4px' }}>▍</div>
-                <div style={{ color: 'var(--text-muted)', fontSize: '0.68rem', marginTop: '6px', borderTop: '1px dashed var(--border-subtle)', paddingTop: '6px' }}>
-                  ※ 서버 과부하(503) 또는 쿼터 초과(429) 시 자동으로 다음 고성능 모델로 즉시 전환됩니다
-                </div>
+                <strong>AI 요청 진행 중…</strong>
+                <p style={{ color: 'var(--text-secondary)', marginTop: '6px' }}>서버 응답을 기다리고 있습니다. 모델별 실제 시도 내역은 응답을 받은 뒤에만 확인할 수 있습니다.</p>
               </div>
             )}
 
             <div style={{ display: 'flex', gap: '12px' }}>
               <button
-                onClick={() => { setShowGenModal(false); setGenLogs([]); }}
+                onClick={() => setShowGenModal(false)}
                 className="btn btn-secondary"
                 style={{ flex: 1, justifyContent: 'center' }}
                 disabled={generating}

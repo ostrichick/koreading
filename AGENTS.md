@@ -1,7 +1,7 @@
 # Koreading (코레딩) — AI 협업 표준 문서
 
-> **단일 표준**: 프로젝트에 참여하는 모든 AI 에이전트(Claude Code, Cursor, Copilot, Gemini CLI 등)는 본 파일을 표준 규칙으로 준수합니다.
-> 상세 프로젝트 온보딩: [AI_HANDOVER.md](./AI_HANDOVER.md) · 최신 구현/검증 상태: [IMPLEMENTATION.md](./IMPLEMENTATION.md) · 파일별 메타: [project_meta.md](./project_meta.md)
+> **개발 지침의 단일 표준**: 프로젝트에 참여하는 모든 AI 에이전트(Claude Code, Cursor, Copilot, Gemini CLI 등)는 본 파일의 작업 규칙을 준수합니다.
+> 시작/설정: [README.md](./README.md) · 아키텍처/파일별 역할: [AI_HANDOVER.md](./AI_HANDOVER.md) · 실제 구현 상태/검증/미해결 문제: [IMPLEMENTATION.md](./IMPLEMENTATION.md)
 
 ---
 
@@ -44,11 +44,13 @@
 - `npm run typecheck` — TypeScript 검사 (`tsc --noEmit --incremental false`)
 - `npm test` — 단위 테스트 (`node --import tsx --test tests/*.test.ts`)
 - `npm run test:emulators` — Firestore 에뮬레이터 통합 테스트 (Java 21+ 필요)
-- `npm run build` — 프로덕션 빌드 (TypeScript + ESLint 포함 검증)
+- `npm run test:browser` — Playwright 브라우저 테스트 (`npm run build` 선행; 비활성 `/test` 진입 시 `/library` 이동을 검증)
+- `npm run build` — 프로덕션 빌드 (TypeScript 포함; ESLint는 `npm run lint`로 별도 실행)
 - 코드 수정 후 반드시 `lint` → `typecheck` → `test` 순으로 검증하고, 병합 전 `build`를 통과시켜야 합니다.
 
 ## 6. 프로젝트별 핵심 규칙
 - **한글 순수성**: `content`, `title`, `definition` 등 한국어 텍스트 필드에는 한자·외국어·괄호 번역(예: `공부(study)하다`)을 절대 섞지 않습니다.
+- **검증 상태 구분**: 위 항목은 생성 목표입니다. `schemas.ts`는 한국어 필드의 외국 문자 및 일부 중복을 거부하지만 CEFR·어휘 비율·목표 문법·반복 횟수의 자동 준수는 보장하지 않습니다. 미해결 항목은 `IMPLEMENTATION.md`에 기록합니다.
 - **관리자 이메일 동기화**: `src/lib/adminConfig.ts`는 `NEXT_PUBLIC_ADMIN_EMAILS` 환경변수(쉼표 구분)를 읽고 기본 관리자 목록을 폴백으로 포함합니다. `firestore.rules`의 `admin()`에 하드코딩된 이메일과 반드시 동기화 상태를 유지해야 합니다.
 - **Firestore 접근**: 클라이언트 코드는 반드시 `src/lib/db.ts`의 래퍼만 경유합니다. 권한·규칙 변경 시 `firestore.rules`와 `adminConfig.ts` 양쪽을 함께 확인합니다.
 - **AI API**: `POST /api/ai`는 Node.js Runtime으로 동작합니다. 입력 검증은 `src/lib/schemas.ts`의 zod 스키마 기준입니다.

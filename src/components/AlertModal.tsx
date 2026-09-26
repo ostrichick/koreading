@@ -6,7 +6,7 @@
  * @why 브라우저 기본 alert() 창이 텍스트 드래그를 차단하여, 429 쿼터 초과 에러 등 상세 디버그 로그를 스크린샷 캡처해야만 했던 번거로움을 완전히 해결하기 위해 존재합니다.
  */
 
-import { useState } from 'react';
+import { useEffect, useId, useRef, useState } from 'react';
 
 // AlertModal 컴포넌트가 부모 컴포넌트로부터 전달받는 속성(Props) 인터페이스 정의
 interface AlertModalProps {
@@ -26,6 +26,35 @@ export default function AlertModal({
 }: AlertModalProps) {
   // 복사 버튼 클릭 시 "복사완료" 텍스트 토글을 위한 로컬 상태
   const [copied, setCopied] = useState(false);
+  const titleId = useId();
+  const dialogRef = useRef<HTMLDivElement>(null);
+  const onCloseRef = useRef(onClose);
+  onCloseRef.current = onClose;
+
+  useEffect(() => {
+    if (!isOpen) return;
+    const previousFocus = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    const dialog = dialogRef.current;
+    dialog?.focus();
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        event.preventDefault();
+        onCloseRef.current();
+      }
+      if (event.key !== 'Tab' || !dialog) return;
+      const controls = Array.from(dialog.querySelectorAll<HTMLElement>('button:not([disabled]), a[href], input:not([disabled])'));
+      if (!controls.length) { event.preventDefault(); dialog.focus(); return; }
+      const first = controls[0];
+      const last = controls[controls.length - 1];
+      if (event.shiftKey && (document.activeElement === first || document.activeElement === dialog)) {
+        event.preventDefault(); last.focus();
+      } else if (!event.shiftKey && (document.activeElement === last || document.activeElement === dialog)) {
+        event.preventDefault(); first.focus();
+      }
+    };
+    document.addEventListener('keydown', handleKeyDown);
+    return () => { document.removeEventListener('keydown', handleKeyDown); previousFocus?.focus(); };
+  }, [isOpen]);
 
   // 모달이 비활성화 상태이면 렌더링하지 않습니다.
   if (!isOpen) return null;
@@ -84,6 +113,11 @@ export default function AlertModal({
       }}
     >
       <div
+        ref={dialogRef}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby={titleId}
+        tabIndex={-1}
         style={{
           width: '100%',
           maxWidth: '520px',
@@ -119,11 +153,12 @@ export default function AlertModal({
         {/* 상단 헤더 영역 (아이콘 + 제목 + 닫기 ✕ 단추) */}
         <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '16px' }}>
           <span style={{ fontSize: '1.4rem' }}>{getTypeIcon()}</span>
-          <h3 style={{ fontSize: '1.15rem', fontWeight: 800, margin: 0, color: 'var(--text-primary)', fontFamily: 'Noto Sans KR, sans-serif' }}>
+          <h3 id={titleId} style={{ fontSize: '1.15rem', fontWeight: 800, margin: 0, color: 'var(--text-primary)', fontFamily: 'Noto Sans KR, sans-serif' }}>
             {title}
           </h3>
           <button
             onClick={onClose}
+            aria-label="Close dialog"
             style={{
               marginLeft: 'auto',
               background: 'none',
@@ -208,4 +243,3 @@ export default function AlertModal({
     </div>
   );
 }
-

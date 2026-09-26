@@ -3,10 +3,10 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { lookupWordAll, type NativeLanguage } from '@/lib/gemini';
 import { advancedWordSchema, basicWordSchema } from '@/lib/schemas';
 import { wordCacheKey } from '@/lib/learning';
-import type { z } from 'zod';
+import { z } from 'zod';
 
-export type WordData = z.infer<typeof basicWordSchema> & Partial<z.infer<typeof advancedWordSchema>>;
-const schema = basicWordSchema.extend(advancedWordSchema.shape);
+export type WordData = z.infer<typeof basicWordSchema> & Partial<z.infer<typeof advancedWordSchema>> & { _advancedUnavailable?: boolean };
+const schema = basicWordSchema.extend({ ...advancedWordSchema.partial().shape, _advancedUnavailable: z.boolean().optional() });
 export function useWordLookup(language: NativeLanguage) {
   const [wordData, setWordData] = useState<WordData | null>(null);
   const [loadingWord, setLoadingWord] = useState(false);
@@ -42,7 +42,10 @@ export function useWordLookup(language: NativeLanguage) {
       }
       if (cache.current.size >= 100) cache.current.delete(cache.current.keys().next().value!);
       cache.current.set(key, data);
-      if (id === sequence.current) setWordData(data);
+      if (id === sequence.current) {
+        setWordData(data);
+        if (data._advancedUnavailable) setLookupError('기본 뜻은 표시했지만 상세 문법·예문 조회는 실패했습니다. / Detailed analysis is temporarily unavailable.');
+      }
     } catch {
       if (id === sequence.current) setLookupError('사전 조회에 실패했습니다. 단어를 다시 선택해 주세요. / Please select the word to retry.');
     } finally { if (id === sequence.current) setLoadingWord(false); }

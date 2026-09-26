@@ -34,18 +34,6 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
       priority: 0.9, // 핵심 학습 기능 페이지
     },
     {
-      url: `${BASE_URL}/test`,
-      lastModified: new Date(),
-      changeFrequency: 'monthly',
-      priority: 0.8, // 레벨 테스트 페이지
-    },
-    {
-      url: `${BASE_URL}/login`,
-      lastModified: new Date(),
-      changeFrequency: 'yearly',
-      priority: 0.5,
-    },
-    {
       url: `${BASE_URL}/privacy`,
       lastModified: new Date(),
       changeFrequency: 'yearly',

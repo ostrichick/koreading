@@ -3,6 +3,7 @@ import 'server-only';
 import type { Article } from '@/lib/db';
 import { z } from 'zod';
 import { levels, topics } from '@/lib/schemas';
+import { approvedImageUrls } from '@/lib/articlePublishing';
 
 type Value = { stringValue?: string; integerValue?: string; doubleValue?: number; timestampValue?: string; arrayValue?: { values?: Value[] }; mapValue?: { fields?: Record<string, Value> }; booleanValue?: boolean };
 function decode(v: Value): unknown {
@@ -17,7 +18,8 @@ function decode(v: Value): unknown {
 }
 interface Document { name: string; fields: Record<string, Value> }
 function article(doc: Document): Article {
-  return { ...Object.fromEntries(Object.entries(doc.fields).map(([k, v]) => [k, decode(v)])), id: doc.name.split('/').pop()! } as Article;
+  const data = Object.fromEntries(Object.entries(doc.fields).map(([k, v]) => [k, decode(v)]));
+  return { ...data, id: doc.name.split('/').pop()!, imageUrls: approvedImageUrls(data.imageUrls) } as Article;
 }
 const project = () => {
   const id = process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID;
@@ -78,7 +80,7 @@ export async function publicArticleIndex(full = false) {
 
 // Fetch only card fields with the built-in createdAt index. Cache once per minute;
 // no new composite index or Admin credential is required by the existing deployment.
-const catalog = unstable_cache(() => publicArticleIndex(), ['article-catalog-v2'], { revalidate: 60 });
+const catalog = unstable_cache(() => publicArticleIndex(), ['article-catalog-v3-safe-images'], { revalidate: 60 });
 export async function publicArticlePage(options: ListQuery) {
   const fingerprint = JSON.stringify([options.level, options.topic, options.sort]);
   const raw = options.cursor ? JSON.parse(Buffer.from(options.cursor, 'base64url').toString()) : { offset: 0, fingerprint };

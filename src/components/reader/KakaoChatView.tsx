@@ -16,7 +16,9 @@ interface Props {
   onSpeak: (text: string) => void;
   onTutor: (index: number, text: string) => void;
   onMic: (index: number, text: string) => void;
+  onShadow: (index: number, text: string) => void;
   recordingParaIdx: number | null;
+  shadowingParaIdx: number | null;
   paraScores: Record<number, { score: number; text: string }>;
 }
 
@@ -114,7 +116,7 @@ export default function KakaoChatView(p: Props) {
           // 시스템 공지형 메시지 (예: (10분 뒤 카페 앞))
           if (isSystemNotice) {
             return (
-              <div key={index} style={{ textAlign: 'center', margin: '4px 0' }}>
+              <div id={`reader-paragraph-${index}`} tabIndex={-1} key={index} style={{ textAlign: 'center', margin: '4px 0', scrollMarginTop: 24 }}>
                 <span
                   style={{
                     background: 'rgba(0, 0, 0, 0.12)',
@@ -134,12 +136,15 @@ export default function KakaoChatView(p: Props) {
 
           return (
             <div
+              id={`reader-paragraph-${index}`}
+              tabIndex={-1}
               key={index}
               style={{
                 display: 'flex',
                 flexDirection: isMe ? 'row-reverse' : 'row',
                 alignItems: 'flex-start',
                 gap: '8px',
+                scrollMarginTop: 24,
               }}
             >
               {/* 상대방 프로필 아바타 (내가 아닐 때만 표시) */}
@@ -202,7 +207,9 @@ export default function KakaoChatView(p: Props) {
                       userSelect: 'text',
                     }}
                   >
-                    {tokenizeKorean(textContent).map((token, i) =>
+                    {p.shadowingParaIdx === index ? (
+                      <span style={{ fontStyle: 'italic', color: '#64748b' }}>듣고 따라 말해 보세요. 마이크로 연습하거나 🗣️ 버튼을 다시 누르면 원문을 볼 수 있습니다.</span>
+                    ) : tokenizeKorean(textContent).map((token, i) =>
                       isKoreanWord(token) ? (
                         <button
                           type="button"
@@ -270,13 +277,26 @@ export default function KakaoChatView(p: Props) {
                     >
                       💬
                     </button>
+                    <button
+                      type="button"
+                      aria-label={p.recordingParaIdx === index ? 'Stop recording' : 'Practice speaking'}
+                      onClick={() => p.onMic(index, textContent)}
+                      style={{ background: 'rgba(255,255,255,0.7)', border: 'none', borderRadius: '100px', width: '24px', height: '24px', cursor: 'pointer' }}
+                    >🎙️</button>
+                    <button
+                      type="button"
+                      aria-label={p.shadowingParaIdx === index ? 'Show original message' : 'Shadow message'}
+                      aria-pressed={p.shadowingParaIdx === index}
+                      onClick={() => p.onShadow(index, textContent)}
+                      style={{ background: 'rgba(255,255,255,0.7)', border: 'none', borderRadius: '100px', width: '24px', height: '24px', cursor: 'pointer' }}
+                    >🗣️</button>
                   </div>
                 </div>
 
                 {/* 음성 녹음 발음 일치도 점수 */}
                 {p.paraScores[index] && (
                   <p role="status" style={{ fontSize: '0.75rem', color: '#047857', margin: '4px 0 0 0' }}>
-                    발음 점수: {p.paraScores[index].score}%
+                    음성 인식 문장 일치도: {p.paraScores[index].score}%
                   </p>
                 )}
               </div>

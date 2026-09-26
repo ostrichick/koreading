@@ -14,6 +14,10 @@ export default function NavBar() {
   const router = useRouter();                  // Next.js 페이지 라우터
   const [menuOpen, setMenuOpen] = useState(false); // 프로필 드롭다운 메뉴 활성화 상태
   const menuRef = useRef<HTMLDivElement>(null);    // 드롭다운 메뉴 엘리먼트 참조값
+  const [mobileOpen, setMobileOpen] = useState(false);
+  const navRef = useRef<HTMLDivElement>(null);
+  const mobileToggleRef = useRef<HTMLButtonElement>(null);
+  const accountToggleRef = useRef<HTMLButtonElement>(null);
 
   // 현재 로그인한 사용자가 관리자인지 판별합니다.
   const isAdmin = isAdminEmail(user?.email);
@@ -25,9 +29,25 @@ export default function NavBar() {
       if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
         setMenuOpen(false);
       }
+      if (navRef.current && !navRef.current.contains(e.target as Node)) {
+        setMobileOpen(false);
+      }
+    };
+    const handleEscape = (e: KeyboardEvent) => {
+      if (e.key !== 'Escape') return;
+      const returnToMobile = mobileToggleRef.current?.getAttribute('aria-expanded') === 'true';
+      const returnToAccount = accountToggleRef.current?.getAttribute('aria-expanded') === 'true';
+      setMenuOpen(false);
+      setMobileOpen(false);
+      if (returnToAccount) accountToggleRef.current?.focus();
+      else if (returnToMobile) mobileToggleRef.current?.focus();
     };
     document.addEventListener('mousedown', handleClickOutside);
-    return () => document.removeEventListener('mousedown', handleClickOutside);
+    document.addEventListener('keydown', handleEscape);
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+      document.removeEventListener('keydown', handleEscape);
+    };
   }, []);
 
   // 로그아웃 단추 클릭 시 구동할 이벤트 핸들러입니다.
@@ -35,6 +55,7 @@ export default function NavBar() {
     await logout();      // AuthContext 로그아웃 처리
     router.push('/');    // 메인 랜딩 페이지로 이동
     setMenuOpen(false);  // 메뉴 닫기
+    setMobileOpen(false);
   };
 
   const [guestLevel, setGuestLevel] = useState<string | null>(null);
@@ -88,7 +109,7 @@ export default function NavBar() {
       )}
 
       <nav className="nav">
-        <div className="container nav-inner">
+        <div className="container nav-inner" ref={navRef}>
           {/* 서비스 로고 및 랜딩 홈 링크 */}
           <Link href="/" className="nav-logo">
             <Image src="/logo.png" alt="Koreading logo" width={32} height={32} style={{ borderRadius: '8px' }} />
@@ -117,14 +138,28 @@ export default function NavBar() {
             )}
           </Link>
 
+          <button
+            ref={mobileToggleRef}
+            type="button"
+            className="nav-menu-toggle"
+            aria-label={mobileOpen ? 'Close navigation menu' : 'Open navigation menu'}
+            aria-controls="primary-navigation"
+            aria-expanded={mobileOpen}
+            onClick={() => { setMobileOpen(open => !open); setMenuOpen(false); }}
+          >
+            {mobileOpen ? '✕' : '☰'}
+          </button>
+
           {/* 네비게이션 링크 그룹 */}
-          <div className="nav-links">
+          <div id="primary-navigation" className={`nav-links ${mobileOpen ? 'mobile-open' : ''}`}>
             {navLinks.map(link => (
               <Link
                 key={link.href}
                 href={link.href}
                 // 현재 머무르고 있는 페이지에 불이 들어오도록 active 클래스 바인딩
                 className={`nav-link ${pathname === link.href ? 'active' : ''}`}
+                aria-current={pathname === link.href ? 'page' : undefined}
+                onClick={() => setMobileOpen(false)}
               >
                 {link.label}
               </Link>
@@ -134,7 +169,12 @@ export default function NavBar() {
             {user && profile ? (
               <div style={{ position: 'relative' }} ref={menuRef}>
                 <button
+                  ref={accountToggleRef}
                   onClick={() => setMenuOpen(!menuOpen)}
+                  type="button"
+                  aria-label="Account menu"
+                  aria-expanded={menuOpen}
+                  aria-controls="account-navigation"
                   style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 0, position: 'relative' }}
                 >
                   {user.photoURL ? (
@@ -166,7 +206,7 @@ export default function NavBar() {
 
                 {/* 드롭다운 하부 메뉴 구성 */}
                 {menuOpen && (
-                  <div style={{
+                  <div id="account-navigation" style={{
                     position: 'absolute',
                     top: '48px',
                     right: 0,
@@ -210,7 +250,7 @@ export default function NavBar() {
                     <div style={{ marginTop: '4px' }}>
                       <Link
                         href="/profile"
-                        onClick={() => setMenuOpen(false)}
+                        onClick={() => { setMenuOpen(false); setMobileOpen(false); }}
                         style={{
                           display: 'block',
                           padding: '10px 12px',
@@ -252,7 +292,7 @@ export default function NavBar() {
             ) : (
               // 비로그인 상태이면서 로그인 관련 화면이 아닐 경우 시작하기 버튼 노출
               !pathname?.startsWith('/login') && (
-                <Link href="/login" className="btn btn-primary btn-sm">
+                <Link href="/login" className="btn btn-primary btn-sm" onClick={() => setMobileOpen(false)}>
                   Get Started
                 </Link>
               )

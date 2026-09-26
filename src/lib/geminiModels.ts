@@ -1,8 +1,8 @@
 /**
  * @file geminiModels.ts
  * @description Google Gemini 모델의 동적 버전 감지, 우선순위 정렬 및 용도별(글 생성/사전 검색) 모델 체인을 관리합니다.
- * @why 응답 속도가 빠르고 가용성이 검증된 모델(Gemini 3.6 Flash, 500 RPD의 3.5 Flash Lite)을 최우선 배치하고,
- *      과부하(503) 위험이 있는 실험 모델 및 20 RPD 소진 위험이 있는 구버전은 차순위/폴백으로 배치합니다.
+ * @why Select candidate Flash models from the model catalog for the current API key.
+ *      Runtime availability, response times and provider quotas are not guaranteed.
  */
 
 export interface ModelTarget {
@@ -22,10 +22,10 @@ interface ModelListResponse {
   models?: GenericModelInfo[];
 }
 
-// 1.5~2초대 초고속 응답 & 500 RPD 대용량 쿼터가 검증된 최우선 기본 체인
+// Fallback candidates when a per-key listing is unavailable (not confirmed live quotas).
 export const DEFAULT_ARTICLE_MODELS: ModelTarget[] = [
-  { id: 'gemini-3.5-flash-lite', name: 'Gemini 3.5 Flash Lite (500 RPD)', version: 3.5, isLite: true },
-  { id: 'gemini-3.1-flash-lite', name: 'Gemini 3.1 Flash Lite (500 RPD)', version: 3.1, isLite: true },
+  { id: 'gemini-3.5-flash-lite', name: 'Gemini 3.5 Flash Lite', version: 3.5, isLite: true },
+  { id: 'gemini-3.1-flash-lite', name: 'Gemini 3.1 Flash Lite', version: 3.1, isLite: true },
   { id: 'gemini-3.5-flash', name: 'Gemini 3.5 Flash', version: 3.5, isLite: false },
   { id: 'gemini-3.6-flash', name: 'Gemini 3.6 Flash', version: 3.6, isLite: false },
   { id: 'gemini-2.5-flash', name: 'Gemini 2.5 Flash (Fallback)', version: 2.5, isLite: false },
@@ -66,28 +66,20 @@ export function formatModelDisplayName(id: string): string {
     .join(' ');
 }
 
-// 1시간 단위 메모리 캐시 (Edge/Serverless 인스턴스 생명주기 동안 반복 네트워크 오버헤드 0)
-let cachedArticleModels: ModelTarget[] = DEFAULT_ARTICLE_MODELS;
-let cachedDictionaryModels: ModelTarget[] = DEFAULT_DICTIONARY_MODELS;
-let lastCacheTime = 0;
+// Model availability is credential-specific. Never reuse a personal key's catalog for another key.
+const modelCache = new Map<string, { articleModels: ModelTarget[]; dictionaryModels: ModelTarget[]; updatedAt: number }>();
 const CACHE_TTL_MS = 60 * 60 * 1000; // 1시간
+const MAX_CACHED_KEYS = 32;
 
 /**
  * Google AI Studio API로부터 현재 계정에서 사용 가능한 모델 목록을 동적으로 가져와
  * 안정성(속도/가용성) 및 체급(Flash vs Flash Lite) 순으로 자동 정렬된 우선순위 체인을 반환합니다.
  */
-export async function getPrioritizedGeminiModels(apiKey: string): Promise<{
+export async function getPrioritizedGeminiModels(apiKey: string, signal?: AbortSignal): Promise<{
   articleModels: ModelTarget[];
   dictionaryModels: ModelTarget[];
 }> {
-  const now = Date.now();
-  if (apiKey && now - lastCacheTime < CACHE_TTL_MS && cachedArticleModels.length > 0) {
-    return {
-      articleModels: cachedArticleModels,
-      dictionaryModels: cachedDictionaryModels,
-    };
-  }
-
+  signal?.throwIfAborted();
   if (!apiKey) {
     return {
       articleModels: DEFAULT_ARTICLE_MODELS,
@@ -95,22 +87,26 @@ export async function getPrioritizedGeminiModels(apiKey: string): Promise<{
     };
   }
 
-  try {
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 3000); // 3초 초과 시 캐시/기본값 즉시 반환
+  const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(apiKey));
+  const cacheKey = Array.from(new Uint8Array(digest), byte => byte.toString(16).padStart(2, '0')).join('');
+  const cached = modelCache.get(cacheKey);
+  if (cached && Date.now() - cached.updatedAt < CACHE_TTL_MS) return cached;
+  const fallback = cached || { articleModels: DEFAULT_ARTICLE_MODELS, dictionaryModels: DEFAULT_DICTIONARY_MODELS };
 
+  try {
     const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models?key=${apiKey}`, {
-      signal: controller.signal,
+      signal: signal ? AbortSignal.any([signal, AbortSignal.timeout(3000)]) : AbortSignal.timeout(3000),
       headers: { 'Content-Type': 'application/json' },
-      next: { revalidate: 3600 }
+      cache: 'no-store',
     });
-    clearTimeout(timeoutId);
+    signal?.throwIfAborted();
 
     if (!res.ok) {
-      return { articleModels: cachedArticleModels, dictionaryModels: cachedDictionaryModels };
+      return fallback;
     }
 
     const data = await res.json() as ModelListResponse;
+    signal?.throwIfAborted();
     const rawModels = data.models || [];
     const rawList: string[] = rawModels
       .filter(m => m.supportedGenerationMethods?.includes('generateContent'))
@@ -118,13 +114,10 @@ export async function getPrioritizedGeminiModels(apiKey: string): Promise<{
       .filter(isValidFlashModel);
 
     if (rawList.length === 0) {
-      return { articleModels: cachedArticleModels, dictionaryModels: cachedDictionaryModels };
+      return fallback;
     }
 
-    // 1. 아티클 생성용 모델 체인 구축
-    // - 실측 1.5~2초대 응답 및 500 RPD 고용량 모델(3.6 Flash, 3.5 Flash Lite) 최우선 배치
-    // - 과부하(503) 잦은 3.8/3.7은 차순위 폴백으로 배치
-    // - 20 RPD 소진 위험이 있는 2.5 Flash는 최후방 폴백으로 배치
+    // Article candidates: preference order only; provider latency/quota can change.
     const stableFast: ModelTarget[] = [];
     const highQuotaLite: ModelTarget[] = [];
     const previewFlagship: ModelTarget[] = [];
@@ -161,8 +154,7 @@ export async function getPrioritizedGeminiModels(apiKey: string): Promise<{
     previewFlagship.sort((a, b) => b.version - a.version); // 3.8 > 3.7
     olderFlash.sort((a, b) => b.version - a.version); // 2.5
 
-    // 최적화된 아티클 생성 체인:
-    // 3.5 Flash Lite (초고속 1.6초 & 500 RPD) -> 3.1 Flash Lite (500 RPD) -> 3.5 Flash -> 3.6 Flash -> 2.5 Flash -> 3.8 / 3.7 Flash
+    // The API route limits how many of these candidates it attempts per request.
     const articleChain = [
       ...highQuotaLite.filter(m => m.id === 'gemini-3.5-flash-lite'),
       ...highQuotaLite.filter(m => m.id === 'gemini-3.1-flash-lite'),
@@ -174,24 +166,16 @@ export async function getPrioritizedGeminiModels(apiKey: string): Promise<{
       ...previewFlagship
     ];
 
-    // 2. 사전 검색용 모델 체인: 600~800ms 응답성의 Lite 모델 최우선 배치
+    // Dictionary candidates: Lite models first; no latency guarantee.
     const dictChain = [...highQuotaLite, ...stableFast, ...previewFlagship, ...olderFlash];
 
-    if (articleChain.length > 0) {
-      cachedArticleModels = articleChain;
-      cachedDictionaryModels = dictChain;
-      lastCacheTime = now;
-    }
-
-    return {
-      articleModels: cachedArticleModels,
-      dictionaryModels: cachedDictionaryModels,
-    };
+    const result = { articleModels: articleChain, dictionaryModels: dictChain, updatedAt: Date.now() };
+    if (modelCache.size >= MAX_CACHED_KEYS) modelCache.delete(modelCache.keys().next().value!);
+    modelCache.set(cacheKey, result);
+    return result;
   } catch {
-    // 네트워크 지연/오류 시 사전에 준비된 고성능 체인으로 무중단 유지
-    return {
-      articleModels: cachedArticleModels,
-      dictionaryModels: cachedDictionaryModels,
-    };
+    signal?.throwIfAborted();
+    // A failure for one credential must never fall back to another credential's catalog.
+    return fallback;
   }
 }

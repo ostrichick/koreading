@@ -136,7 +136,6 @@ export async function GET(req: NextRequest) {
     { path: '/privacy', isLegal: true },    // 개인정보처리방침 (애드센스 필수)
     { path: '/terms', isLegal: true },      // 이용약관 (애드센스 필수)
     { path: '/library', isLegal: false },   // 메인 학습 도서관
-    { path: '/test', isLegal: false },      // 레벨 테스트
     { path: '/sitemap.xml', isLegal: true },// 검색엔진 사이트맵
     { path: '/robots.txt', isLegal: true }, // 검색 크롤러 규약
   ];

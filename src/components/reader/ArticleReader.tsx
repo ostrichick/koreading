@@ -9,7 +9,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/contexts/AuthContext';
-import { getArticleById, markArticleRead, saveVocabulary, getReadArticles, Article, saveReview, getReviews, Review, deleteArticle, getCustomCategories } from '@/lib/db';
+import { getArticleById, markArticleRead, saveVocabulary, getReadArticles, Article, saveReview, getReviews, Review, deleteArticle, getCustomCategories, startArticleProgress, getArticleProgress, saveQuizAttempt, saveDifficultyFeedback, saveSeriesChoice, type DifficultyFeedback } from '@/lib/db';
 import { TOPICS } from '@/lib/gemini';
 import { getGuestLang } from '@/lib/storage';
 import { isAdminEmail } from '@/lib/adminConfig';
@@ -20,8 +20,10 @@ import DiscussionPromptCard from '@/components/reader/DiscussionPromptCard';
 import { isKoreanWord } from '@/lib/utils';
 import { useWordLookup } from '@/hooks/useWordLookup';
 import ReaderBody from '@/components/reader/ReaderBody';
-import { ReaderControls } from '@/components/reader/ReaderControls';
+import { ReaderControls, type TtsRate } from '@/components/reader/ReaderControls';
 import TutorPanel, { type TutorSelection } from '@/components/reader/TutorPanel';
+import ComprehensionQuizCard from '@/components/reader/ComprehensionQuizCard';
+import WritingPracticeCard from '@/components/reader/WritingPracticeCard';
 import { articleSummary } from '@/lib/learning';
 
 // 사전 조회 데이터를 담을 구조 인터페이스
@@ -173,9 +175,12 @@ export default function ArticleReader({ initialArticle }: { initialArticle: Arti
   const [loading, setLoading] = useState(false);                              // 아티클 로딩 스피너 제어
   const [savedWords, setSavedWords] = useState<Set<string>>(new Set());      // 단어장에 추가 완료된 한글 단어 뱃지 리스트
   const [savingWord, setSavingWord] = useState(false);                       // 단어장 Firestore 추가 API 락 제어
+  const [lookupSource, setLookupSource] = useState<{ word: string; sentence: string }>({ word: '', sentence: '' });
   const [savedToast, setSavedToast] = useState(false);                       // 화면 우측 하단 저장 성공 토스트 활성화 제어
   const [isRead, setIsRead] = useState(false);                               // 현재 사용자가 이 기사를 읽은 기록이 있는지 판별
   const [markingRead, setMarkingRead] = useState(false);                     // 완독 체크 중 로딩 상태
+  const [difficultyFeedback, setDifficultyFeedback] = useState<DifficultyFeedback | null>(null);
+  const [seriesChoiceIndex, setSeriesChoiceIndex] = useState<number | null>(null);
 
   // 마우스 오버 시 즉시 사전을 표출하는 토글을 위한 Refs 및 상태
   const [hoverLookup, setHoverLookup] = useState(false);
@@ -190,6 +195,7 @@ export default function ArticleReader({ initialArticle }: { initialArticle: Arti
     // SSR 환경 대응을 위한 다크 테마 디폴트 설정
     return 'dark';
   });
+  const [ttsRate, setTtsRate] = useState<TtsRate>(1);
   const [showSettings, setShowSettings] = useState<boolean>(false);
 
   // 독자 평가 리뷰 작성 및 렌더링을 위한 상태들
@@ -221,6 +227,7 @@ export default function ArticleReader({ initialArticle }: { initialArticle: Arti
 
   // 🎙️ 발음 연습 및 채점 상태 변수들
   const [recordingParaIdx, setRecordingParaIdx] = useState<number | null>(null);
+  const [shadowingParaIdx, setShadowingParaIdx] = useState<number | null>(null);
   const [paraScores, setParaScores] = useState<Record<number, { text: string; score: number }>>({});
   const recognitionRef = useRef<any>(null);
 
@@ -310,6 +317,7 @@ export default function ArticleReader({ initialArticle }: { initialArticle: Arti
         ...prev,
         [pIdx]: { text: resultText, score }
       }));
+      setShadowingParaIdx(null);
     };
 
     rec.onerror = (event) => {
@@ -352,6 +360,8 @@ export default function ArticleReader({ initialArticle }: { initialArticle: Arti
     if (savedLine) setLineHeight(parseFloat(savedLine));
     const savedTheme = localStorage.getItem('koreading_reader_theme');
     if (savedTheme) setReaderTheme(savedTheme);
+    const savedRate = Number(localStorage.getItem('koreading_tts_rate'));
+    if (savedRate === 0.8 || savedRate === 1 || savedRate === 1.2) setTtsRate(savedRate);
 
     const load = async () => {
       const a = initialArticle;
@@ -363,6 +373,17 @@ export default function ArticleReader({ initialArticle }: { initialArticle: Arti
       if (user) {
         const readIds = await getReadArticles(user.uid);
         setIsRead(readIds.includes(id));
+        void startArticleProgress(user.uid, id, {
+          level: a.level,
+          topicCategory: a.topicCategory,
+          grammarTags: a.grammarEvidence?.map(item => item.pattern),
+        })
+          .then(() => getArticleProgress(user.uid, id))
+          .then(progress => {
+            setDifficultyFeedback(progress?.difficultyFeedback || null);
+            setSeriesChoiceIndex(typeof progress?.seriesChoiceIndex === 'number' ? progress.seriesChoiceIndex : null);
+          })
+          .catch(() => undefined);
         // Fetch custom categories
         getCustomCategories(user.uid).then(setCustomCategories);
       }
@@ -406,15 +427,31 @@ export default function ArticleReader({ initialArticle }: { initialArticle: Arti
     setReaderTheme(theme);
     localStorage.setItem('koreading_reader_theme', theme);
   };
+  const updateTtsRate = (rate: TtsRate) => {
+    setTtsRate(rate);
+    localStorage.setItem('koreading_tts_rate', String(rate));
+  };
 
   // 🔊 TTS 한국어 목소리 음성 합성 재생 헬퍼
-  const speakText = (text: string) => {
+  const speakText = (text: string, onEnd?: () => void) => {
     if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
       window.speechSynthesis.cancel();
       const utterance = new SpeechSynthesisUtterance(text);
       utterance.lang = 'ko-KR';
+      utterance.rate = ttsRate;
+      if (onEnd) utterance.onend = onEnd;
       window.speechSynthesis.speak(utterance);
     }
+  };
+
+  const handleShadowing = (index: number, text: string) => {
+    if (shadowingParaIdx === index) {
+      if (typeof window !== 'undefined' && 'speechSynthesis' in window) window.speechSynthesis.cancel();
+      setShadowingParaIdx(null);
+      return;
+    }
+    setShadowingParaIdx(index);
+    speakText(text);
   };
 
   // 백그라운드 단어 사전 조회 비동기 코어 함수
@@ -425,6 +462,7 @@ export default function ArticleReader({ initialArticle }: { initialArticle: Arti
    */
   const handleWordClick = (e: React.MouseEvent, word: string, sentence: string) => {
     if (!isKoreanWord(word)) return;
+    setLookupSource({ word, sentence: sentence.slice(0, 1000) });
     const rect = e.currentTarget.getBoundingClientRect();
     setTooltipPosition({
       top: rect.top + window.scrollY - 110,
@@ -442,6 +480,7 @@ export default function ArticleReader({ initialArticle }: { initialArticle: Arti
     
     const target = e.currentTarget;
     hoverTimeoutRef.current = setTimeout(() => {
+      setLookupSource({ word, sentence: sentence.slice(0, 1000) });
       const rect = target.getBoundingClientRect();
       setTooltipPosition({
         top: rect.top + window.scrollY - 110,
@@ -484,6 +523,9 @@ export default function ArticleReader({ initialArticle }: { initialArticle: Arti
         level: wordData.level,
         topic: selectedSaveCategory || article.topicCategory,
         articleTitle: article.title,
+        sourceArticleId: id,
+        sourceSentence: lookupSource.sentence,
+        sourceWord: lookupSource.word || wordData.word,
       });
       setSavedWords(prev => {
         const next = new Set(prev);
@@ -513,6 +555,66 @@ export default function ArticleReader({ initialArticle }: { initialArticle: Arti
     await markArticleRead(user.uid, id); // Firestore readArticles 컬렉션에 추가
     setIsRead(true);
     setMarkingRead(false);
+  };
+
+  const handleQuizSubmit = async (answers: number[], score: number) => {
+    if (!user || !article?.comprehensionQuiz) return;
+    const breakdown = { main: false, detail: false, vocabulary: false };
+    article.comprehensionQuiz.forEach((question, index) => {
+      breakdown[question.kind] = answers[index] === question.correct;
+    });
+    await saveQuizAttempt(user.uid, id, answers, score, breakdown);
+  };
+
+  const handleDifficultyChange = async (feedback: DifficultyFeedback) => {
+    const previous = difficultyFeedback;
+    setDifficultyFeedback(feedback);
+    if (!user) return;
+    try {
+      await saveDifficultyFeedback(user.uid, id, feedback);
+    } catch (error) {
+      console.error(error);
+      setDifficultyFeedback(previous);
+      triggerAlert('난이도 평가를 저장하지 못했습니다. 잠시 후 다시 시도해 주세요.', '저장 실패', 'error');
+    }
+  };
+
+  const handleSeriesChoice = async (choiceIndex: number) => {
+    const previous = seriesChoiceIndex;
+    setSeriesChoiceIndex(choiceIndex);
+    if (!user) return;
+    try {
+      await saveSeriesChoice(user.uid, id, choiceIndex);
+    } catch (error) {
+      console.error(error);
+      setSeriesChoiceIndex(previous);
+      triggerAlert('선택을 저장하지 못했습니다. 잠시 후 다시 시도해 주세요.', '저장 실패', 'error');
+    }
+  };
+
+  const handleContinueSeries = () => {
+    if (!article?.continuationChoices || seriesChoiceIndex === null) return;
+    const seriesId = article.seriesId || article.id;
+    sessionStorage.setItem('koreading_series_continuation', JSON.stringify({
+      seriesId,
+      seriesTitle: article.seriesTitle || article.title,
+      episodeNumber: (article.episodeNumber || 1) + 1,
+      previousArticleId: article.id,
+      previousTitle: article.title,
+      previousContent: article.content.slice(0, 5000),
+      previousChoice: article.continuationChoices[seriesChoiceIndex],
+      level: article.level,
+      topic: article.topicCategory,
+      genre: article.genre || 'story',
+    }));
+    router.push('/library?continue=1');
+  };
+
+  const handleReviewParagraph = (paragraphIndex: number) => {
+    const target = document.getElementById(`reader-paragraph-${paragraphIndex}`);
+    if (!target) return;
+    target.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    window.setTimeout(() => target.focus({ preventScroll: true }), 350);
   };
 
   // 현재 로그인한 사용자가 관리자인지 여부 (삭제 버튼 표시 제어)
@@ -615,7 +717,7 @@ export default function ArticleReader({ initialArticle }: { initialArticle: Arti
 
   return (
     <div 
-      className={readerTheme === 'light' ? 'reader-theme-light' : readerTheme === 'sepia' ? 'reader-theme-sepia' : ''} 
+      className={`reader-theme-${['light', 'sepia', 'dark'].includes(readerTheme) ? readerTheme : 'light'}`}
       style={{ 
         minHeight: '100vh', 
         padding: '40px 24px', 
@@ -686,12 +788,21 @@ export default function ArticleReader({ initialArticle }: { initialArticle: Arti
               content={article.content}
               fontSize={fontSize}
               onFontSizeChange={(size) => updateFontSize(size)}
+              ttsRate={ttsRate}
+              onTtsRateChange={updateTtsRate}
             />
           </div>
 
           <h1 style={{ fontSize: '1.8rem', fontWeight: 900, fontFamily: 'Noto Sans KR, sans-serif', marginBottom: '12px', lineHeight: 1.4 }}>
             {article.title}
           </h1>
+
+          {article.seriesId && article.episodeNumber && (
+            <div style={{ display: 'flex', gap: '10px', alignItems: 'center', flexWrap: 'wrap', marginBottom: '10px', color: 'var(--text-secondary)', fontSize: '0.82rem' }}>
+              <strong lang="ko">{article.seriesTitle || '연재 이야기'} · {article.episodeNumber}화</strong>
+              {article.previousEpisodeId && <a href={`/read/${article.previousEpisodeId}`} style={{ color: 'var(--accent-primary)' }}>← 이전 화</a>}
+            </div>
+          )}
 
           <p style={{ color: 'var(--text-secondary)', fontSize: '0.875rem', fontStyle: 'italic' }}>
             {articleSummary(article, profile?.nativeLanguage || guestLanguage)}
@@ -812,11 +923,35 @@ export default function ArticleReader({ initialArticle }: { initialArticle: Arti
 
         {/* 독해 본문 내용 카드 영역 */}
         {lookupError && <p role="alert">{lookupError}</p>}
-        <ReaderBody paragraphs={paragraphs} article={article} fontSize={fontSize} lineHeight={lineHeight} savedWords={savedWords} recordingParaIdx={recordingParaIdx} paraScores={paraScores} onWordClick={handleWordClick} onWordEnter={handleWordMouseEnter} onWordLeave={handleWordMouseLeave} onSpeak={speakText} onTutor={handleOpenTutor} onMic={handleMicClick} />
+        <ReaderBody paragraphs={paragraphs} article={article} fontSize={fontSize} lineHeight={lineHeight} savedWords={savedWords} recordingParaIdx={recordingParaIdx} shadowingParaIdx={shadowingParaIdx} paraScores={paraScores} onWordClick={handleWordClick} onWordEnter={handleWordMouseEnter} onWordLeave={handleWordMouseLeave} onSpeak={speakText} onTutor={handleOpenTutor} onMic={handleMicClick} onShadow={handleShadowing} />
 
         {/* 🤔 생각해볼 거리 / 당신의 선택은? */}
         {article.discussionPrompt && (
-          <DiscussionPromptCard prompt={article.discussionPrompt} />
+          <DiscussionPromptCard
+            prompt={article.discussionPrompt}
+            choices={article.continuationChoices}
+            chosenIndex={seriesChoiceIndex}
+            onChoose={handleSeriesChoice}
+            onContinue={article.continuationChoices?.length === 2 ? handleContinueSeries : undefined}
+          />
+        )}
+
+        {article.comprehensionQuiz && (
+          <ComprehensionQuizCard
+            questions={article.comprehensionQuiz}
+            difficultyFeedback={difficultyFeedback}
+            onSubmit={handleQuizSubmit}
+            onDifficultyChange={handleDifficultyChange}
+            onReviewParagraph={handleReviewParagraph}
+          />
+        )}
+
+        {article.writingPrompt && (
+          <WritingPracticeCard
+            prompt={article.writingPrompt}
+            level={article.level}
+            language={profile?.nativeLanguage || guestLanguage}
+          />
         )}
 
         {/* 독자 평가 평점 제출 카드 */}
@@ -1144,7 +1279,7 @@ export default function ArticleReader({ initialArticle }: { initialArticle: Arti
         </div>
       )}
 
-      {/* 2단계 점진적 조회 스켈레톤 사전 팝업창 (상세 오버레이) */}
+      {/* 문맥 사전 상세 오버레이. 상세 분석 실패 시 기본 뜻만 표시할 수 있습니다. */}
       {showAdvancedModal && wordData && (
         <div className="word-popup-overlay" onClick={(e) => { if (e.target === e.currentTarget) closePopup(); }}>
           <div className="word-popup" style={{ minHeight: '380px', display: 'flex', flexDirection: 'column' }}>
@@ -1171,10 +1306,15 @@ export default function ArticleReader({ initialArticle }: { initialArticle: Arti
                     </button>
                   </div>
                 </div>
-                <button className="word-popup-close" onClick={closePopup}>✕</button>
+                <button className="word-popup-close" onClick={closePopup} aria-label="Close dictionary details">✕</button>
               </div>
 
               <span className="word-popup-pos">{wordData.partOfSpeech}</span>
+              {wordData._advancedUnavailable && (
+                <p role="alert" style={{ marginBottom: '16px', color: 'var(--text-secondary)', fontSize: '0.85rem' }}>
+                  기본 뜻은 표시했지만 상세 문법·예문 조회는 실패했습니다. / Detailed analysis is temporarily unavailable.
+                </p>
+              )}
 
               {/* 2단계 백그라운드 Advanced 분석 호출 대기 상태 대응 */}
               {loadingAdvanced && !wordData.structure ? (

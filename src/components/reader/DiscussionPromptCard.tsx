@@ -4,10 +4,14 @@ import React from 'react';
 
 interface DiscussionPromptCardProps {
   prompt?: string;
+  choices?: string[];
+  chosenIndex?: number | null;
+  onChoose?: (index: number) => void;
+  onContinue?: () => void;
   style?: React.CSSProperties;
 }
 
-export default function DiscussionPromptCard({ prompt, style = {} }: DiscussionPromptCardProps) {
+export default function DiscussionPromptCard({ prompt, choices = [], chosenIndex = null, onChoose, onContinue, style = {} }: DiscussionPromptCardProps) {
   if (!prompt) return null;
 
   return (
@@ -40,6 +44,27 @@ export default function DiscussionPromptCard({ prompt, style = {} }: DiscussionP
       }}>
         {prompt}
       </p>
+      {choices.length === 2 && (
+        <div style={{ display: 'grid', gap: '8px', marginTop: '16px' }}>
+          {choices.map((choice, index) => (
+            <button
+              key={`${index}-${choice}`}
+              type="button"
+              className={`btn ${chosenIndex === index ? 'btn-primary' : 'btn-ghost'}`}
+              aria-pressed={chosenIndex === index}
+              onClick={() => onChoose?.(index)}
+              style={{ justifyContent: 'flex-start', textAlign: 'left', whiteSpace: 'normal' }}
+            >
+              {index + 1}. {choice}
+            </button>
+          ))}
+          {onContinue && chosenIndex !== null && (
+            <button type="button" className="btn btn-primary" onClick={onContinue} style={{ justifyContent: 'center', marginTop: '4px' }}>
+              이 선택으로 다음 화 만들기 →
+            </button>
+          )}
+        </div>
+      )}
     </div>
   );
 }

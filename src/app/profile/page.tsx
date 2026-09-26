@@ -1,13 +1,14 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import Image from 'next/image';
 import { useAuth } from '@/contexts/AuthContext';
-import { createOrUpdateUser, getReadArticlesWithDates, getVocabulary, deleteUserAccount } from '@/lib/db';
+import { createOrUpdateUser, getReadArticlesWithDates, getVocabulary, getArticleProgressList, deleteUserAccount, type ArticleProgress } from '@/lib/db';
 import { TOPICS } from '@/lib/gemini';
 import type { CEFRLevel, NativeLanguage } from '@/lib/gemini';
+import { deriveLearningProfile, readingCompletionStreak, currentCalendarWeekCount, currentCalendarWeekStudyDays } from '@/lib/learning';
 
 // 화면에 보여줄 6가지 CEFR 한국어 레벨 정보 정의
 const LEVELS: { value: CEFRLevel; label: string; desc: string }[] = [
@@ -28,6 +29,7 @@ export default function ProfilePage() {
   const [selectedLang, setSelectedLang] = useState<NativeLanguage>('en');    // 선택된 번역 모국어
   const [saving, setSaving] = useState(false);                               // 저장 처리 중 로딩 애니메이션 활성 상태
   const [saved, setSaved] = useState(false);                                 // 저장 완료 알럿 활성 상태
+  const [weeklyReadingGoal, setWeeklyReadingGoal] = useState(3);
 
   const [readRecords, setReadRecords] = useState<any[]>([]);
   const [streak, setStreak] = useState<number>(0);
@@ -35,6 +37,7 @@ export default function ProfilePage() {
 
   // [신규 기능] 어휘 통계 및 그래프 상태 훅
   const [vocabRecords, setVocabRecords] = useState<any[]>([]);
+  const [progressRecords, setProgressRecords] = useState<(ArticleProgress & { articleId: string })[]>([]);
   const [weeklyStats, setWeeklyStats] = useState<any[]>([]);
   const [categoryDistribution, setCategoryDistribution] = useState<{ category: string; count: number }[]>([]);
 
@@ -45,57 +48,26 @@ export default function ProfilePage() {
     if (profile) {
       setSelectedLevel(profile.level);
       setSelectedLang(profile.nativeLanguage || 'en');
+      setWeeklyReadingGoal(Math.min(7, Math.max(1, profile.weeklyReadingGoal || 3)));
     }
 
     const loadStats = async () => {
       try {
-        const records = await getReadArticlesWithDates(user.uid);
+        const [records, vocabs, progress] = await Promise.all([
+          getReadArticlesWithDates(user.uid),
+          getVocabulary(user.uid),
+          getArticleProgressList(user.uid),
+        ]);
         setReadRecords(records);
-
-        // [신규 기능] 어휘 단어 로드
-        const vocabs = await getVocabulary(user.uid);
         setVocabRecords(vocabs);
+        setProgressRecords(progress);
         
-        // 스트릭 계산
-        const readDatesSet = new Set<string>();
-        records.forEach(r => {
-          if (r.readAt) {
-            const date = typeof r.readAt.toDate === 'function'
-              ? r.readAt.toDate()
-              : new Date(r.readAt.seconds * 1000);
-            
-            const y = date.getFullYear();
-            const m = String(date.getMonth() + 1).padStart(2, '0');
-            const d = String(date.getDate()).padStart(2, '0');
-            readDatesSet.add(`${y}-${m}-${d}`);
-          }
+        const readDates = records.flatMap(record => {
+          const readAt = record.readAt;
+          if (!readAt) return [];
+          return [typeof readAt.toDate === 'function' ? readAt.toDate() : new Date(readAt.seconds * 1000)];
         });
-        
-        let currentStreak = 0;
-        if (readDatesSet.size > 0) {
-          const today = new Date();
-          const formatDateString = (dateObj: Date) => {
-            const y = dateObj.getFullYear();
-            const m = String(dateObj.getMonth() + 1).padStart(2, '0');
-            const dStr = String(dateObj.getDate()).padStart(2, '0');
-            return `${y}-${m}-${dStr}`;
-          };
-
-          let checkDate = new Date(today);
-          let dateStr = formatDateString(checkDate);
-
-          if (!readDatesSet.has(dateStr)) {
-            checkDate.setDate(checkDate.getDate() - 1);
-            dateStr = formatDateString(checkDate);
-          }
-
-          while (readDatesSet.has(dateStr)) {
-            currentStreak++;
-            checkDate.setDate(checkDate.getDate() - 1);
-            dateStr = formatDateString(checkDate);
-          }
-        }
-        setStreak(currentStreak);
+        setStreak(readingCompletionStreak(readDates));
 
         // 7일 주간 통계 가공
         const formatDateKey = (date: Date) => {
@@ -170,6 +142,38 @@ export default function ProfilePage() {
     loadStats();
   }, [user, profile, loading, router]);
 
+  const learningDashboard = useMemo(() => {
+    const toDate = (value: any): Date | null => value
+      ? (typeof value.toDate === 'function' ? value.toDate() : typeof value.seconds === 'number' ? new Date(value.seconds * 1000) : null)
+      : null;
+    const readDates = readRecords.map(record => toDate(record.readAt)).filter((date): date is Date => !!date);
+    const reviewDates = vocabRecords.map(record => toDate(record.lastReviewedAt)).filter((date): date is Date => !!date);
+    const profileData = selectedLevel ? deriveLearningProfile(progressRecords, selectedLevel) : null;
+    const skillLabels = { main: '핵심 내용 이해', detail: '세부 정보 찾기', vocabulary: '문맥 속 어휘' } as const;
+    const skillCounts = {
+      main: { right: 0, total: 0 }, detail: { right: 0, total: 0 }, vocabulary: { right: 0, total: 0 },
+    };
+    progressRecords.slice(0, 5).forEach(record => {
+      if (!record.lastQuizBreakdown) return;
+      (['main', 'detail', 'vocabulary'] as const).forEach(skill => {
+        skillCounts[skill].total++;
+        if (record.lastQuizBreakdown?.[skill]) skillCounts[skill].right++;
+      });
+    });
+    const strongSkills = (Object.entries(skillCounts) as [keyof typeof skillCounts, { right: number; total: number }][])
+      .filter(([, value]) => value.total >= 2 && value.right / value.total >= 0.75)
+      .map(([skill]) => skillLabels[skill]);
+    const weakSkills = (profileData?.weakSkills || []).map(skill => skillLabels[skill]);
+    return {
+      profileData,
+      weekReads: currentCalendarWeekCount(readDates),
+      weekReviews: currentCalendarWeekCount(reviewDates),
+      studyDays: currentCalendarWeekStudyDays([...readDates, ...reviewDates]),
+      strongSkills,
+      weakSkills,
+    };
+  }, [readRecords, vocabRecords, progressRecords, selectedLevel]);
+
   // "설정 저장하기" 버튼을 클릭했을 때 구동하는 핸들러입니다.
   const handleSave = async () => {
     if (!user) return;
@@ -179,6 +183,7 @@ export default function ProfilePage() {
       await createOrUpdateUser(user.uid, {
         level: selectedLevel || undefined,
         nativeLanguage: selectedLang,
+        weeklyReadingGoal,
       });
       // 최신 DB 레코드로 AuthContext profile 데이터 갱신
       await refreshProfile();
@@ -382,6 +387,90 @@ export default function ProfilePage() {
                 </div>
               );
             })()
+          )}
+        </div>
+
+        {/* R6: 이번 주 학습 진척과 다음 행동 */}
+        <div className="card" style={{ marginBottom: '24px', padding: '24px' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', gap: '16px', alignItems: 'flex-start', flexWrap: 'wrap', marginBottom: '18px' }}>
+            <div>
+              <h2 style={{ fontSize: '1.1rem', fontWeight: 900, margin: '0 0 6px' }}>이번 주 학습 진척</h2>
+              <p style={{ margin: 0, color: 'var(--text-muted)', fontSize: '.82rem', lineHeight: 1.5 }}>월요일부터 일요일까지의 읽기·복습 기록을 기준으로 계산합니다.</p>
+            </div>
+            <label htmlFor="weekly-reading-goal" style={{ display: 'grid', gap: '4px', fontSize: '.78rem', fontWeight: 700 }}>
+              주간 독서 목표
+              <select
+                id="weekly-reading-goal"
+                value={weeklyReadingGoal}
+                onChange={event => setWeeklyReadingGoal(Number(event.target.value))}
+                style={{ padding: '7px 10px', borderRadius: '8px', border: '1px solid var(--border-medium)', background: 'var(--bg-secondary)', color: 'var(--text-primary)' }}
+              >
+                {[1, 2, 3, 4, 5, 6, 7].map(goal => <option key={goal} value={goal}>{goal}개</option>)}
+              </select>
+            </label>
+          </div>
+
+          {loadingStats ? (
+            <div style={{ display: 'flex', justifyContent: 'center', padding: '20px' }}><div className="loading-spinner" style={{ width: '24px', height: '24px' }} /></div>
+          ) : (
+            <>
+              <div className="dashboard-stats-grid" style={{ marginBottom: '18px' }}>
+                <div className="dashboard-stat-card">
+                  <div className="dashboard-stat-label">이번 주 읽기</div>
+                  <div className="dashboard-stat-value">{learningDashboard.weekReads} / {weeklyReadingGoal}</div>
+                </div>
+                <div className="dashboard-stat-card">
+                  <div className="dashboard-stat-label">이번 주 복습 단어</div>
+                  <div className="dashboard-stat-value">{learningDashboard.weekReviews}개</div>
+                </div>
+                <div className="dashboard-stat-card">
+                  <div className="dashboard-stat-label">최근 이해도</div>
+                  <div className="dashboard-stat-value">{learningDashboard.profileData?.recentComprehensionRate === null || learningDashboard.profileData?.recentComprehensionRate === undefined ? '기록 없음' : `${learningDashboard.profileData.recentComprehensionRate}%`}</div>
+                </div>
+                <div className="dashboard-stat-card">
+                  <div className="dashboard-stat-label">이번 주 학습일</div>
+                  <div className="dashboard-stat-value">{learningDashboard.studyDays}일</div>
+                </div>
+              </div>
+
+              <div aria-label="주간 독서 목표 진행률" style={{ height: '10px', borderRadius: '999px', overflow: 'hidden', background: 'var(--bg-secondary)', marginBottom: '20px' }}>
+                <div style={{ width: `${Math.min(100, Math.round((learningDashboard.weekReads / weeklyReadingGoal) * 100))}%`, height: '100%', background: 'var(--accent-primary)', transition: 'width 150ms ease' }} />
+              </div>
+
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '12px', marginBottom: '18px' }}>
+                <div style={{ padding: '14px', borderRadius: 'var(--radius-sm)', background: 'var(--bg-secondary)' }}>
+                  <strong style={{ display: 'block', marginBottom: '8px' }}>강점</strong>
+                  <div style={{ color: 'var(--text-secondary)', fontSize: '.85rem', lineHeight: 1.6 }}>
+                    {learningDashboard.strongSkills.length ? learningDashboard.strongSkills.join(', ') : '학습 기록이 더 쌓이면 표시됩니다.'}
+                  </div>
+                </div>
+                <div style={{ padding: '14px', borderRadius: 'var(--radius-sm)', background: 'var(--bg-secondary)' }}>
+                  <strong style={{ display: 'block', marginBottom: '8px' }}>보완할 영역</strong>
+                  <div style={{ color: 'var(--text-secondary)', fontSize: '.85rem', lineHeight: 1.6 }}>
+                    {learningDashboard.weakSkills.length ? learningDashboard.weakSkills.join(', ') : '반복해서 어려워한 영역이 아직 없습니다.'}
+                  </div>
+                </div>
+                <div style={{ padding: '14px', borderRadius: 'var(--radius-sm)', background: 'var(--bg-secondary)' }}>
+                  <strong style={{ display: 'block', marginBottom: '8px' }}>약한 문법</strong>
+                  <div style={{ color: 'var(--text-secondary)', fontSize: '.85rem', lineHeight: 1.6 }}>
+                    {learningDashboard.profileData?.weakGrammarTags.length ? learningDashboard.profileData.weakGrammarTags.join(', ') : '반복해서 어려워한 문법이 아직 없습니다.'}
+                  </div>
+                </div>
+              </div>
+
+              <Link
+                href={learningDashboard.weakSkills.includes('문맥 속 어휘') ? '/vocabulary' : '/library'}
+                className="btn btn-primary"
+                style={{ width: '100%', justifyContent: 'center' }}
+              >
+                {learningDashboard.weakSkills.includes('문맥 속 어휘')
+                  ? '다음 행동: 오늘의 단어 복습하기'
+                  : learningDashboard.weekReads < weeklyReadingGoal
+                    ? '다음 행동: 이번 주 독서 목표 이어가기'
+                    : '다음 행동: 추천 글 읽기'}
+              </Link>
+              <p style={{ color: 'var(--text-muted)', fontSize: '.72rem', margin: '8px 0 0', textAlign: 'center' }}>주간 목표 변경은 아래 ‘설정 저장하기’를 누르면 저장됩니다.</p>
+            </>
           )}
         </div>
 

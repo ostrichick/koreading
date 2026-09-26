@@ -25,14 +25,17 @@ type SpeechRecognitionConstructor = new () => SpeechRecognitionLike;
 import { useAuth } from '@/contexts/AuthContext';
 import { TOPICS } from '@/lib/gemini';
 import { getGuestArticle, getGuestLang, getGuestLevel, incrementGuestReadCount } from '@/lib/storage';
-import { saveVocabulary, getCustomCategories } from '@/lib/db';
+import { saveVocabulary, getCustomCategories, startArticleProgress, getArticleProgress, saveQuizAttempt, saveDifficultyFeedback, saveSeriesChoice, type DifficultyFeedback } from '@/lib/db';
 import ArticleIllustration from '@/components/ArticleIllustration';
 import EditorialHeroCard from '@/components/reader/EditorialHeroCard';
 import DiscussionPromptCard from '@/components/reader/DiscussionPromptCard';
 import { isKoreanWord } from '@/lib/utils';
 import { useWordLookup } from '@/hooks/useWordLookup';
 import ReaderBody from '@/components/reader/ReaderBody';
+import { ReaderControls, type TtsRate } from '@/components/reader/ReaderControls';
 import TutorPanel, { type TutorSelection } from '@/components/reader/TutorPanel';
+import ComprehensionQuizCard from '@/components/reader/ComprehensionQuizCard';
+import WritingPracticeCard from '@/components/reader/WritingPracticeCard';
 import { articleSummary } from '@/lib/learning';
 
 // 단어 상세 사전 데이터를 보관할 인터페이스 정의
@@ -138,6 +141,8 @@ export default function GuestReadPage() {
   const [showLoginModal, setShowLoginModal] = useState(false);               // 구글 로그인 유도 모달 노출 제어
   const [readingDone, setReadingDone] = useState(false);                     // 다 읽기 완료 처리 상태
   const [signingIn, setSigningIn] = useState(false);                         // 소셜 로그인 처리 중 대기 제어
+  const [difficultyFeedback, setDifficultyFeedback] = useState<DifficultyFeedback | null>(null);
+  const [seriesChoiceIndex, setSeriesChoiceIndex] = useState<number | null>(null);
 
   // [신규 기능] 툴팁 사전 및 독해 뷰어 커스텀 설정 상태 변수들
   const [tooltipPosition, setTooltipPosition] = useState<{ top: number; left: number } | null>(null);
@@ -145,6 +150,7 @@ export default function GuestReadPage() {
   const [fontSize, setFontSize] = useState<string>('normal');
   const [lineHeight, setLineHeight] = useState<number>(2.2);
   const [readerTheme, setReaderTheme] = useState<string>('dark');
+  const [ttsRate, setTtsRate] = useState<TtsRate>(1);
   const [showSettings, setShowSettings] = useState<boolean>(false);
 
   // 마우스 오버 즉시 검색 옵션 관련 Ref 및 상태 값
@@ -154,6 +160,7 @@ export default function GuestReadPage() {
   // [신규 기능] 커스텀 카테고리 상태 및 단어 저장 시 선택된 카테고리
   const [customCategories, setCustomCategories] = useState<string[]>([]);
   const [selectedSaveCategory, setSelectedSaveCategory] = useState<string>('');
+  const [lookupSource, setLookupSource] = useState<{ word: string; sentence: string }>({ word: '', sentence: '' });
 
   const [tutorSelection, setTutorSelection] = useState<TutorSelection | null>(null);
   const handleOpenTutor = (index: number, text: string) => setTutorSelection({ index, text });
@@ -165,6 +172,7 @@ export default function GuestReadPage() {
 
   // 🎙️ 발음 연습 및 채점 상태 변수들
   const [recordingParaIdx, setRecordingParaIdx] = useState<number | null>(null);
+  const [shadowingParaIdx, setShadowingParaIdx] = useState<number | null>(null);
   const [paraScores, setParaScores] = useState<Record<number, { text: string; score: number }>>({});
   const recognitionRef = useRef<any>(null);
 
@@ -254,6 +262,7 @@ export default function GuestReadPage() {
         ...prev,
         [pIdx]: { text: resultText, score }
       }));
+      setShadowingParaIdx(null);
     };
 
     rec.onerror = (event) => {
@@ -299,12 +308,27 @@ export default function GuestReadPage() {
     if (savedLine) setLineHeight(parseFloat(savedLine));
     const savedTheme = localStorage.getItem('koreading_reader_theme');
     if (savedTheme) setReaderTheme(savedTheme);
+    const savedRate = Number(localStorage.getItem('koreading_tts_rate'));
+    if (savedRate === 0.8 || savedRate === 1 || savedRate === 1.2) setTtsRate(savedRate);
 
     // 게스트가 방금 임시 생성한 세션 상의 기사 로드
     const a = getGuestArticle();
     if (!a) { router.push('/library'); return; }
     setArticle(a);
     setSelectedSaveCategory('');
+    if (user && a.id && a.id !== 'guest') {
+      void startArticleProgress(user.uid, a.id, {
+        level: a.level,
+        topicCategory: a.topicCategory,
+        grammarTags: Array.isArray(a.grammarEvidence) ? a.grammarEvidence.map((item: { pattern?: string }) => item.pattern).filter(Boolean) : [],
+      })
+        .then(() => getArticleProgress(user.uid, a.id))
+        .then(progress => {
+          setDifficultyFeedback(progress?.difficultyFeedback || null);
+          setSeriesChoiceIndex(typeof progress?.seriesChoiceIndex === 'number' ? progress.seriesChoiceIndex : null);
+        })
+        .catch(() => undefined);
+    }
 
     // 외부 영역 클릭 시 미니 사전 툴팁 닫기
     const handleGlobalClick = (e: MouseEvent) => {
@@ -324,7 +348,7 @@ export default function GuestReadPage() {
       if (hoverTimeoutRef.current) clearTimeout(hoverTimeoutRef.current);
       document.removeEventListener('click', handleGlobalClick);
     };
-  }, [router, closePopup]);
+  }, [router, closePopup, user]);
 
   // [신규 기능] 독서 뷰어 커스텀 설정 갱신 헬퍼 함수
   const updateFontSize = (size: string) => {
@@ -339,6 +363,10 @@ export default function GuestReadPage() {
     setReaderTheme(theme);
     localStorage.setItem('koreading_reader_theme', theme);
   };
+  const updateTtsRate = (rate: TtsRate) => {
+    setTtsRate(rate);
+    localStorage.setItem('koreading_tts_rate', String(rate));
+  };
 
   // 🔊 TTS 한국어 목소리 음성 합성 재생 헬퍼
   const speakText = (text: string) => {
@@ -346,8 +374,18 @@ export default function GuestReadPage() {
       window.speechSynthesis.cancel();
       const utterance = new SpeechSynthesisUtterance(text);
       utterance.lang = 'ko-KR';
+      utterance.rate = ttsRate;
       window.speechSynthesis.speak(utterance);
     }
+  };
+  const handleShadowing = (index: number, text: string) => {
+    if (shadowingParaIdx === index) {
+      if (typeof window !== 'undefined' && 'speechSynthesis' in window) window.speechSynthesis.cancel();
+      setShadowingParaIdx(null);
+      return;
+    }
+    setShadowingParaIdx(index);
+    speakText(text);
   };
 
   // 백그라운드 단어 사전 조회 비동기 코어 함수
@@ -358,6 +396,7 @@ export default function GuestReadPage() {
    */
   const handleWordClick = (e: React.MouseEvent, word: string, sentence: string) => {
     if (!isKoreanWord(word)) return;
+    setLookupSource({ word, sentence: sentence.slice(0, 1000) });
     const rect = e.currentTarget.getBoundingClientRect();
     setTooltipPosition({
       top: rect.top + window.scrollY - 110,
@@ -375,6 +414,7 @@ export default function GuestReadPage() {
     
     const target = e.currentTarget;
     hoverTimeoutRef.current = setTimeout(() => {
+      setLookupSource({ word, sentence: sentence.slice(0, 1000) });
       const rect = target.getBoundingClientRect();
       setTooltipPosition({
         top: rect.top + window.scrollY - 110,
@@ -418,6 +458,9 @@ export default function GuestReadPage() {
         level: wordData.level,
         topic: selectedSaveCategory,
         articleTitle: article?.title || '',
+        ...(article?.id && article.id !== 'guest' ? { sourceArticleId: article.id } : {}),
+        sourceSentence: lookupSource.sentence,
+        sourceWord: lookupSource.word || wordData.word,
       });
       setSavedWords(prev => {
         const next = new Set(prev);
@@ -434,11 +477,73 @@ export default function GuestReadPage() {
   // 게스트는 관리자가 아니므로 deleteArticle 기능이 없습니다.
   // 아티클 삭제는 관리자 이메일로 로그인한 사용자만 read/[id]/page.tsx에서 수행할 수 있습니다.
 
-  // '다 읽었어요' 클릭 시 게스트의 읽은 횟수를 1 증가시키고 로그인 유도 모달 토글
+  // 로그인 사용자의 임시 글은 완료만 표시합니다. 비회원에게만 로그인 유도 모달을 표시합니다.
   const handleDoneReading = () => {
-    incrementGuestReadCount();
     setReadingDone(true);
-    setShowLoginModal(true);
+    if (user) {
+      setShowLoginModal(false);
+    } else {
+      incrementGuestReadCount();
+      setShowLoginModal(true);
+    }
+  };
+
+  const handleQuizSubmit = async (answers: number[], score: number) => {
+    if (!user || !article?.id || article.id === 'guest' || !Array.isArray(article.comprehensionQuiz)) return;
+    const breakdown = { main: false, detail: false, vocabulary: false };
+    article.comprehensionQuiz.forEach((question: { kind: 'main' | 'detail' | 'vocabulary'; correct: number }, index: number) => {
+      breakdown[question.kind] = answers[index] === question.correct;
+    });
+    await saveQuizAttempt(user.uid, article.id, answers, score, breakdown);
+  };
+
+  const handleDifficultyChange = async (feedback: DifficultyFeedback) => {
+    const previous = difficultyFeedback;
+    setDifficultyFeedback(feedback);
+    if (!user || !article?.id || article.id === 'guest') return;
+    try {
+      await saveDifficultyFeedback(user.uid, article.id, feedback);
+    } catch (error) {
+      console.error(error);
+      setDifficultyFeedback(previous);
+    }
+  };
+
+  const handleSeriesChoice = async (choiceIndex: number) => {
+    const previous = seriesChoiceIndex;
+    setSeriesChoiceIndex(choiceIndex);
+    if (!user || !article?.id || article.id === 'guest') return;
+    try {
+      await saveSeriesChoice(user.uid, article.id, choiceIndex);
+    } catch (error) {
+      console.error(error);
+      setSeriesChoiceIndex(previous);
+    }
+  };
+
+  const handleContinueSeries = () => {
+    if (!article?.continuationChoices || seriesChoiceIndex === null) return;
+    const stableId = article.id && article.id !== 'guest' ? article.id : undefined;
+    sessionStorage.setItem('koreading_series_continuation', JSON.stringify({
+      seriesId: article.seriesId || stableId || crypto.randomUUID(),
+      seriesTitle: article.seriesTitle || article.title,
+      episodeNumber: (article.episodeNumber || 1) + 1,
+      ...(stableId ? { previousArticleId: stableId } : {}),
+      previousTitle: article.title,
+      previousContent: String(article.content || '').slice(0, 5000),
+      previousChoice: article.continuationChoices[seriesChoiceIndex],
+      level: article.level,
+      topic: article.topicCategory,
+      genre: article.genre || 'story',
+    }));
+    router.push('/library?continue=1');
+  };
+
+  const handleReviewParagraph = (paragraphIndex: number) => {
+    const target = document.getElementById(`reader-paragraph-${paragraphIndex}`);
+    if (!target) return;
+    target.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    window.setTimeout(() => target.focus({ preventScroll: true }), 350);
   };
 
   // 가입 유도 모달 내 구글 로그인 연동 처리
@@ -479,7 +584,7 @@ export default function GuestReadPage() {
 
   return (
     <div 
-      className={readerTheme === 'light' ? 'reader-theme-light' : readerTheme === 'sepia' ? 'reader-theme-sepia' : ''} 
+      className={`reader-theme-${['light', 'sepia', 'dark'].includes(readerTheme) ? readerTheme : 'light'}`}
       style={{ 
         minHeight: '100vh', 
         padding: '40px 24px', 
@@ -536,7 +641,15 @@ export default function GuestReadPage() {
           <h1 style={{ fontSize: '1.8rem', fontWeight: 900, fontFamily: 'Noto Sans KR, sans-serif', marginBottom: '12px', lineHeight: 1.4 }}>
             {article.title}
           </h1>
+          {article.seriesId && article.episodeNumber && (
+            <div style={{ marginBottom: '10px', color: 'var(--text-secondary)', fontSize: '0.82rem' }}>
+              <strong lang="ko">{article.seriesTitle || '연재 이야기'} · {article.episodeNumber}화</strong>
+            </div>
+          )}
           <p style={{ color: 'var(--text-secondary)', fontSize: '0.875rem', fontStyle: 'italic' }}>{articleSummary(article, profile?.nativeLanguage || guestLanguage)}</p>
+          <div style={{ marginTop: '16px' }}>
+            <ReaderControls content={article.content} fontSize={fontSize as 'small' | 'normal' | 'large' | 'xlarge'} onFontSizeChange={updateFontSize} ttsRate={ttsRate} onTtsRateChange={updateTtsRate} />
+          </div>
         </div>
 
         {/* 📖 에디토리얼 감성 후크 배너 또는 시각자료 */}
@@ -651,11 +764,35 @@ export default function GuestReadPage() {
 
         {/* 독해 지문 본문 카드 (각 한국어 어휘에 인터랙티브 클릭 이벤트 및 바인딩 완료) */}
         {lookupError && <p role="alert">{lookupError}</p>}
-        <ReaderBody paragraphs={paragraphs} article={article} fontSize={fontSize} lineHeight={lineHeight} savedWords={savedWords} recordingParaIdx={recordingParaIdx} paraScores={paraScores} onWordClick={handleWordClick} onWordEnter={handleWordMouseEnter} onWordLeave={handleWordMouseLeave} onSpeak={speakText} onTutor={handleOpenTutor} onMic={handleMicClick} />
+        <ReaderBody paragraphs={paragraphs} article={article} fontSize={fontSize} lineHeight={lineHeight} savedWords={savedWords} recordingParaIdx={recordingParaIdx} shadowingParaIdx={shadowingParaIdx} paraScores={paraScores} onWordClick={handleWordClick} onWordEnter={handleWordMouseEnter} onWordLeave={handleWordMouseLeave} onSpeak={speakText} onTutor={handleOpenTutor} onMic={handleMicClick} onShadow={handleShadowing} />
 
         {/* 🤔 생각해볼 거리 / 당신의 선택은? */}
         {article.discussionPrompt && (
-          <DiscussionPromptCard prompt={article.discussionPrompt} />
+          <DiscussionPromptCard
+            prompt={article.discussionPrompt}
+            choices={article.continuationChoices}
+            chosenIndex={seriesChoiceIndex}
+            onChoose={handleSeriesChoice}
+            onContinue={article.continuationChoices?.length === 2 ? handleContinueSeries : undefined}
+          />
+        )}
+
+        {Array.isArray(article.comprehensionQuiz) && article.comprehensionQuiz.length === 3 && (
+          <ComprehensionQuizCard
+            questions={article.comprehensionQuiz}
+            difficultyFeedback={difficultyFeedback}
+            onSubmit={handleQuizSubmit}
+            onDifficultyChange={handleDifficultyChange}
+            onReviewParagraph={handleReviewParagraph}
+          />
+        )}
+
+        {article.writingPrompt && (
+          <WritingPracticeCard
+            prompt={article.writingPrompt}
+            level={article.level}
+            language={profile?.nativeLanguage || guestLanguage}
+          />
         )}
 
         {/* 독해 완료 유도 버튼 툴바 영역 */}
@@ -667,6 +804,15 @@ export default function GuestReadPage() {
             <button id="mark-done-btn" onClick={handleDoneReading} className="btn btn-primary">
               {t.doneReading}
             </button>
+          </div>
+        )}
+        {readingDone && user && (
+          <div role="status" className="card" style={{ textAlign: 'center', marginBottom: '60px' }}>
+            <h2 style={{ fontSize: '1.3rem', marginBottom: '12px' }}>읽기를 완료했습니다.</h2>
+            <p style={{ color: 'var(--text-secondary)', marginBottom: '20px' }}>
+              이 글은 임시 독해 자료로, 완료 상태가 계정의 읽기 기록에 자동 저장되지는 않습니다.
+            </p>
+            <a href="/library" className="btn btn-primary">{t.toLibrary}</a>
           </div>
         )}
       </div>
@@ -785,7 +931,7 @@ export default function GuestReadPage() {
         </div>
       )}
 
-      {/* 2단계 점진적 조회 스켈레톤 사전 팝업창 (상세 오버레이) */}
+      {/* 문맥 사전 상세 오버레이. 상세 분석 실패 시 기본 뜻만 표시할 수 있습니다. */}
       {showAdvancedModal && wordData && (
         <div className="word-popup-overlay" onClick={(e) => { if (e.target === e.currentTarget) closePopup(); }}>
           <div className="word-popup" style={{ minHeight: '380px', display: 'flex', flexDirection: 'column' }}>
@@ -811,10 +957,15 @@ export default function GuestReadPage() {
                     </button>
                   </div>
                 </div>
-                <button className="word-popup-close" onClick={closePopup}>✕</button>
+                <button className="word-popup-close" onClick={closePopup} aria-label="Close dictionary details">✕</button>
               </div>
 
               <span className="word-popup-pos">{wordData.partOfSpeech}</span>
+              {wordData._advancedUnavailable && (
+                <p role="alert" style={{ marginBottom: '16px', color: 'var(--text-secondary)', fontSize: '0.85rem' }}>
+                  기본 뜻은 표시했지만 상세 문법·예문 조회는 실패했습니다. / Detailed analysis is temporarily unavailable.
+                </p>
+              )}
 
               {/* 2단계 백그라운드 Advanced 분석 호출 대기 중에는 미세 실선 박스로 안내 처리 */}
               {loadingAdvanced && !wordData.structure ? (
@@ -905,7 +1056,7 @@ export default function GuestReadPage() {
       )}
 
       {/* 비회원용 구글 계정 로그인 유도 모달 */}
-      {showLoginModal && (
+      {showLoginModal && !user && (
         <div className="word-popup-overlay" onClick={e => { if (e.target === e.currentTarget && !readingDone) setShowLoginModal(false); }}>
           <div className="word-popup" style={{ maxWidth: '460px', textAlign: 'center' }}>
             <div style={{ fontSize: '3.5rem', marginBottom: '16px' }}>🎉</div>

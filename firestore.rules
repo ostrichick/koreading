@@ -4,46 +4,239 @@ service cloud.firestore {
     function owner(uid) { return request.auth != null && request.auth.uid == uid; }
     function active() { return request.auth != null && !exists(/databases/$(database)/documents/accountDeletions/$(request.auth.uid)); }
     function admin() { return active() && request.auth.token.get('email_verified', false) && request.auth.token.get('email', '') in ['asulchoi@gmail.com','xilencist@gmail.com']; }
-    function aggregateValid(id) {
+    function validReviewFields(d) {
+      return d.rating is int && d.rating >= 1 && d.rating <= 5
+        && d.pros is string && d.pros.size() <= 2000 && d.cons is string && d.cons.size() <= 2000
+        && d.userDisplayName is string && d.userDisplayName.size() <= 100 && d.updatedAt == request.time;
+    }
+    function validPublicReview() {
+      let d = request.resource.data;
+      return d.keys().hasOnly(['schemaVersion','rating','pros','cons','userDisplayName','createdAt','updatedAt'])
+        && d.schemaVersion == 2 && validReviewFields(d);
+    }
+    function validLegacyReview() {
+      let d = request.resource.data;
+      return d.keys().hasOnly(['rating','pros','cons','userId','userDisplayName','createdAt','updatedAt'])
+        && (!('userId' in d) || d.userId == request.auth.uid)
+        && validReviewFields(d);
+    }
+    function unversionedLegacyReviewExists(id, uid) {
+      let path = /databases/$(database)/documents/articles/$(id)/reviews/$(uid);
+      return exists(path) && !('schemaVersion' in get(path).data);
+    }
+    function mappedAggregateValid(id, reviewId) {
       let before = get(/databases/$(database)/documents/articles/$(id)).data;
       let after = getAfter(/databases/$(database)/documents/articles/$(id)).data;
-      let path = /databases/$(database)/documents/articles/$(id)/reviews/$(request.auth.uid);
+      let path = /databases/$(database)/documents/articles/$(id)/reviews/$(reviewId);
+      let ownershipPath = /databases/$(database)/documents/users/$(request.auth.uid)/reviewOwnership/$(id);
       let previous = exists(path) ? get(path).data.rating : 0;
       let review = getAfter(path).data;
       let count = before.get('ratingCount', 0) + (exists(path) ? 0 : 1);
       let sum = before.get('ratingSum', before.get('averageRating', 0) * before.get('ratingCount', 0)) - previous + review.rating;
-      return active() && review.userId == request.auth.uid && review.updatedAt == request.time
-        && after.lastReviewUid == request.auth.uid && after.reviewUpdatedAt == request.time
+      return active() && reviewId != request.auth.uid && existsAfter(ownershipPath)
+        && getAfter(ownershipPath).data.keys().hasOnly(['reviewId'])
+        && getAfter(ownershipPath).data.reviewId == reviewId
+        && review.schemaVersion == 2 && review.updatedAt == request.time && after.lastReviewId == reviewId
+        && !('lastReviewUid' in after) && after.reviewUpdatedAt == request.time
+      && (exists(ownershipPath)
+          ? get(ownershipPath).data.reviewId == reviewId && exists(path)
+          : !exists(path) && !unversionedLegacyReviewExists(id, request.auth.uid))
         && after.ratingCount == count && after.ratingSum == sum
         && after.averageRating >= sum * 1.0 / count - 0.000001 && after.averageRating <= sum * 1.0 / count + 0.000001;
     }
-    function validReview() {
-      let d = request.resource.data;
-      return d.keys().hasOnly(['rating','pros','cons','userId','userDisplayName','createdAt','updatedAt'])
-        && d.userId == request.auth.uid && d.rating is int && d.rating >= 1 && d.rating <= 5
-        && d.pros is string && d.pros.size() <= 2000 && d.cons is string && d.cons.size() <= 2000
-        && d.userDisplayName is string && d.userDisplayName.size() <= 100 && d.updatedAt == request.time;
+    function legacyAggregateValid(id) {
+      let before = get(/databases/$(database)/documents/articles/$(id)).data;
+      let after = getAfter(/databases/$(database)/documents/articles/$(id)).data;
+      let path = /databases/$(database)/documents/articles/$(id)/reviews/$(request.auth.uid);
+      let ownershipPath = /databases/$(database)/documents/users/$(request.auth.uid)/reviewOwnership/$(id);
+      let previous = get(path).data.rating;
+      let review = getAfter(path).data;
+      let count = before.get('ratingCount', 0);
+      let sum = before.get('ratingSum', before.get('averageRating', 0) * count) - previous + review.rating;
+      return active() && !exists(ownershipPath) && exists(path) && existsAfter(path)
+        && !('schemaVersion' in get(path).data)
+        && get(path).data.get('userId', request.auth.uid) == request.auth.uid
+        && review.updatedAt == request.time && after.reviewUpdatedAt == request.time
+        && count >= 1 && after.ratingCount == count && after.ratingSum == sum
+        && after.averageRating >= sum * 1.0 / count - 0.000001 && after.averageRating <= sum * 1.0 / count + 0.000001;
+    }
+    function validImageUrl(url) {
+      return url is string && url.size() <= 6000
+        && url.matches('^https://(images\\.unsplash\\.com|upload\\.wikimedia\\.org|image\\.pollinations\\.ai)/[^ ]*$');
+    }
+    function validImages(d) {
+      return !('imageUrls' in d) || (d.imageUrls is list && d.imageUrls.size() <= 2
+        && (d.imageUrls.size() < 1 || validImageUrl(d.imageUrls[0]))
+        && (d.imageUrls.size() < 2 || validImageUrl(d.imageUrls[1])));
+    }
+    function validComprehensionQuiz(d) {
+      return !('comprehensionQuiz' in d) || (d.comprehensionQuiz is list && d.comprehensionQuiz.size() == 3
+        && d.comprehensionQuiz[0] is map
+        && d.comprehensionQuiz[1] is map
+        && d.comprehensionQuiz[2] is map);
+    }
+    function validArticleProgress(d) {
+      return d.keys().hasOnly(['level','topicCategory','grammarTags','startedAt','lastOpenedAt','completedAt','readingSeconds','lastQuizScore','lastQuizTotal','lastQuizBreakdown','difficultyFeedback','seriesChoiceIndex','updatedAt'])
+        && d.updatedAt == request.time
+        && (!('level' in d) || d.level in ['A1','A2','B1','B2','C1','C2'])
+        && (!('topicCategory' in d) || (d.topicCategory is string && d.topicCategory.size() <= 100))
+        && (!('grammarTags' in d) || (d.grammarTags is list && d.grammarTags.size() <= 3))
+        && (!('startedAt' in d) || d.startedAt is timestamp)
+        && (!('lastOpenedAt' in d) || d.lastOpenedAt is timestamp)
+        && (!('completedAt' in d) || d.completedAt is timestamp)
+        && (!('readingSeconds' in d) || (d.readingSeconds is int && d.readingSeconds >= 0 && d.readingSeconds <= 86400))
+        && (!('lastQuizScore' in d) || (d.lastQuizScore is int && d.lastQuizScore >= 0 && d.lastQuizScore <= 3))
+        && (!('lastQuizTotal' in d) || d.lastQuizTotal == 3)
+        && (!('lastQuizBreakdown' in d) || (d.lastQuizBreakdown is map
+          && d.lastQuizBreakdown.keys().hasOnly(['main','detail','vocabulary'])
+          && d.lastQuizBreakdown.main is bool && d.lastQuizBreakdown.detail is bool && d.lastQuizBreakdown.vocabulary is bool))
+        && (!('seriesChoiceIndex' in d) || (d.seriesChoiceIndex is int && d.seriesChoiceIndex >= 0 && d.seriesChoiceIndex <= 1))
+        && (!('difficultyFeedback' in d) || d.difficultyFeedback in ['easy','just-right','hard']);
+    }
+    function validQuizAttempt(d) {
+      return d.keys().hasOnly(['articleId','answers','score','total','breakdown','submittedAt'])
+        && d.articleId is string && d.articleId.size() > 0 && d.articleId.size() <= 128
+        && d.answers is list && d.answers.size() == 3
+        && d.answers[0] is int && d.answers[0] >= 0 && d.answers[0] <= 3
+        && d.answers[1] is int && d.answers[1] >= 0 && d.answers[1] <= 3
+        && d.answers[2] is int && d.answers[2] >= 0 && d.answers[2] <= 3
+        && d.score is int && d.score >= 0 && d.score <= 3
+        && (!('breakdown' in d) || (d.breakdown is map
+          && d.breakdown.keys().hasOnly(['main','detail','vocabulary'])
+          && d.breakdown.main is bool && d.breakdown.detail is bool && d.breakdown.vocabulary is bool))
+        && d.total == 3 && d.submittedAt == request.time;
+    }
+    // Both private drafts and administrator-published articles use the same safe initial state.
+    // AI response validation alone is not a Firestore authorization boundary.
+    function validInitialArticle(d) {
+      return d.keys().hasOnly(['title','content','summary','summaries','summaryLanguage','topicCategory','level',
+          'estimatedMinutes','keyVocabulary','createdAt','averageRating','ratingCount','ratingSum',
+          'generatorModel','hookQuote','discussionPrompt','genre','imageUrls','imagePrompts','grammarEvidence','comprehensionQuiz',
+          'continuationChoices','writingPrompt','seriesId','seriesTitle','episodeNumber','previousEpisodeId'])
+        && d.keys().hasAll(['title','content','summary','topicCategory','level','estimatedMinutes',
+          'keyVocabulary','createdAt','averageRating','ratingCount','ratingSum'])
+        && d.title is string && d.title.size() > 0 && d.title.size() <= 200
+        && d.content is string && d.content.size() >= 80 && d.content.size() <= 10000
+        && d.summary is string && d.summary.size() > 0 && d.summary.size() <= 1000
+        && d.level in ['A1','A2','B1','B2','C1','C2']
+        && d.topicCategory in ['fairy-tales','daily-life','culture','nature-travel','k-content','news','food','history']
+        && d.estimatedMinutes is int && d.estimatedMinutes >= 1 && d.estimatedMinutes <= 60
+        && d.keyVocabulary is list && d.keyVocabulary.size() >= 1 && d.keyVocabulary.size() <= 10
+        && d.createdAt == request.time
+        && d.averageRating == 0 && d.ratingCount == 0 && d.ratingSum == 0
+        && (!('summaries' in d) || d.summaries is map)
+        && (!('summaryLanguage' in d) || d.summaryLanguage in ['en','es','ja','zh'])
+        && (!('generatorModel' in d) || (d.generatorModel is string && d.generatorModel.size() <= 100))
+        && (!('hookQuote' in d) || (d.hookQuote is string && d.hookQuote.size() <= 500))
+        && (!('discussionPrompt' in d) || (d.discussionPrompt is string && d.discussionPrompt.size() <= 1000))
+        && (!('continuationChoices' in d) || (d.continuationChoices is list && d.continuationChoices.size() == 2))
+        && (!('writingPrompt' in d) || (d.writingPrompt is string && d.writingPrompt.size() > 0 && d.writingPrompt.size() <= 1000))
+        && (!('genre' in d) || (d.genre is string && d.genre.size() <= 100))
+        && (!('seriesId' in d) || (d.seriesId is string && d.seriesId.size() > 0 && d.seriesId.size() <= 128))
+        && (!('seriesTitle' in d) || (d.seriesTitle is string && d.seriesTitle.size() > 0 && d.seriesTitle.size() <= 200))
+        && (!('episodeNumber' in d) || (d.episodeNumber is int && d.episodeNumber >= 1 && d.episodeNumber <= 100))
+        && (!('previousEpisodeId' in d) || (d.previousEpisodeId is string && d.previousEpisodeId.size() > 0 && d.previousEpisodeId.size() <= 128))
+        && (!('imagePrompts' in d) || (d.imagePrompts is list && d.imagePrompts.size() <= 2))
+        && (!('grammarEvidence' in d) || (d.grammarEvidence is list && d.grammarEvidence.size() <= 3))
+        && validComprehensionQuiz(d)
+        && validImages(d);
+    }
+    function reviewRemovalNumbersValid(id, reviewId) {
+      let path = /databases/$(database)/documents/articles/$(id)/reviews/$(reviewId);
+      let before = get(/databases/$(database)/documents/articles/$(id)).data;
+      let after = getAfter(/databases/$(database)/documents/articles/$(id)).data;
+      let oldCount = before.get('ratingCount', 0);
+      let oldSum = before.get('ratingSum', before.get('averageRating', 0) * oldCount);
+      let newCount = oldCount - 1;
+      let newSum = oldSum - get(path).data.rating;
+      return exists(path) && !existsAfter(path) && oldCount >= 1
+        && after.ratingCount == newCount && after.ratingSum == newSum
+        && after.reviewUpdatedAt == request.time
+        && (newCount == 0 ? after.averageRating == 0
+          : after.averageRating >= newSum * 1.0 / newCount - 0.000001
+            && after.averageRating <= newSum * 1.0 / newCount + 0.000001);
+    }
+    function mappedReviewRemovalValid(id) {
+      let ownershipPath = /databases/$(database)/documents/users/$(request.auth.uid)/reviewOwnership/$(id);
+      let reviewId = get(ownershipPath).data.reviewId;
+      let reviewPath = /databases/$(database)/documents/articles/$(id)/reviews/$(reviewId);
+      let before = get(/databases/$(database)/documents/articles/$(id)).data;
+      let after = getAfter(/databases/$(database)/documents/articles/$(id)).data;
+      return request.auth != null && exists(/databases/$(database)/documents/accountDeletions/$(request.auth.uid))
+        && reviewId != request.auth.uid && !unversionedLegacyReviewExists(id, request.auth.uid)
+        && exists(reviewPath) && !('userId' in get(reviewPath).data) && get(reviewPath).data.schemaVersion == 2
+        && !existsAfter(ownershipPath) && reviewRemovalNumbersValid(id, reviewId)
+        && (before.get('lastReviewId', '') == reviewId
+          ? !('lastReviewId' in after)
+          : after.get('lastReviewId', '') == before.get('lastReviewId', ''))
+        && after.get('lastReviewUid', '') == before.get('lastReviewUid', '');
+    }
+    function legacyReviewRemovalValid(id) {
+      let path = /databases/$(database)/documents/articles/$(id)/reviews/$(request.auth.uid);
+      let ownershipPath = /databases/$(database)/documents/users/$(request.auth.uid)/reviewOwnership/$(id);
+      let before = get(/databases/$(database)/documents/articles/$(id)).data;
+      let after = getAfter(/databases/$(database)/documents/articles/$(id)).data;
+      return request.auth != null && exists(/databases/$(database)/documents/accountDeletions/$(request.auth.uid))
+        && !exists(ownershipPath) && exists(path) && !('schemaVersion' in get(path).data)
+        && get(path).data.get('userId', request.auth.uid) == request.auth.uid
+        && reviewRemovalNumbersValid(id, request.auth.uid)
+        && (before.get('lastReviewUid', '') == request.auth.uid
+          ? !('lastReviewUid' in after)
+          : after.get('lastReviewUid', '') == before.get('lastReviewUid', ''))
+        && after.get('lastReviewId', '') == before.get('lastReviewId', '');
     }
     match /articles/{id} {
       allow read: if true;
-      allow create: if active() && request.resource.data.title is string && request.resource.data.title.size() <= 200
-        && request.resource.data.content is string && request.resource.data.content.size() >= 80 && request.resource.data.content.size() <= 10000
-        && request.resource.data.level in ['A1','A2','B1','B2','C1','C2']
-        && request.resource.data.averageRating == 0 && request.resource.data.ratingCount == 0;
-      allow update: if admin() || (active()
-        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['ratingSum','ratingCount','averageRating','lastReviewUid','reviewUpdatedAt']) && aggregateValid(id));
+      allow create: if admin() && validInitialArticle(request.resource.data);
+      allow update: if (admin() && validImages(request.resource.data)) || (active()
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['ratingSum','ratingCount','averageRating','lastReviewId','lastReviewUid','reviewUpdatedAt'])
+        && ((request.resource.data.get('lastReviewId', '') is string
+            && request.resource.data.get('lastReviewId', '').size() > 0
+            && mappedAggregateValid(id, request.resource.data.lastReviewId))
+          || (request.resource.data.diff(resource.data).affectedKeys().hasOnly(['ratingSum','ratingCount','averageRating','reviewUpdatedAt'])
+            && legacyAggregateValid(id))))
+        || (request.auth != null && exists(/databases/$(database)/documents/accountDeletions/$(request.auth.uid))
+          && ((request.resource.data.diff(resource.data).affectedKeys().hasOnly(['ratingSum','ratingCount','averageRating','lastReviewId','reviewUpdatedAt'])
+              && exists(/databases/$(database)/documents/users/$(request.auth.uid)/reviewOwnership/$(id))
+              && mappedReviewRemovalValid(id))
+            || (request.resource.data.diff(resource.data).affectedKeys().hasOnly(['ratingSum','ratingCount','averageRating','lastReviewUid','reviewUpdatedAt'])
+              && legacyReviewRemovalValid(id))));
       allow delete: if admin();
-      match /reviews/{uid} {
+      match /reviews/{reviewId} {
         allow read: if true;
-        allow create: if owner(uid) && validReview() && request.resource.data.createdAt == request.time && aggregateValid(id);
-        allow update: if owner(uid) && validReview() && request.resource.data.createdAt == resource.data.createdAt && aggregateValid(id);
-        // During account deletion retain only an anonymous rating contribution.
-        allow update: if request.auth != null && resource.data.get('userId','') == request.auth.uid
+        allow create: if request.auth != null && reviewId != request.auth.uid && validPublicReview()
+          && request.resource.data.createdAt == request.time
+          && !exists(/databases/$(database)/documents/users/$(request.auth.uid)/reviewOwnership/$(id))
+          && existsAfter(/databases/$(database)/documents/users/$(request.auth.uid)/reviewOwnership/$(id))
+          && getAfter(/databases/$(database)/documents/users/$(request.auth.uid)/reviewOwnership/$(id)).data.reviewId == reviewId
+          && !unversionedLegacyReviewExists(id, request.auth.uid)
+          && mappedAggregateValid(id, reviewId);
+        allow update: if request.auth != null
+          && ((validPublicReview() && request.resource.data.createdAt == resource.data.createdAt
+              && exists(/databases/$(database)/documents/users/$(request.auth.uid)/reviewOwnership/$(id))
+              && get(/databases/$(database)/documents/users/$(request.auth.uid)/reviewOwnership/$(id)).data.reviewId == reviewId
+              && !unversionedLegacyReviewExists(id, request.auth.uid)
+              && mappedAggregateValid(id, reviewId))
+            || (reviewId == request.auth.uid
+              && !exists(/databases/$(database)/documents/users/$(request.auth.uid)/reviewOwnership/$(id))
+              && resource.data.get('userId', request.auth.uid) == request.auth.uid
+              && validLegacyReview()
+              && request.resource.data.createdAt == resource.data.get('createdAt', request.time)
+              && legacyAggregateValid(id)));
+        allow delete: if request.auth != null
           && exists(/databases/$(database)/documents/accountDeletions/$(request.auth.uid))
-          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['userId','userDisplayName','pros','cons'])
-          && !('userId' in request.resource.data) && request.resource.data.userDisplayName == 'Deleted account'
-          && request.resource.data.pros == '' && request.resource.data.cons == '';
-        allow delete: if false;
+          && ((exists(/databases/$(database)/documents/users/$(request.auth.uid)/reviewOwnership/$(id))
+              && get(/databases/$(database)/documents/users/$(request.auth.uid)/reviewOwnership/$(id)).data.reviewId == reviewId
+              && !existsAfter(/databases/$(database)/documents/users/$(request.auth.uid)/reviewOwnership/$(id))
+              && !('userId' in resource.data) && resource.data.schemaVersion == 2
+              && ((!exists(/databases/$(database)/documents/articles/$(id))
+                  && !unversionedLegacyReviewExists(id, request.auth.uid))
+                || mappedReviewRemovalValid(id)))
+            || (reviewId == request.auth.uid
+              && !exists(/databases/$(database)/documents/users/$(request.auth.uid)/reviewOwnership/$(id))
+              && !('schemaVersion' in resource.data)
+              && resource.data.get('userId', request.auth.uid) == request.auth.uid
+              && (!exists(/databases/$(database)/documents/articles/$(id)) || legacyReviewRemovalValid(id))));
       }
     }
     match /{path=**}/reviews/{id} { allow read: if true; }
@@ -53,7 +246,50 @@ service cloud.firestore {
     }
     match /users/{uid} {
       allow read, delete: if owner(uid) || admin();
-      allow create, update: if (owner(uid) && active()) || admin();
+      allow create, update: if (owner(uid) && active()
+          && (!('weeklyReadingGoal' in request.resource.data)
+            || (request.resource.data.weeklyReadingGoal is int
+              && request.resource.data.weeklyReadingGoal >= 1
+              && request.resource.data.weeklyReadingGoal <= 7)))
+        || admin();
+      match /reviewOwnership/{articleId} {
+        allow read: if owner(uid);
+        allow create: if owner(uid) && active()
+          && request.resource.data.keys().hasOnly(['reviewId'])
+          && request.resource.data.reviewId is string && request.resource.data.reviewId.size() > 0
+          && request.resource.data.reviewId != uid
+          && !exists(/databases/$(database)/documents/articles/$(articleId)/reviews/$(request.resource.data.reviewId))
+          && existsAfter(/databases/$(database)/documents/articles/$(articleId)/reviews/$(request.resource.data.reviewId))
+          && getAfter(/databases/$(database)/documents/articles/$(articleId)/reviews/$(request.resource.data.reviewId)).data.schemaVersion == 2
+          && getAfter(/databases/$(database)/documents/articles/$(articleId)/reviews/$(request.resource.data.reviewId)).data.updatedAt == request.time
+          && !unversionedLegacyReviewExists(articleId, uid);
+        allow update: if false;
+        allow delete: if owner(uid)
+          && exists(/databases/$(database)/documents/accountDeletions/$(uid))
+          && resource.data.reviewId is string
+          && exists(/databases/$(database)/documents/articles/$(articleId)/reviews/$(resource.data.reviewId))
+          && get(/databases/$(database)/documents/articles/$(articleId)/reviews/$(resource.data.reviewId)).data.schemaVersion == 2
+          && !existsAfter(/databases/$(database)/documents/articles/$(articleId)/reviews/$(resource.data.reviewId))
+          && ((!exists(/databases/$(database)/documents/articles/$(articleId))
+              && !unversionedLegacyReviewExists(articleId, uid))
+            || mappedReviewRemovalValid(articleId));
+      }
+      match /drafts/{id} {
+        allow read, delete: if owner(uid);
+        allow create: if owner(uid) && active() && validInitialArticle(request.resource.data);
+      }
+      match /articleProgress/{articleId} {
+        allow read, delete: if owner(uid);
+        allow create: if owner(uid) && active() && validArticleProgress(request.resource.data);
+        allow update: if owner(uid) && active() && validArticleProgress(request.resource.data)
+          && (request.resource.data.get('startedAt', null) == resource.data.get('startedAt', null)
+            || (!('startedAt' in resource.data) && request.resource.data.startedAt == request.time));
+      }
+      match /quizAttempts/{attemptId} {
+        allow read, delete: if owner(uid);
+        allow create: if owner(uid) && active() && validQuizAttempt(request.resource.data);
+        allow update: if false;
+      }
       match /{collection}/{id} {
         allow read, delete: if owner(uid) && collection in ['vocabulary','readArticles','customCategories'];
         allow create, update: if owner(uid) && active() && collection in ['vocabulary','readArticles','customCategories'];

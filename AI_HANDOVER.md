@@ -1,185 +1,91 @@
-> 2026-09-14 복구 및 검증 최신 상태: [IMPLEMENTATION.md](./IMPLEMENTATION.md). 아래 기존 기록보다 이 검증 기록을 우선합니다.
+# Koreading 기술 인수인계
 
-# Koreading — AI Handover & Project Master Context
-> **문서 목적**: 이 파일은 ChatGPT, Claude, Cursor 등 다른 AI 모델이나 새로운 개발자가 이 프로젝트의 전체 맥락, 아키텍처, 비즈니스 로직, 작업 히스토리를 한 번에 이해하고 바로 이어서 개발할 수 있도록 작성된 종합 인수인계 문서입니다.
+**기준: 2026-09-26 로컬 `main` 소스.** 이 문서는 실제 코드의 구조와 유지보수 지점을 설명합니다. 실행/환경변수는 [README.md](./README.md), 작업 규칙은 [AGENTS.md](./AGENTS.md), 미해결 문제와 최신 검증은 [IMPLEMENTATION.md](./IMPLEMENTATION.md)를 기준으로 합니다. 배포와 운영 DB 상태는 이 로컬 코드만으로 확인되지 않습니다.
 
----
+## 서비스와 기술
 
-## 📌 1. 프로젝트 개요 (Executive Summary)
+- 서비스: 외국인 한국어 학습자의 독해 연습. 목표 난이도 태그 A1·A2·B1·B2·C1·C2, 번역/모국어 `en`·`es`·`ja`·`zh`, 주제 8종(`src/lib/schemas.ts`, `src/lib/gemini.ts`). 이 태그는 공인 CEFR 평가 결과가 아닙니다.
+- 저장소/도메인: `ostrichick/koreading`의 `main`, 코드에 지정된 공개 주소 `https://koreading.vercel.app`. 실제 운영 반영 상태는 별도 확인.
+- 스택: Next.js 16 App Router, React 18, TypeScript, CSS, Firebase Auth/Cloud Firestore, Google Gemini SDK, 조건부 Groq 연동, Vercel. 의존성 버전의 기준은 `package.json` 및 `package-lock.json`.
+- API `POST /api/ai`와 Cron API는 Node.js Runtime. 공개 글 목록/상세는 서버에서 Firestore REST API를 읽고 클라이언트 학습 데이터는 Firebase SDK로 읽고 씁니다.
 
-- **서비스명**: **Koreading (코레딩)**
-- **서비스 도메인**: [https://koreading.vercel.app](https://koreading.vercel.app)
-- **GitHub 저장소**: `ostrichick/koreading` (Branch: `main`)
-- **서비스 목적**: 전 세계 외국인 한국어 학습자를 위한 **AI 기반 맞춤형 한국어 독해 학습 플랫폼**
-- **학습 철학**: 언어학자 스티븐 크라센(Stephen Krashen)의 **i+1 입력 가설(Input Hypothesis)**
-  - 학습자의 현재 수준보다 살짝 높은 난이도의 진짜 글을 다독하며 모국어처럼 자연스럽게 한국어를 체득하도록 유도.
-- **지원 학습자 모국어 (Native Languages)**:
-  - 영어 (`en`), 스페인어 (`es`), 일본어 (`ja`), 중국어 (`zh`)
-- **지원 CEFR 레벨**:
-  - `A1` (입문) · `A2` (초급) · `B1` (중급) · `B2` (중상급) · `C1` (고급) · `C2` (최고급)
-- **8대 학습 토픽**:
-  - `fairy-tales` (한국 동화), `nature-travel` (자연 & 여행), `k-content` (K-콘텐츠), `history` (역사 이야기), `daily-life` (일상 이야기), `culture` (한국 문화), `news` (쉬운 뉴스), `food` (한국 음식)
+## 사용 경로와 데이터 흐름
 
----
+| 기능 | 실제 흐름 | 제한/주의 |
+| --- | --- | --- |
+| 공개 도서관 | `/library` → `GET /api/library` → `src/lib/server/publicArticles.ts`; 레벨·주제 필터와 평점/최신 정렬, 페이지당 24개 | 목록은 전체 카드 메타데이터를 60초 캐시하고 앱에서 필터링. 최대 45,000개 항목 순회 경계가 있어 규모 확장 시 검색 인덱스 필요. 텍스트 검색 `q`는 구현되지 않음 |
+| 글 생성·게시 | `/library` → `src/lib/gemini.ts` → `POST /api/ai`의 `generateArticle`; 비회원은 세션 임시 글, 회원은 `db.ts:saveArticle`을 통해 본인 소유 `users/{uid}/drafts` 저장. `getDraftArticles`로 다시 열고 검증된 관리자가 `publishDraft` 트랜잭션으로 공개 게시 | 관리자 게시 전 개인 초안은 공개 목록·사이트맵에 나타나지 않음. 기존 공개 글은 그대로 공개 읽기. 앱과 Firestore 규칙의 동시 운영 반영 필요 |
+| 공개 읽기 | `/read/[id]` 서버 렌더링 → `ArticleReader`; 비회원 임시 읽기는 `/read/guest` | 정적 HTML에 실제 본문과 개별 canonical 제공. 읽음 체크는 회원이 수동으로 남기며 마지막 스크롤 위치 복원 기능은 없음 |
+| 사전 | 단어 클릭 → `useWordLookup` → `lookupWordAll` → `POST /api/ai`; 기본 뜻과 상세 문법/예문을 서버에서 병렬 생성 | HTTP 왕복 1회지만 AI 생성은 두 분기. 기본 뜻 성공·상세 실패 시 기본 정보와 상세 실패 안내를 표시하며, 기본 실패는 오류. 진정한 단계별 스트리밍은 없음. 단어+문맥+언어를 묶어 인메모리 최대 100개/sessionStorage 캐시 |
+| 튜터 | 독해 문단 선택 → `TutorPanel` → `POST /api/ai`의 `tutorChat`; 같은 질문을 `hint` → `strong-hint` → `explanation`으로 단계적으로 좁힘 | 힌트 단계는 직접 정답 노출을 피하고 최종 단계에서 설명; 문단·사용자 메시지와 제한된 대화 이력을 전송; 학습 효과나 답변 정확도 자동 채점 없음 |
+| 레벨 테스트 | `/api/ai`의 `generateTest`는 A1~C2 각각 2문항 구조 생성; `src/lib/learning.ts`는 단계별 2/2 정답으로 권장 시작 레벨 계산 | `/test` 화면은 현재 접속 즉시 `/library`로 리다이렉트되어 사용자 기능 비활성. 진단 타당성 검증 미실시; 프로필에서 수동 레벨 설정 가능 |
+| 계정·학습 기록 | Firebase Google 로그인 → `AuthContext` 프로필 생성/조회 → `db.ts`; 프로필, 단어 SRS, 읽음, `articleProgress`, `quizAttempts`, 비공개 초안, 리뷰 | R1~R6 사용자 학습 상태는 `users/{uid}` 아래 소유자 전용. 연재 선택도 `articleProgress.seriesChoiceIndex`에만 저장. 신규 리뷰는 공개 UID를 쓰지 않고 비공개 `reviewOwnership`으로 소유권을 연결. 탈퇴 시 개인 학습 하위 컬렉션과 소유 리뷰를 정리 |
 
-## 🛠️ 2. 기술 스택 & 인프라 (Tech Stack)
+## AI 모델·콘텐츠·이미지의 현재 동작
 
-| 계층 | 사용 기술 | 설명 |
-| :--- | :--- | :--- |
-| **Frontend Framework** | **Next.js 15+ (App Router)** | React 19, Turbopack, TypeScript 기반 |
-| **Runtime & Deploy** | **Vercel (Serverless)** | `/api/ai` 라우트는 **Node.js Runtime (`export const runtime = 'nodejs'`)** 적용. Edge 전용 제약 없이 Gemini SDK 폴백 체인과 예외 처리를 안정적으로 구동 |
-| **Styling** | **Pure CSS (`globals.css`)** | CSS 변수 기반 에디토리얼 웜(Warm Paper & Charcoal) 디자인 시스템, 미디엄/브런치 감성의 가독성 중심 테마 |
-| **Authentication** | **Firebase Auth** | Google OAuth 간편 로그인 (팝업 및 모바일 리다이렉트 대응) |
-| **Database** | **Cloud Firestore** | NoSQL 문서 데이터베이스 (아티클, 단어장, 읽음 기록, 리뷰, 사용자 프로필) |
-| **Main AI Model (창작)** | **Google Gemini 2.5 Flash** | 국립국어원 표준 CEFR 커리큘럼 기반 한국어 교육 전담 주력 모델 (`temperature: 0.45`) |
-| **Speed AI Model (사전)** | **Google Gemini 3.5 Flash Lite** | 800ms대 초고속 응답 속도를 자랑하는 미니 팝업 사전 전용 모델 (`temperature: 0.1`) |
-| **Fallback & Alternative**| **Groq Qwen 3.8 27B / Gemini 3.5 Flash** | 구글 쿼터 초과 시 동작하는 Groq 오픈소스 모델 및 최신 플래시 폴백 체인 (`temperature: 0.45`) |
-| **Cron & Autonomous Ops** | **Vercel Cron Jobs (3종)** | ① 일일 모델 헬스체크, ② 월간 모델 벤치마크 오딧, ③ 주간 4대 시스템 감사 |
-| **Client Storage** | **localStorage & sessionStorage** | 게스트 세션 데이터 및 사전 조회 2단계 영속 캐시 |
+- **글:** `src/lib/geminiModels.ts`가 API 모델 목록에서 Flash 계열 가용 모델을 골라 Gemini Lite 중심 우선순위로 시도합니다. `src/app/api/ai/route.ts`의 Gemini 생성 설정은 `temperature: 0.38`; Gemini 체인 실패 시 서버 Groq 키를 사용할 수 있다면 `openai/gpt-oss-120b`를 시도합니다(`temperature: 0.70`). 고정된 주력 모델이나 응답 시간·일일 무료 쿼터는 보장하지 않습니다.
+- **사전·테스트·튜터:** 서버 Groq 키가 있고 사용자가 개인 키를 보내지 않은 경우 `qwen/qwen3.8-27b`를 먼저 시도하며, 실패하면 Gemini 사전용 모델 최대 2개를 시도합니다(생성 설정 `temperature: 0.1`). 글 생성은 Gemini 후보 최대 3개와 조건부 Groq 1개를 시도합니다. 사전의 basic+advanced 병렬 조회는 두 분기가 요청당 공통 시도 예산을 사용합니다. 모델 목록은 API 키의 SHA-256 식별값별로 최대 1시간 캐시해 개인 키 사이의 목록 혼용을 방지합니다. 요청당 시도 횟수·출력 토큰·벽시계 시간 제한은 **실제 공급자 청구 비용의 전역 상한이 아닙니다.**
+- **교육 프롬프트:** `src/lib/koreanCurriculum.ts`의 문법·길이·핵심 어휘 5개 반복, 이해 가능한 입력 등은 **생성 지침/목표**입니다. `schemas.ts`는 글 길이 최소 80자, 핵심 어휘 1~10개 및 중복 여부, 주요 한국어 필드의 외국 문자 배제, 레벨 테스트 보기 중복을 검사합니다. 어휘 85~90%, 정확히 핵심 어휘 5개, 문법 2~3개, 반복 횟수, 난이도·문항 타당성은 자동 검증·보장하지 않습니다. 길이 기준은 `koreanCurriculum.ts`의 실제 프롬프트 주입값을 확인합니다.
+- **소재·장르:** `src/lib/topicSeeds.ts`에 총 76개 고정 세부 소재와 8개 장르 옵션이 있습니다. `recentTitles`는 현재 도서관에 표시된 상위 제목 최대 10개를 프롬프트로 전송하므로 전체 DB의 최근 등록 10건이나 중복 방지를 보증하지 않습니다.
+- **이미지:** 글 생성 완료 후 `src/lib/koreanVisuals.ts:getRealKoreanPhoto`가 위키백과 이미지 → 설정 시 Unsplash 검색 → 큐레이션 Unsplash 사진을 선택합니다. 사진 작업에는 본 AI 요청의 종료 신호와 별도 최대 2.5초 제한을 전달하며, 실패하면 텍스트만 반환할 수 있습니다. API 응답의 `imageUrls`는 0~1개이고 본문 중간은 첫 이미지를 재사용할 수 있습니다. `get2DTextbookVectorIllustration`와 `getVisualAidDirectingInstruction`는 정의되어 있지만 글 생성 경로에서 호출되지 않습니다. AI 삽화 2장 자동 생성·본문 즉시 선출력·완전 무료/무제한은 구현되지 않았습니다.
+- **진행 표시:** 생성 화면은 실제 응답 전까지 일반적인 요청 진행 상태만 표시합니다. 서버 모델별 `_logs`는 최종 응답 이후 한 번에 전달되므로 실시간 스트리밍이 아닙니다.
+- **음성:** 브라우저 Web Speech API 기능과 음성 인식 전사 텍스트 유사도 비교가 일부 독해 UI에 있습니다. 발음의 음운 정확도를 측정하는 검증된 평가 도구는 아닙니다.
 
----
+## R1~R6 학습 아키텍처
 
-## 🏗️ 3. 핵심 아키텍처 & 비즈니스 로직 (Core Systems)
+- **R1:** `ComprehensionQuizCard.tsx`, `articleProgress`, `quizAttempts`. 신규 `generatedArticleSchema`는 main/detail/vocabulary 3문항과 유효한 `paragraphIndex`를 요구하고, 레거시 `articleSchema`는 퀴즈를 선택 필드로 둡니다.
+- **R2:** `src/lib/learning.ts:nextReviewIntervalDays`, `db.ts:reviewVocabulary`, `/vocabulary`. 단어는 원문 문맥·성공/실패 횟수·다음 복습일을 저장하며 1→3→7→14→30→60→90일 스케줄을 사용합니다.
+- **R3:** `deriveLearningProfile`과 `recommendReading`. `getArticleProgressList`가 `lastOpenedAt` 최신순으로 정렬하고 최근 5개만 사용합니다. 개인화는 규칙 기반이고 레벨 이동은 ±1로 제한합니다.
+- **R4:** 공개 글에는 `seriesId`, `seriesTitle`, `episodeNumber`, `previousEpisodeId`, `continuationChoices`만 저장합니다. 사용자 선택은 private `seriesChoiceIndex`. `koreading_series_continuation` session context는 다음 생성 요청에만 전달합니다.
+- **R5:** `WritingPracticeCard.tsx`는 raw learner writing을 Firestore에 저장하지 않고 `writingFeedback` API 요청에만 사용합니다. `ReaderControls`와 reader pages는 TTS 속도를 `koreading_tts_rate`에 저장하며 쉐도잉은 숨김/수동 복원을 지원합니다. 전사 유사도 UI 명칭은 “음성 인식 문장 일치도”입니다.
+- **R6:** `/profile`은 `getReadArticlesWithDates`, `getVocabulary`, `getArticleProgressList`를 조합해 이번 주 읽기·복습·학습일, 최근 이해도, 강점/약점, 약한 문법, 독서 streak와 주간 목표를 계산합니다. 시간 목표는 `readingSeconds`가 신뢰성 있게 채워지지 않아 제공하지 않습니다.
 
-### 3.1 맞춤형 KFL 한국어 교육 지문 생성 시스템 (`action === 'generateArticle'`)
-- **엔드포인트**: `POST /api/ai`
-- **Temperature**: **`0.45`** (과도한 상상력이나 난해한 문학적 표현을 방지하고, 레벨별 어휘 및 문법 제약 조건을 엄격히 준수하도록 최적화)
-- **KFL(외국어로서의 한국어) 전문 커리큘럼 엔진 (`src/lib/koreanCurriculum.ts`)**:
-  - 국립국어원 한국어 표준 교육과정 및 국제 통용 한국어 교육과정(CEFR A1~C2) 표준 반영.
-  - **크라센(Krashen)의 i+1 원리**: 전체 문맥의 90%는 직관적으로 이해 가능한 친숙한 어휘, 10%는 신규 습득 목표 문법과 핵심 어휘로 구성.
-  - **어휘 재활용(Vocabulary Recycling)**: 선별된 5개의 핵심 어휘(`keyVocabulary`)를 본문에서 각각 **최소 2회 이상 자연스럽게 반복(Recycled)** 노출시켜 자동 암기 유도.
-  - **필수 목표 문법 내재화**: 레벨별 필수 문법(예: A1 `-아요/어요`, `-에 가요` / A2 `-(으)러 가다`, `-(으)면`, `-아/어서` / B1 `-(으)ㄴ 적이 있다`, `-기 때문에` 등) 중 2~3개를 본문에 의무 사용.
-  - **실생활 상황 중심**: 뜬구름 잡는 소설 대신 편의점, 식당, 교통, 약속, 여행 등 외국인이 실제 한국 생활에서 마주치는 생생한 대화와 에피소드로 전개.
-- **동적 서브토픽 풀 (`src/lib/topicSeeds.ts`)**:
-  - 8개 주제마다 10~15개 이상의 구체적이고 트렌디한 세부 소재(총 100종 이상) 구축.
-  - 사용자가 키워드를 입력하지 않아도 매번 무작위 세부 소재가 프롬프트에 강제 주입되어 뻔한 글 방지.
-- **나만의 키워드 직접 입력 (`customKeyword`)**:
-  - 사용자가 원하는 특정 키워드(예: *"뉴진스"*, *"성수동 팝업스토어"*)를 지정하면 최우선 소재로 글 작성.
-- **5가지 서술 장르/문체 (`genre`)**:
-  - `random` (무작위), `essay` (1인칭 감성 수필/일기), `dialogue` (생생한 구어체 대화문), `column` (매거진 칼럼), `story` (단편 소설/동화).
-- **Anti-Cliche 룰 (AI 상투어 원천 금지)**:
-  - *"오늘은 ~에 대해 알아보겠습니다"*, *"~는 매우 유명합니다"* 같은 지루한 도입부 절대 금지 → 즉시 현장 묘사/대사로 시작.
-  - *"여러분도 꼭 경험해 보세요"* 같은 교훈형 결말 금지 → 자연스러운 여운으로 마무리.
-- **중복 방지 (Negative Prompting)**:
-  - 도서관의 최근 글 제목 10개를 `recentTitles`로 전달하여 소재/줄거리 겹침을 엄격 차단.
-- **100% 순수 한글 제약 (CRITICAL)**:
-  - 본문과 제목에는 한자(漢字), 영어, 일본어, 외국어 번역 괄호 표기(예: `공부(study)하다`)가 단 한 글자도 들어가지 않도록 강제.
+## 권한 및 운영 경계
 
-### 3.2 초고속 인터랙티브 단어 사전 (`lookupWordAll`)
-- **통합 병렬 조회**:
-  - 기존 2회 순차 호출(Basic 정보 조회 → 대기 → Advanced 문법/예문 조회)을 서버에서 `Promise.all`로 묶어 **단 1회의 왕복(RTT)**으로 반환.
-- **모델 우선순위 역전**:
-  - 단어 사전 조회 시 무거운 모델 대신 초경량·고속 모델(`Gemini 2.0 Flash Lite` → `1.5 Flash 8B`)을 우선 가동.
-- **2단계 캐싱 전략**:
-  - 1차: React `useRef` 인메모리 캐시 (0ms 즉시 응답)
-  - 2차: `sessionStorage` (`koreading_word_${word}_${lang}`) 영속 캐시 (페이지 이동/재방문 시 0ms 복원)
+- `firestore.rules`의 `users/{uid}` 및 하위 학습 컬렉션은 소유자 중심 권한을 사용합니다. 관리자 삭제 권한은 검증된 이메일을 Firestore 규칙이 판단합니다. `NEXT_PUBLIC_ADMIN_EMAILS`는 UI 가드이며 여기에만 관리자 이메일을 추가해도 서버 규칙 권한은 늘지 않습니다.
+- R1 학습 루프는 `users/{uid}/articleProgress/{articleId}`와 `users/{uid}/quizAttempts/{attemptId}`에만 사용자 진행도·퀴즈 시도·난이도 피드백을 저장합니다. 다른 회원과 비로그인 사용자는 읽을 수 없고 계정 삭제 시 함께 정리합니다. `articleSchema`는 기존 글 호환을 위해 퀴즈를 선택 필드로 유지하지만, 신규 AI 생성 결과는 `generatedArticleSchema`가 `main`·`detail`·`vocabulary` 세 문항과 실제 본문 문단을 가리키는 `paragraphIndex`를 요구합니다.
+- `articles/{id}`는 읽기 공개, 생성은 검증된 관리자만 허용합니다. `firestore.rules`는 공개 게시와 비공개 초안 생성 시 허용 필드·이미지 호스트·서버 생성 시각·평점 초기값을 검사합니다. 클라이언트는 생성 글을 소유자 비공개 초안으로 저장하고 관리자의 명시적 게시만 허용합니다. 운영 배포 여부와 과거 공개 글의 신뢰성은 미확인입니다.
+- 신규 리뷰는 `articles/{articleId}/reviews/{opaqueReviewId}` 공개 문서에 별점·의견·표시 이름과 비민감 `schemaVersion: 2`만 저장하고, 계정과의 연결은 소유자만 읽을 수 있는 `users/{uid}/reviewOwnership/{articleId}`의 `{ reviewId }` 매핑으로 분리합니다. 스키마 마커 때문에 임의 문서 ID가 우연히/악의적으로 다른 UID와 같아도 신규 리뷰를 레거시 UID 소유 리뷰로 오인하지 않습니다. 작성·수정·탈퇴 삭제와 글 평점 집계는 Firestore 트랜잭션/규칙에서 함께 검증합니다. 기존 UID 문서 ID 리뷰는 호환 경로로만 처리하며 `userId`가 없더라도 문서 ID가 UID와 정확히 같은 경우 외에는 소유자를 추측하지 않습니다. 탈퇴는 재인증 확인 → 삭제 표식 → 비공개 매핑 리뷰 및 확인 가능한 레거시 리뷰 삭제·평점 재집계 → 개인 하위 데이터 삭제 → 프로필 삭제 → Auth 삭제 순서입니다. **비공개 삭제 표식의 UID는 재시도/쓰기 차단을 위해 남습니다.**
+- `/api/ai`는 게스트가 사용할 수 있으며 본문 크기 24KB·Zod 입력 검증·식별 그룹 분당 20회/일 100회·전체 일 1,000회 기본 **HTTP 요청 수** 제한이 있습니다. 실제 Vercel 프리뷰/운영 환경에서는 플랫폼이 덮어쓰는 `X-Forwarded-For`의 유효 IP만 사용하고, 이외 환경/잘못된 값은 동일한 공유 그룹에 넣습니다. 이는 인증이 아니며 사용자 식별도 보장하지 않습니다. 운영/프로덕션 AI API는 Upstash Redis 두 환경변수를 요구하고 누락·장애 시 거부하며, 로컬 개발에서만 인스턴스별 카운터를 허용합니다. `src/lib/aiBudget.ts`는 요청당 공급자 시도 예산(글/테스트/튜터 최대 4회, 병렬 사전 전체 최대 6회), 개별 출력 토큰 상한 및 30초 요청 마감 신호를 제공합니다. 모델 목록·사진에도 신호를 전파하지만 Gemini SDK에서 이미 시작한 요청의 과금·종료를 보장할 수 없습니다. 이것은 청구액 상한이나 공급자 대시보드의 실지출 관측을 대체하지 않습니다. 개인 API 키는 브라우저 `localStorage`에 보관되어 요청 때 서버로 전송되며 운영 로그에는 키·본문·원시 오류를 남기지 않습니다.
+- Vercel Cron은 `vercel.json` 기준 매일 모델 점검, 매월 1일 모델 벤치마크, 매주 일요일 시스템 감사(모두 00:00 UTC)입니다. 세 라우트는 `CRON_SECRET`의 정확한 Bearer 값을 요구합니다. Cron의 200 응답이나 콘텐츠 형식 검사만으로 클라이언트 레벨 테스트 작동·교육 정확도·실제 결제 상태를 증명할 수는 없습니다.
+- 공개 상세 페이지·사이트맵의 SEO 메타데이터를 유지합니다. 루트 OG 이미지는 실재하는 `/logo.png`를 사용하며 미구현 검색·화면에 없는 FAQ의 구조화 데이터를 제거했습니다. 비활성 레벨 테스트는 사이트맵에서 제외합니다. `public/sw.js`는 네트워크 통과 서비스 워커로 오프라인 읽기 캐시는 제공하지 않습니다.
 
-### 3.3 보안 및 관리자 시스템
-- **관리자 계정 (`src/lib/adminConfig.ts`)**:
-  - `NEXT_PUBLIC_ADMIN_EMAILS` 환경변수(쉼표 구분)를 우선 읽고, 기본값 `asulchoi@gmail.com`, `xilencist@gmail.com`을 폴백으로 항상 포함.
-- **3단계 방어 아키텍처**:
-  1. **UI Layer**: 관리자 로그인 시에만 아티클 삭제 버튼 노출 + 화면 상단 보라색 관리자 모드 배너/배지 표시.
-  2. **Client Business Logic (`db.ts`)**: `deleteArticle(id, callerEmail)` 호출 시 `isAdminEmail()` 사전 검증.
-  3. **Database Layer (`firestore.rules`)**: Firebase 서버에서 `request.auth.token.email in ['asulchoi@gmail.com', 'xilencist@gmail.com']` 규칙으로 비인가 삭제를 최종 차단.
-- **API 보호**:
-  - Content-Type(`application/json`) 강제 검증, action 허용 목록 검증, 입력 파라미터 길이 제한(프롬프트 인젝션 방어), IP 기반 Rate Limiting (분당 20회).
+## 파일 맵: 수정할 때 찾아볼 실제 위치
 
-### 3.4 교재형 시각 보조자료(Visual Aid) 일러스트 시스템 (Pollinations.ai / FLUX.1)
-- **비용**: 100% 완전 무료 (오픈소스 FLUX.1/SDXL 기반 CDN 인프라 `image.pollinations.ai` 활용)
-- **교육 맞춤형 1:1 직관 삽화 구성**:
-  1. **대표 상황도 (Situational Scene - Hero Cover)**: 글의 전체적인 한국 배경 장소, 주인공의 구체적인 행동과 표정을 한눈에 보여주는 상황도. 텍스트를 읽기 전/후 상황 파악을 즉시 돕습니다.
-  2. **핵심 어휘 시각 자료 (Key Vocabulary Visual Aid - In-text)**: 본문의 핵심 어휘(`keyVocabulary`) 중 1~2개 주요 사물이나 손동작을 클로즈업한 시각 사전형 도해. 단어 뜻을 이미지로 즉각 유추 가능.
-- **디렉팅 파이프라인 (`koreanCurriculum.ts`)**:
-  - AI가 글을 쓸 때 위 교육학적 공식에 맞춰 영문 `imagePrompts` 2종을 정밀 설계.
-  - 교재 화풍 고정 및 외계어 방지: `modern Korean educational textbook illustration / educational visual dictionary illustration style, no text, no words, no watermark` 강제 결합.
-- **비동기 UX (`ArticleIllustration.tsx`)**:
-  - 텍스트가 먼저 2~3초 만에 렌더링되고, 이미지는 브라우저 백그라운드에서 스켈레톤 쉬머 애니메이션과 함께 로딩되어 사용자 대기 시간이 0초.
-  - 네트워크 오류 시 레이아웃을 해치지 않고 부드럽게 숨김 처리(Graceful Fallback).
+| 경로 | 역할 |
+| --- | --- |
+| `src/app/page.tsx`, `src/app/layout.tsx`, `src/app/globals.css`, `src/app/sitemap.ts` | 랜딩, 전역 SEO/레이아웃, 스타일, 공개 글 동적 사이트맵 |
+| `src/app/library/page.tsx`, `src/app/api/library/route.ts`, `src/lib/server/publicArticles.ts` | 도서관 화면, 공개 목록 API, 서버 Firestore REST 조회/캐시 |
+| `src/app/read/[id]/page.tsx`, `src/app/read/guest/page.tsx`, `src/components/reader/*` | 공개·임시 독해 및 공유 독해 요소(ArticleReader, ReaderBody, ReaderControls, TutorPanel, EditorialHeroCard, DiscussionPromptCard, ComprehensionQuizCard, KakaoChatView) |
+| `src/app/test/page.tsx`, `src/app/vocabulary/page.tsx`, `src/app/profile/page.tsx`, `src/app/login/page.tsx` | 비활성 진단 화면, 단어장, 계정 설정, 로그인 |
+| `src/app/about/page.tsx`, `src/app/privacy/page.tsx`, `src/app/terms/page.tsx` | 서비스·개인정보·약관 공개 페이지(운영 현실과 문구 별도 점검 필요) |
+| `src/components/NavBar.tsx`, `Footer.tsx`, `AlertModal.tsx`, `ArticleIllustration.tsx` | 공통 탐색/푸터/알림/이미지. 과거 `SeoTextBlock.tsx`는 존재하나 루트 레이아웃에서 현재 사용하지 않음 |
+| `src/contexts/AuthContext.tsx`, `src/lib/firebase.ts`, `src/lib/db.ts` | Firebase 인증 상태 및 클라이언트 데이터 접근 래퍼 |
+| `src/lib/reviewStore.ts`, `src/lib/deleteAccount.ts`, `src/lib/adminConfig.ts`, `src/lib/articlePublishing.ts`, `firestore.rules` | 리뷰 원자성/삭제와 평점, 계정 삭제, 관리자 UI 식별, 공개 이미지 허용 호스트, 실제 DB 권한 |
+| `src/app/api/ai/route.ts`, `src/lib/gemini.ts`, `src/lib/geminiModels.ts`, `src/lib/schemas.ts`, `src/lib/aiBudget.ts` | AI 요청 처리, 클라이언트 래퍼, 모델 체인/캐시, 입력·응답 형태 검사, 공급자 시도·30초 마감 예산 |
+| `src/lib/koreanCurriculum.ts`, `src/lib/topicSeeds.ts`, `src/lib/koreanVisuals.ts` | 교육 프롬프트, 소재·장르, 사진 검색/벡터 유틸 |
+| `src/hooks/useWordLookup.ts`, `src/lib/learning.ts`, `src/lib/storage.ts`, `src/lib/utils.ts` | 문맥 사전 상태/캐시, 레벨 추천·요약, 게스트 저장소, 일반 유틸 |
+| `src/lib/readJson.ts`, `src/lib/aiQuota.ts`, `src/lib/cronAuth.ts` | 요청 크기 제한, 요청 수 제한, Cron 인증 |
+| `src/app/api/cron/` | 세 하위 폴더 `check-models`, `monthly-model-audit`, `system-audit`의 일간·월간·주간 점검 API |
+| `tests/*.test.ts`, `tests/security.integration.ts`, `tests/account-deletion.integration.ts`, `tests/reader.spec.ts` | 단위/AI 보호·운영·데이터 감사·리뷰 이관, Firestore 에뮬레이터 보안·탈퇴, Playwright 브라우저 테스트 |
+| `scripts/operations.mjs`, `docs/OPERATIONS_RUNBOOK.md` | 운영 설정의 정적 사전 점검, demo 전용 에뮬레이터 export/import 연습과 운영 승인 경계 |
+| `scripts/audit-legacy-data.mjs`, `docs/DATA_AUDIT_RUNBOOK.md` | 명시된 로컬 JSON/NDJSON만 읽는 기존 공개 글·리뷰 진단; 어떤 클라우드 데이터도 자동으로 가져오거나 고치지 않음 |
+| `scripts/prepare-review-migration.mjs`, `docs/REVIEW_MIGRATION_RUNBOOK.md` | 소유권이 명확한 레거시 리뷰만 READY로 분류해 불투명 공개 ID와 비공개 소유권 매핑 후보를 만드는 오프라인 도구; 실제 DB 쓰기는 하지 않음 |
+| `.github/workflows/ci.yml` | GitHub에서 정적/단위/빌드, Chromium, Java 21 Firestore 에뮬레이터 검증을 분리 실행하는 CI 정의; 운영 배포는 수행하지 않음 |
+| `package.json`, `eslint.config.mjs`, `playwright.config.ts`, `firebase.json`, `vercel.json`, `.env.local.example` | 실행 명령·린트·테스트·에뮬레이터·Cron·환경변수 템플릿 |
+| `public/manifest.json`, `public/sw.js`, `public/robots.txt`, `public/logo.png`, `public/icon-*.png` | PWA 메타/서비스 워커, 로봇 규칙, 로고/아이콘 |
 
----
+`android-app/`, `design_samples/`, `.next/`, `.verification/` 등은 Git에서 제외되는 로컬 폴더이므로 저장소의 필수 빌드 산출물이나 공개 기능으로 간주하지 않습니다. 파일을 추가·이동할 때는 이 표만 갱신하고 README에 또 다른 트리를 만들지 않습니다.
 
-## 📂 4. 전체 디렉터리 및 파일 맵
+## 변경 맥락과 기록의 해석
 
-```
-Conq/
-├── firestore.rules          # [보안] Firestore 데이터베이스 보안 규칙 (관리자 권한, 유저 격리)
-├── project_meta.md          # 프로젝트 파일별 한국어 메타 가이드
-├── AI_HANDOVER.md           # [본 문서] 타 AI 및 개발자용 온보딩 인수인계 문서
-├── public/
-│   ├── logo.png             # 서비스 공식 로고
-│   ├── robots.txt           # 검색 크롤러 지침
-│   ├── manifest.json        # PWA 매니페스트
-│   └── google*.html         # 구글 서치 콘솔 소유권 확인 파일
-├── src/
-│   ├── app/
-│   │   ├── api/ai/route.ts       # [코어 백엔드] Edge AI 라우트 (글 생성, 사전, 테스트, 폴백)
-│   │   ├── api/cron/check-models/route.ts        # [일일 크론] AI 모델 가용성 자동 헬스체크
-│   │   ├── api/cron/monthly-model-audit/route.ts # [월간 크론] 최신 모델 벤치마크 평가 및 Top 3 추천
-│   │   ├── api/cron/system-audit/route.ts        # [주간 크론] 도서관 아티클 품질/법적페이지/SEO/쿼터 4대 감사
-│   │   ├── about/page.tsx        # [SEO/AdSense] 서비스 소개 및 기능 안내 (영문 중심 서버 컴포넌트)
-│   │   ├── privacy/page.tsx      # [법적 필수] 개인정보처리방침
-│   │   ├── terms/page.tsx        # [법적 필수] 서비스 이용약관
-│   │   ├── library/page.tsx      # [핵심 화면] 도서관 메인 (필터링, 정렬, 맞춤 생성 모달)
-│   │   ├── login/page.tsx        # 구글 OAuth 간편 로그인
-│   │   ├── profile/page.tsx      # 마이페이지 (레벨/모국어 변경, 회원 탈퇴)
-│   │   ├── read/[id]/page.tsx    # [핵심 화면] 회원용 독해 뷰어 (인터랙티브 사전, 오버 검색, 완독)
-│   │   ├── read/guest/page.tsx   # 게스트용 독해 뷰어 (세션 스토리지 기반 임시 읽기)
-│   │   ├── test/page.tsx         # CEFR 한국어 레벨 진단 테스트 (10문항)
-│   │   ├── vocabulary/page.tsx   # 개인 단어장 (카테고리 분류, 오디오 재생, 단어 퀴즈)
-│   │   ├── globals.css           # 전역 스타일 및 다크 테마 변수
-│   │   ├── layout.tsx            # 루트 레이아웃 (SEO 메타태그, JSON-LD, Footer, SeoTextBlock)
-│   │   ├── page.tsx              # 서비스 소개 메인 랜딩 페이지
-│   │   └── sitemap.ts            # [SEO 핵심] Firestore 전체 독해 아티클(/read/[id]) 포함 동적 사이트맵 생성기
-│   ├── components/
-│   │   ├── AlertModal.tsx        # 알림/에러 모달 및 AI 생성 진행 로그 터미널
-│   │   ├── ArticleIllustration.tsx # [NEW] 아티클 맞춤 AI 일러스트 (스켈레톤 shimmer, 에러 폴백)
-│   │   ├── Footer.tsx            # 공통 푸터 (약관, 개인정보, About 링크)
-│   │   ├── NavBar.tsx            # 상단 내비게이션 바 (관리자 모드 감지 배너/배지 포함)
-│   │   └── SeoTextBlock.tsx      # 검색엔진 크롤러용 비가시적 다국어 SEO 구조화 텍스트
-│   ├── contexts/
-│   │   └── AuthContext.tsx       # Firebase Auth 상태 및 Firestore 프로필 전역 Provider
-│   └── lib/
-│       ├── adminConfig.ts        # 관리자 이메일 목록 및 검증 함수
-│       ├── db.ts                 # Firestore CRUD 모듈 (아티클, 단어, 리뷰, 프로필)
-│       ├── firebase.ts           # Firebase Client SDK 초기화 (Auth, Firestore)
-│       ├── gemini.ts             # 클라이언트 AI 래퍼, CEFR/주제 상수, GenerateArticleOptions
-│       ├── koreanCurriculum.ts   # [NEW] 국립국어원 표준 CEFR 교육과정 커리큘럼 & 교재형 시각보조자료 디렉터
-│       ├── storage.ts            # 게스트 로컬 저장소 헬퍼 (모국어/레벨 캐싱)
-│       ├── topicSeeds.ts         # [NEW] 8개 주제별 100종 서브토픽 풀 & 5대 장르 서술 지침
-│       └── utils.ts              # 한글 토크나이저, 한글 판별, 셔플 유틸리티
-```
+| 시기 | 역사적 작업 내용(당시 기록이며 현재 동작을 보증하지 않음) |
+| --- | --- |
+| 2026-06 | 사전 기본형 변환, PWA 매니페스트/서비스 워커, 사전 병렬 조회 및 영문 SEO 화면 구성 |
+| 2026-07 | 관리자 UI·삭제 가드, 리뷰 트랜잭션, 학습·인증 화면 개선 |
+| 2026-09-09~13 | ESLint 및 UI 테마 개편, 교육용 프롬프트·소재/장르·이미지 구현 시도, 세 가지 Cron/동적 사이트맵 추가 |
+| 2026-09-14 | 보안·리뷰·탈퇴·읽기 SSR·목록 캐시 통합 개선. 당시의 검증 기록은 `IMPLEMENTATION.md`에 날짜를 명시해 보존 |
+| 2026-09-16 | AI/Cron Node.js Runtime 전환, 타입 정리, `AGENTS.md` 기반 협업 지침 통합 |
+| 2026-09-21 | 저장소 종합 감사 후 문서 통합, 관리자 공개 게시/비공개 초안, 탈퇴 리뷰 삭제, AI 결과 검증·복구, 핵심 UI와 SEO 정합성 개선. 현재 상태와 검증 결과는 `IMPLEMENTATION.md` 참조 |
 
----
-
-## 📜 5. 주요 작업 히스토리 연표 (Timeline)
-
-| 일자 | 구분 | 주요 구현 및 변경 내역 |
-| :--- | :--- | :--- |
-| **2026-09-16** | **타입 안전성 강화 & AI 협업 표준 통합** | - **관리자 이메일 환경변수화**: `adminConfig.ts`가 `NEXT_PUBLIC_ADMIN_EMAILS`(쉼표 구분)를 읽고 기본 목록을 폴백으로 포함.<br>- **`as any` · `: any` 전면 제거**: `/api/ai` 라우트(액션별 구조분해, `Map<string, GenerativeModel>`, catch `unknown` 전환), `gemini.ts`(`callAI<T>` 제네릭 + `WordLookupResult`/`PlacementTestResult`/`GeneratedArticle` 반환 타입), 크론 3종, .tsx 컴포넌트(catch, SpeechRecognition, `fontSize` 유니언, 불필요한 `article` 캐스트) 정리.<br>- **Edge → Node.js Runtime 전환**: `/api/ai` 및 크론 라우트를 `nodejs`로 통일 (Edge 폐기 예정 경고 해소).<br>- **미사용 DB 함수 제거**: 호출처가 없는 `getAllArticles()`, `getArticlesByLevel()` 삭제.<br>- **문서 단일화**: `AGENTS.md` 신설(엔지니어링 규칙 + 프로젝트 규칙 + 검증 명령어). `.clinerules`/`.continuerules`는 AGENTS.md 참조로 축소, 중복 `GEMINI.md` 삭제. |
-| **2026-09-13** | **에디토리얼 웜 (Editorial Warm Paper & Charcoal) 전면 개편** | - **눈이 편안한 종이책 감성 UI 적용**: 어두운 딥블루/네이비 테마를 전면 탈피하고 웜 페이퍼 크림(`--bg-primary: #fbfaf8`), 웜 아이보리(`--bg-secondary: #f4f1ea`), 딥 차콜 잉크(`--text-primary: #1c1917`), 웜 앰버 포인트(`--accent-primary: #d97706`)로 구성된 에디토리얼 테마 전역 적용.<br>- **리더기 3단 테마 시스템 개편**: Paper(기본), Sepia, Dark(웜 차콜) 모드 완비.<br>- **하드코딩 인디고/슬레이트 컬러 완전 정비**: 도서관 모달, 사전 팝업, 어휘 차트, 게스트 배너, 삽화 오버레이 등 모든 컴포넌트의 인라인 컬러를 신규 테마 토큰과 완벽하게 동기화.<br>- **Next.js 16 빌드 & ESLint 무결성 검증 완료**. |
-| **2026-09-13** | **KFL 한국어 교육 커리큘럼 & 교재 삽화 개편** | - **국립국어원 표준 CEFR 커리큘럼 엔진 (`koreanCurriculum.ts`)**: 레벨별 필수 목표 문법 2~3개 내재화 강제, 5대 핵심 단어 본문 내 최소 2회 이상 자연스러운 반복(Vocabulary Recycling), 실생활 상황 중심 텍스트 제어.<br>- **교재형 시각 보조자료(Visual Aid) 1:1 매핑**: 예술적 추상화 대신 '대표 상황도(Situational Scene)'와 '핵심 어휘 클로즈업 도해(Visual Vocabulary Aid)'로 영문 프롬프트 디렉팅 전면 개편.<br>- **교육 최적화 Temperature**: 0.8 ➜ 0.45로 조정하여 어휘 난이도 통제 및 문법 일관성 보장. |
-| **2026-09-13** | **주제 맞춤 AI 삽화 연동** | - **Pollinations.ai (FLUX.1) 연동**: 글 생성 시 본문의 구체적 사건/배경을 반영한 영문 프롬프트 기반 16:9 고화질 삽화 2종(커버 + 본문 중간) 자동 조합.<br>- **비동기 스켈레톤 뷰어 (`ArticleIllustration.tsx`)**: 텍스트 우선 로딩 후 백그라운드 쉬머 로딩, 오류 시 부드러운 자동 숨김.<br>- **도서관 카드 매거진 뷰**: 도서관 목록 카드 상단에 썸네일 배너 노출. |
-| **2026-09-13** | **4대 정기 점검 & SEO 동적 색인** | - **동적 사이트맵 연동**: `sitemap.ts`에 Firestore 공개 아티클 쿼리를 결합하여 `/read/[id]`를 검색엔진에 자동 색인 등록.<br>- **자율 모니터링 크론 3종 구축**: 일일 모델 헬스체크(`/api/cron/check-models`), 월간 모델 벤치마크 오딧(`/api/cron/monthly-model-audit`), 주간 4대 시스템 감사(`/api/cron/system-audit`).<br>- **폐기 모델 복구**: 가동 중단된 레거시 모델을 `gemini-2.5-flash`, `gemini-3.5-flash-lite`, `qwen/qwen3.8-27b`로 완전 교체. |
-| **2026-09-13** | **글 생성 고도화** | - **1·2·3단계 통합 구현**: 아티클 생성 temperature `0.8` 상향, 100여 종 서브토픽 풀 신설(`topicSeeds.ts`), AI 상투어 금지 규칙(Anti-Cliche), 5대 장르 셔플, 도서관 최근 글 중복 방지(`recentTitles`), 도서관 모달에 맞춤 키워드 인풋 및 장르 칩 UI 연동. |
-| **2026-07-07** | **관리자 UI 강화** | - `xilencist@gmail.com` 관리자 권한 추가, 관리자 로그인 시 상단 보라색 그라디언트 배너, 로고 배지, 아바타 테두리, 드롭다운 테두리 등 4단 비주얼 인디케이터 적용. |
-| **2026-07-06** | **보안 전수 감사** | - 아티클 삭제 권한 검증 3중 방어선 구축, 게스트 페이지 삭제 기능 완전 제거, `firestore.rules` 보안 규칙 파일 신설, `/api/ai` 요청 유효성 검증 강화. |
-| **2026-06-30** | **팝업 속도 5배 최적화** | - `/api/ai` 라우트에 **Edge Runtime** 적용 (콜드 스타트 제거).<br>- `lookupWordAll` 서버사이드 `Promise.all` 병렬 처리로 RTT 단축.<br>- `sessionStorage` 2단계 영속 캐시 적용으로 재방문 단어 0ms 표시.<br>- 단어 조회 시 경량 모델(`Gemini 2.0 Flash Lite`) 최우선 배치. |
-| **2026-06-30** | **글로벌 SEO 개선** | - 구글 검색 결과 영문 노출을 위해 NavBar 메뉴 영문화 (Library, Vocabulary 등).<br>- `SeoTextBlock.tsx` 서버 컴포넌트 신설 (JS 비활성 크롤러용 영문/다국어 텍스트).<br>- `about/page.tsx` 영문 중심 서버 컴포넌트로 전면 재작성. |
-| **2026-06-08** | **PWA 지원** | - 모바일 웹 앱 설치를 위한 `manifest.json`, 서비스 워커 연동. |
-| **2026-06-07** | **사전 Lemma 변환** | - 텍스트 내 활용형(예: '유명합니다') 클릭 시 기본형(원형/lemma: '유명하다')을 도출하여 단어장에 원형으로 저장되도록 AI 프롬프트 개편. |
-
----
-
-## 🤖 6. 다른 AI를 위한 개발 가이드라인 (Instructions for Next AI)
-
-1. **AI 프롬프트 작성 시 규칙**:
-   - 한국어 텍스트 생성 필드(`content`, `title`, `definition`, `structure` 등)에는 **절대 외국어나 한자(漢字)를 섞지 말 것**. 100% 순수 한글만 출력되도록 시스템 지침을 엄격히 유지해야 합니다.
-   - 단어 사전 조회(`lookupWord`)는 사실성과 정확성이 생명이므로 `temperature: 0.1`을 유지하고, 아티클 창작(`generateArticle`)은 레벨별 어휘 통제와 문법 제약을 철저히 준수하기 위해 `temperature: 0.45`를 유지하십시오.
-   - 글 생성 시 `src/lib/koreanCurriculum.ts`의 커리큘럼 지침(목표 문법 2~3개, 5대 어휘 2회 이상 반복, 상황도/어휘도해 프롬프트)을 프롬프트에 지속적으로 공급해야 합니다.
-2. **Node.js Runtime 주의사항**:
-   - `src/app/api/ai/route.ts`는 Vercel Node.js Runtime에서 구동됩니다. Edge 전용 제약은 해소되었지만, SDK·DB 연결 등은 이 라우트의 폴백 체인이 Node 호환 API만 사용하도록 유지하십시오.
-3. **Firestore 수정 시 주의사항**:
-   - 클라이언트에서 Firestore를 직접 호출할 때 `db.ts`의 래퍼 함수를 반드시 경유하십시오.
-   - 권한 변경 시 `firestore.rules`와 `adminConfig.ts` 양쪽을 모두 확인하십시오.
-4. **빌드 검증 명령어**:
-   - 코드 수정 후에는 반드시 `npm run build`를 실행하여 TypeScript 컴파일 에러나 린트 에러가 없는지 검증하십시오.
+과거 변경 내용의 정확한 차이와 커밋은 Git 로그를 확인합니다. 과거의 모델명, 온도, 기능 홍보 문구는 현재 사양으로 재사용하지 않습니다.

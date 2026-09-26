@@ -1,7 +1,7 @@
 /**
  * @file gemini.ts
- * @description 클라이언트 브라우저 단에서 보안이 보장된 서버 사이드 AI API 라우트(/api/ai)를 호출하기 위한 클라이언트 전용 AI 비즈니스 로직 통신 래퍼(Wrapper)입니다.
- * @why 클라이언트 단에서 직접 API Key를 소유하거나 무거운 GoogleGenerativeAI SDK를 가져오는 행위를 방지하여, 보안 유출 리스크를 완전히 차단하고 네트워크 전송량을 최적화하기 위해 존재합니다.
+ * @description Client wrapper for /api/ai. The server holds the shared credentials;
+ *              user-supplied Gemini keys are read from browser localStorage and sent per request.
  */
 
 // CEFR(유럽공통참조기준) 기준 한국어 학습 레벨 정의
@@ -70,6 +70,15 @@ export interface GenerateArticleOptions {
   customKeyword?: string;
   genre?: string;
   recentTitles?: string[];
+  seriesContext?: {
+    seriesId: string;
+    seriesTitle?: string;
+    episodeNumber: number;
+    previousArticleId?: string;
+    previousTitle?: string;
+    previousContent?: string;
+    previousChoice?: string;
+  };
 }
 
 export type GeneratedArticle = {
@@ -77,13 +86,28 @@ export type GeneratedArticle = {
   summaries?: Partial<Record<NativeLanguage, string>>; summaryLanguage?: NativeLanguage;
   topicCategory: string; level: CEFRLevel; estimatedMinutes: number;
   keyVocabulary: string[]; hookQuote?: string; discussionPrompt?: string;
+  comprehensionQuiz?: {
+    kind: 'main' | 'detail' | 'vocabulary';
+    question: string;
+    options: string[];
+    correct: number;
+    explanation: string;
+    paragraphIndex: number;
+  }[];
+  continuationChoices?: string[];
+  writingPrompt?: string;
+  seriesId?: string;
+  seriesTitle?: string;
+  episodeNumber?: number;
+  previousEpisodeId?: string;
   genre?: string; imageUrls?: string[]; imagePrompts?: string[];
+  grammarEvidence?: { pattern: string; quote: string }[];
   generatorModel?: string; _logs?: string[]; error?: string;
 };
 
 /**
  * 지정된 레벨, 주제, 모국어 설정에 맞춰 한국어 독해 기사(아티클)를 AI를 통해 생성합니다.
- * onLog 콜백을 통해 AI 모델의 전환 과정이나 생성 중 상태 로그를 클라이언트에 실시간으로 전달합니다.
+ * onLog receives the server's attempt log only after the HTTP response has completed.
  */
 export async function generateArticle(
   level: CEFRLevel,
@@ -119,6 +143,7 @@ export async function generateArticle(
       customKeyword: options.customKeyword,
       genre: options.genre,
       recentTitles: options.recentTitles,
+      seriesContext: options.seriesContext,
     }),
   });
 
@@ -162,6 +187,7 @@ export interface WordLookupResult {
   examples?: { korean: string; translation: string }[];
   _modelBasic?: string;
   _modelAdv?: string;
+  _advancedUnavailable?: boolean;
 }
 
 export interface PlacementTestResult {
@@ -170,6 +196,14 @@ export interface PlacementTestResult {
     text: string;
     questions: { question: string; options: string[]; correct: number }[];
   }[];
+}
+
+export interface WritingFeedbackResult {
+  meaningClear: boolean;
+  feedback: string;
+  correction?: string;
+  reason: string;
+  naturalExpression?: string;
 }
 
 /**

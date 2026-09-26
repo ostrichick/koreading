@@ -6,12 +6,17 @@ interface ReaderControlsProps {
   content: string;
   fontSize: 'small' | 'normal' | 'large' | 'xlarge';
   onFontSizeChange: (size: 'small' | 'normal' | 'large' | 'xlarge') => void;
+  ttsRate: TtsRate;
+  onTtsRateChange: (rate: TtsRate) => void;
 }
+export type TtsRate = 0.8 | 1 | 1.2;
 
 export const ReaderControls: React.FC<ReaderControlsProps> = ({
   content,
   fontSize,
   onFontSizeChange,
+  ttsRate,
+  onTtsRateChange,
 }) => {
   const [isPlaying, setIsPlaying] = useState<boolean>(false);
   const [ttsSupported, setTtsSupported] = useState<boolean>(false);
@@ -40,7 +45,7 @@ export const ReaderControls: React.FC<ReaderControlsProps> = ({
     const cleanText = content.replace(/[#*`_~]/g, '');
     const utterance = new SpeechSynthesisUtterance(cleanText);
     utterance.lang = 'ko-KR';
-    utterance.rate = 0.85; // Slightly slower for language learners
+    utterance.rate = ttsRate;
 
     const voices = window.speechSynthesis.getVoices();
     const koreanVoice = voices.find((v) => v.lang.startsWith('ko'));
@@ -104,6 +109,29 @@ export const ReaderControls: React.FC<ReaderControlsProps> = ({
           )}
           <span>{isPlaying ? '듣기 중지' : '본문 듣기'}</span>
         </button>
+      )}
+
+      {ttsSupported && (
+        <div aria-label="듣기 속도" style={{ display: 'flex', gap: '2px' }}>
+          {([0.8, 1, 1.2] as TtsRate[]).map(rate => (
+            <button
+              key={rate}
+              type="button"
+              aria-pressed={ttsRate === rate}
+              onClick={() => onTtsRateChange(rate)}
+              style={{
+                border: 0,
+                borderRadius: '6px',
+                padding: '4px 6px',
+                cursor: 'pointer',
+                fontSize: '0.72rem',
+                fontWeight: ttsRate === rate ? 800 : 500,
+                background: ttsRate === rate ? 'rgba(16,185,129,.12)' : 'transparent',
+                color: ttsRate === rate ? '#047857' : 'var(--text-muted, #6b7280)',
+              }}
+            >{rate.toFixed(1)}×</button>
+          ))}
+        </div>
       )}
 
       <div style={{ width: '1px', height: '14px', background: 'var(--border-subtle, #e5e7eb)' }} />

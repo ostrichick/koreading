@@ -40,7 +40,6 @@ export default function TermsPage() {
             </p>
             <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
               {[
-                'CEFR 기반 한국어 레벨 진단 테스트',
                 'AI 생성 맞춤형 한국어 독해 텍스트 제공',
                 '단어 클릭 즉시 사전 (발음·번역·예문 제공)',
                 '개인 단어장 저장 및 관리',

@@ -8,7 +8,7 @@
  */
 
 export default function PrivacyPage() {
-  const lastUpdated = '2026년 6월 7일';
+  const lastUpdated = '2026년 9월 24일';
   const operatorName = 'Koreading';
   const contactEmail = 'asulchoi@gmail.com';
   const serviceName = 'Koreading';
@@ -50,7 +50,7 @@ export default function PrivacyPage() {
               <div>
                 <h3 style={{ fontSize: '0.95rem', fontWeight: 700, marginBottom: '8px', color: 'var(--text-primary)' }}>📌 서비스 이용 과정에서 자동 생성되는 정보</h3>
                 <ul style={{ listStyle: 'none', paddingLeft: '0', display: 'flex', flexDirection: 'column', gap: '6px' }}>
-                  {['학습 레벨(CEFR 등급)', '모국어 설정값', '읽음 처리된 아티클 ID 목록', '저장한 단어 목록', 'IP 주소(Firebase 자동 기록)', '접속 기기 및 브라우저 정보(로그)'].map(item => (
+                  {['학습 레벨(CEFR 등급)', '모국어 설정값', '읽음 처리된 아티클 ID 목록', '저장한 단어 목록', '비공개 생성 글, 공개 리뷰(별점·의견·표시 이름), 비공개 리뷰 소유권 매핑', '서비스 요청 시 IP 주소 기반 이용 제한 정보 및 접속 로그'].map(item => (
                     <li key={item} style={{ display: 'flex', gap: '8px', color: 'var(--text-secondary)', fontSize: '0.875rem' }}>
                       <span style={{ color: 'var(--accent-primary)', flexShrink: 0 }}>•</span>{item}
                     </li>
@@ -60,7 +60,7 @@ export default function PrivacyPage() {
               <div>
                 <h3 style={{ fontSize: '0.95rem', fontWeight: 700, marginBottom: '8px', color: 'var(--text-primary)' }}>📌 비로그인(게스트) 이용 시</h3>
                 <p style={{ color: 'var(--text-secondary)', fontSize: '0.875rem', lineHeight: 1.7 }}>
-                  로그인 없이 이용하는 경우, 개인 식별 정보는 서버에 저장되지 않습니다. 학습 레벨 및 언어 설정은 사용자 브라우저의 로컬 스토리지(localStorage)에만 저장됩니다.
+                  비로그인 이용자는 회원 프로필과 개인 단어장을 생성하지 않습니다. 레벨·언어 설정은 브라우저 로컬 스토리지(localStorage), 임시 생성 글은 세션 스토리지(sessionStorage)에 저장됩니다. 다만 AI 요청 내용은 서비스 서버 및 설정된 AI 제공사로 전송되며, 이용 제한과 운영을 위한 IP 기반 정보·접속 로그가 처리될 수 있습니다.
                 </p>
               </div>
             </div>
@@ -72,7 +72,7 @@ export default function PrivacyPage() {
             <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
               {[
                 '회원 가입 및 로그인 처리, 본인 확인',
-                '학습 레벨 진단 및 맞춤형 콘텐츠 제공',
+                '학습 레벨 설정 및 맞춤형 콘텐츠 제공 (자동 레벨 테스트는 현재 비활성)',
                 '개인 단어장, 읽음 기록 등 학습 데이터 저장 및 관리',
                 '서비스 운영 및 품질 개선',
                 '불법·부정 이용 방지 및 보안 유지',
@@ -96,7 +96,7 @@ export default function PrivacyPage() {
                 { service: 'Google Firebase Authentication', purpose: '로그인 인증 처리', link: 'https://firebase.google.com/support/privacy' },
                 { service: 'Google Cloud Firestore', purpose: '사용자 학습 데이터 저장', link: 'https://firebase.google.com/support/privacy' },
                 { service: 'Google Gemini API', purpose: 'AI 기반 학습 텍스트 및 사전 콘텐츠 생성', link: 'https://ai.google.dev/gemini-api/terms' },
-                { service: 'Groq Inc.', purpose: 'AI 기반 텍스트 생성 (1순위 추론 엔진)', link: 'https://groq.com/privacy-policy/' },
+                { service: 'Groq Inc.', purpose: '설정된 경우 일부 AI 요청의 우선 처리 또는 글 생성 폴백', link: 'https://groq.com/privacy-policy/' },
                 { service: 'Vercel Inc.', purpose: '서비스 웹 호스팅 및 배포', link: 'https://vercel.com/legal/privacy-policy' },
                 { service: 'Google AdSense', purpose: '광고 게재 (수익화)', link: 'https://policies.google.com/privacy' },
               ].map(({ service, purpose, link }) => (
@@ -114,7 +114,9 @@ export default function PrivacyPage() {
             <h2 style={{ fontSize: '1.1rem', fontWeight: 700, marginBottom: '14px', color: 'var(--accent-primary)' }}>5. 개인정보 보관 및 파기</h2>
             <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', color: 'var(--text-secondary)', fontSize: '0.875rem', lineHeight: 1.8 }}>
               <p>수집된 개인정보는 서비스 이용 계약이 유지되는 기간 동안 보관됩니다.</p>
-              <p><strong style={{ color: 'var(--text-primary)' }}>회원 탈퇴 시:</strong> 프로필 설정 화면의 &quot;계정 삭제&quot; 버튼을 통해 즉시 모든 개인정보(이름, 이메일, 학습 데이터 등)가 영구 삭제됩니다.</p>
+              <p><strong style={{ color: 'var(--text-primary)' }}>회원 탈퇴 시:</strong> 최근 로그인 확인 후 삭제 절차를 시작합니다. 본인으로 확인되는 리뷰는 공개 문서 자체를 삭제하고 글의 평점·리뷰 수를 다시 계산합니다. 개인 단어장, 읽음 기록, 카테고리, 비공개 초안, 회원 프로필을 삭제한 뒤 Firebase 인증 계정 삭제를 시도합니다. 중간에 실패하면 계정 삭제가 완료되지 않을 수 있으며, 재로그인 후 재시도해야 할 수 있습니다.</p>
+              <p><strong style={{ color: 'var(--text-primary)' }}>탈퇴 후 남는 정보:</strong> 탈퇴 중 새 데이터 작성을 차단하기 위해 계정 UID와 삭제 시작 시각이 들어 있는 비공개 삭제 표식은 Firestore에 계속 보관됩니다. 과거 공개 글은 작성자 계정과 연결되어 있지 않아 자동으로 삭제되지 않을 수 있습니다. 이름만 있는 과거 리뷰는 소유자를 추측하여 삭제하지 않습니다. 서비스 접속 로그, 법령에 따른 보관 정보 및 브라우저에 남은 로컬 저장 데이터도 위 계정 삭제 절차의 자동 삭제 대상이 아닙니다. 추가 삭제가 필요한 경우 아래 연락처로 문의해 주세요.</p>
+              <p><strong style={{ color: 'var(--text-primary)' }}>리뷰 공개 범위:</strong> 리뷰의 별점, 의견, 표시 이름은 다른 이용자가 볼 수 있습니다. 신규 리뷰의 내부 소유권 정보는 공개 리뷰 문서와 분리해 비공개 사용자 데이터로 저장하며, 공개 리뷰 문서 ID에는 계정 UID를 사용하지 않습니다. 이전 형식으로 저장된 리뷰는 소유권을 임의 추정하지 않고 별도 검수·이관 대상으로 처리합니다.</p>
               <p><strong style={{ color: 'var(--text-primary)' }}>법령에 의한 보관:</strong> 관련 법령에 따라 일정 기간 보관이 필요한 정보는 해당 기간 동안 안전하게 보관 후 파기합니다.</p>
             </div>
           </section>
