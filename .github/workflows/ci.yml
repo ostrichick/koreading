@@ -8,15 +8,15 @@ on:
 permissions:
   contents: read
 
-# Firebase web configuration is public client configuration. CI uses inert
-# placeholders so prerendering can initialize the SDK without production keys.
+# Firebase web configuration is public client configuration, but keep it out of
+# source and load it from repository variables for CI/browser tests.
 env:
-  NEXT_PUBLIC_FIREBASE_API_KEY: ci-placeholder
-  NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN: ci-project.firebaseapp.com
-  NEXT_PUBLIC_FIREBASE_PROJECT_ID: ci-project
-  NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET: ci-project.appspot.com
-  NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID: '000000000000'
-  NEXT_PUBLIC_FIREBASE_APP_ID: '1:000000000000:web:0000000000000000000000'
+  NEXT_PUBLIC_FIREBASE_API_KEY: ${{ vars.NEXT_PUBLIC_FIREBASE_API_KEY }}
+  NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN: ${{ vars.NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN }}
+  NEXT_PUBLIC_FIREBASE_PROJECT_ID: ${{ vars.NEXT_PUBLIC_FIREBASE_PROJECT_ID }}
+  NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET: ${{ vars.NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET }}
+  NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID: ${{ vars.NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID }}
+  NEXT_PUBLIC_FIREBASE_APP_ID: ${{ vars.NEXT_PUBLIC_FIREBASE_APP_ID }}
 
 jobs:
   verify:
