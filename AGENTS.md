@@ -51,8 +51,8 @@
 ## 6. 프로젝트별 핵심 규칙
 - **한글 순수성**: `content`, `title`, `definition` 등 한국어 텍스트 필드에는 한자·외국어·괄호 번역(예: `공부(study)하다`)을 절대 섞지 않습니다.
 - **검증 상태 구분**: 위 항목은 생성 목표입니다. `schemas.ts`는 한국어 필드의 외국 문자 및 일부 중복을 거부하지만 CEFR·어휘 비율·목표 문법·반복 횟수의 자동 준수는 보장하지 않습니다. 미해결 항목은 `IMPLEMENTATION.md`에 기록합니다.
-- **관리자 이메일 동기화**: `src/lib/adminConfig.ts`는 `NEXT_PUBLIC_ADMIN_EMAILS` 환경변수(쉼표 구분)를 읽고 기본 관리자 목록을 폴백으로 포함합니다. `firestore.rules`의 `admin()`에 하드코딩된 이메일과 반드시 동기화 상태를 유지해야 합니다.
-- **Firestore 접근**: 클라이언트 코드는 반드시 `src/lib/db.ts`의 래퍼만 경유합니다. 권한·규칙 변경 시 `firestore.rules`와 `adminConfig.ts` 양쪽을 함께 확인합니다.
+- **관리자 권한**: 관리자 여부는 Firebase Auth UID에 대응하는 `admins/{uid}` 문서 존재로 판정합니다. 일반 클라이언트는 이 문서를 생성·수정·삭제할 수 없으며 Firebase Console/Admin SDK 같은 신뢰된 관리 경로에서만 프로비저닝합니다.
+- **Firestore 접근**: 클라이언트 코드는 반드시 `src/lib/db.ts`의 래퍼만 경유합니다. 권한·규칙 변경 시 `firestore.rules`와 `db.ts` 양쪽을 함께 확인합니다.
 - **AI API**: `POST /api/ai`는 Node.js Runtime으로 동작합니다. 입력 검증은 `src/lib/schemas.ts`의 zod 스키마 기준입니다.
 - **AI 모델 설정**: 기본/폴백/속도 전용 모델 목록은 `src/lib/geminiModels.ts`에서 관리합니다.
 - **타입 규율**: `any` 사용을 금지합니다. API 응답은 명시적 인터페이스로 파싱하고, 예외는 `unknown`을 받아 `instanceof Error`로 좁혀서 처리합니다.

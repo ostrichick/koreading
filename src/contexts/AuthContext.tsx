@@ -15,7 +15,7 @@ import {
   User,
 } from 'firebase/auth';
 import { auth, googleProvider } from '@/lib/firebase';
-import { createOrUpdateUser, getUserProfile, UserProfile } from '@/lib/db';
+import { createOrUpdateUser, getAdminStatus, getUserProfile, UserProfile } from '@/lib/db';
 import { serverTimestamp, Timestamp } from 'firebase/firestore';
 import { getGuestLang, getGuestLevel } from '@/lib/storage';
 
@@ -24,6 +24,7 @@ interface AuthContextType {
   user: User | null;              // Firebase Auth가 반환하는 기본 유저 객체
   profile: UserProfile | null;    // Firestore DB에 저장된 유저 커스텀 프로필 정보
   loading: boolean;               // 현재 로그인 여부를 판별하고 있는 중인지 확인하는 로딩 상태
+  isAdmin: boolean;               // Firestore admins/{uid} 등록 여부
   signInWithGoogle: () => Promise<void>; // 구글 팝업 로그인 함수
   logout: () => Promise<void>;           // 로그아웃 함수
   refreshProfile: () => Promise<void>;   // 수동 프로필 데이터 최신화 함수
@@ -34,6 +35,7 @@ const AuthContext = createContext<AuthContextType>({
   user: null,
   profile: null,
   loading: true,
+  isAdmin: false,
   signInWithGoogle: async () => {},
   logout: async () => {},
   refreshProfile: async () => {},
@@ -44,6 +46,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [profile, setProfile] = useState<UserProfile | null>(null);
   const [loading, setLoading] = useState(true);
+  const [isAdmin, setIsAdmin] = useState(false);
 
   // 사용자의 Firestore 프로필 데이터를 수동으로 다시 불러와 로컬 상태에 동기화합니다.
   const refreshProfile = async () => {
@@ -59,7 +62,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         setUser(firebaseUser);
         if (firebaseUser) {
           // Firebase Auth 로그인 성공 시, Firestore에 사용자 프로필 정보가 등록되어 있는지 조회합니다.
-          const existing = await getUserProfile(firebaseUser.uid);
+          const [existing, admin] = await Promise.all([
+            getUserProfile(firebaseUser.uid),
+            getAdminStatus(firebaseUser.uid),
+          ]);
+          setIsAdmin(admin);
           if (!existing) {
             // 가입 정보가 없는 최초 로그인 유저라면 기본 설정을 바탕으로 DB에 새 유저 문서를 생성합니다.
             const newProfile: UserProfile = {
@@ -86,10 +93,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         } else {
           // 비로그인 상태일 때는 프로필 값을 비워둡니다.
           setProfile(null);
+          setIsAdmin(false);
         }
       } catch (err) {
         console.error('❌ Auth state change error:', err);
         setProfile(null);
+        setIsAdmin(false);
       } finally {
         setLoading(false); // 인증 상태 감지가 완료되었으므로 로딩을 비활성화합니다.
       }
@@ -116,7 +125,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   };
 
   return (
-    <AuthContext.Provider value={{ user, profile, loading, signInWithGoogle, logout, refreshProfile }}>
+    <AuthContext.Provider value={{ user, profile, loading, isAdmin, signInWithGoogle, logout, refreshProfile }}>
       {children}
     </AuthContext.Provider>
   );
@@ -124,4 +133,3 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
 // 하위 컴포넌트에서 쉽게 로그인 컨텍스트를 접근할 수 있도록 돕는 커스텀 훅입니다.
 export const useAuth = () => useContext(AuthContext);
-

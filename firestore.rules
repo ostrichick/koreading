@@ -3,7 +3,7 @@ service cloud.firestore {
   match /databases/{database}/documents {
     function owner(uid) { return request.auth != null && request.auth.uid == uid; }
     function active() { return request.auth != null && !exists(/databases/$(database)/documents/accountDeletions/$(request.auth.uid)); }
-    function admin() { return active() && request.auth.token.get('email_verified', false) && request.auth.token.get('email', '') in ['asulchoi@gmail.com','xilencist@gmail.com']; }
+    function admin() { return active() && exists(/databases/$(database)/documents/admins/$(request.auth.uid)); }
     function validReviewFields(d) {
       return d.rating is int && d.rating >= 1 && d.rating <= 5
         && d.pros is string && d.pros.size() <= 2000 && d.cons is string && d.cons.size() <= 2000
@@ -185,6 +185,11 @@ service cloud.firestore {
           : after.get('lastReviewUid', '') == before.get('lastReviewUid', ''))
         && after.get('lastReviewId', '') == before.get('lastReviewId', '');
     }
+    match /admins/{uid} {
+      allow get: if active() && owner(uid);
+      allow list, create, update, delete: if false;
+    }
+
     match /articles/{id} {
       allow read: if true;
       allow create: if admin() && validInitialArticle(request.resource.data);

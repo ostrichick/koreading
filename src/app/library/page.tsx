@@ -13,7 +13,6 @@ import { TOPICS, CEFRLevel, NativeLanguage, generateArticle, type GenerateArticl
 import { GENRE_OPTIONS } from '@/lib/topicSeeds';
 import { saveArticle, getDraftArticles, publishDraft, getReadArticles, getArticleProgressList, createOrUpdateUser, Article, type ArticleProgress } from '@/lib/db';
 import { approvedImageUrls } from '@/lib/articlePublishing';
-import { isAdminEmail } from '@/lib/adminConfig';
 import { getGuestLevel, getGuestLang, setGuestLang } from '@/lib/storage';
 import { articleSummary, deriveLearningProfile, recommendReading } from '@/lib/learning';
 import AlertModal from '@/components/AlertModal';
@@ -156,7 +155,7 @@ const TRANSLATIONS = {
 };
 
 export default function LibraryPage() {
-  const { user, profile, loading: authLoading, refreshProfile } = useAuth();
+  const { user, profile, loading: authLoading, isAdmin, refreshProfile } = useAuth();
   const router = useRouter();
 
   // 도서관 필터링용 상태들
@@ -675,7 +674,7 @@ export default function LibraryPage() {
                   <div key={draft.id} style={{ display: 'flex', justifyContent: 'space-between', gap: '12px', alignItems: 'center', flexWrap: 'wrap', borderTop: '1px solid var(--border-subtle)', paddingTop: '10px' }}>
                     <div style={{ flex: '1 1 360px' }}>
                       <div><strong>{draft.title}</strong><span style={{ color: 'var(--text-muted)', marginLeft: '8px', fontSize: '0.8rem' }}>{draft.level} · 비공개</span></div>
-                      {user.emailVerified && user.email && isAdminEmail(user.email) && draft.comprehensionQuiz?.length === 3 && (
+                      {isAdmin && draft.comprehensionQuiz?.length === 3 && (
                         <details style={{ marginTop: '8px', fontSize: '0.8rem', color: 'var(--text-secondary)' }}>
                           <summary style={{ cursor: 'pointer', fontWeight: 700 }}>학습 퀴즈 3문항 검수</summary>
                           <ol style={{ margin: '8px 0 0 18px', padding: 0 }}>
@@ -691,7 +690,7 @@ export default function LibraryPage() {
                     </div>
                     <div style={{ display: 'flex', gap: '8px' }}>
                       <button type="button" className="btn btn-sm btn-ghost" onClick={() => openDraft(draft)}>읽기</button>
-                      {user.emailVerified && user.email && isAdminEmail(user.email) && (
+                      {isAdmin && (
                         <button type="button" className="btn btn-sm btn-primary" disabled={publishingId !== null} onClick={() => void handlePublishDraft(draft)}>
                           {publishingId === draft.id ? '게시 중…' : '관리자 공개 게시'}
                         </button>

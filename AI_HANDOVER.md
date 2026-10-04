@@ -42,7 +42,7 @@
 
 ## 권한 및 운영 경계
 
-- `firestore.rules`의 `users/{uid}` 및 하위 학습 컬렉션은 소유자 중심 권한을 사용합니다. 관리자 삭제 권한은 검증된 이메일을 Firestore 규칙이 판단합니다. `NEXT_PUBLIC_ADMIN_EMAILS`는 UI 가드이며 여기에만 관리자 이메일을 추가해도 서버 규칙 권한은 늘지 않습니다.
+- `firestore.rules`의 `users/{uid}` 및 하위 학습 컬렉션은 소유자 중심 권한을 사용합니다. 관리자 권한은 Firebase Auth UID와 같은 `admins/{uid}` 문서 존재를 규칙과 클라이언트 UI가 함께 확인합니다. 일반 클라이언트는 관리자 문서를 생성·수정·삭제할 수 없고 Firebase Console/Admin SDK 등 신뢰된 관리 경로에서만 프로비저닝합니다.
 - R1 학습 루프는 `users/{uid}/articleProgress/{articleId}`와 `users/{uid}/quizAttempts/{attemptId}`에만 사용자 진행도·퀴즈 시도·난이도 피드백을 저장합니다. 다른 회원과 비로그인 사용자는 읽을 수 없고 계정 삭제 시 함께 정리합니다. `articleSchema`는 기존 글 호환을 위해 퀴즈를 선택 필드로 유지하지만, 신규 AI 생성 결과는 `generatedArticleSchema`가 `main`·`detail`·`vocabulary` 세 문항과 실제 본문 문단을 가리키는 `paragraphIndex`를 요구합니다.
 - `articles/{id}`는 읽기 공개, 생성은 검증된 관리자만 허용합니다. `firestore.rules`는 공개 게시와 비공개 초안 생성 시 허용 필드·이미지 호스트·서버 생성 시각·평점 초기값을 검사합니다. 클라이언트는 생성 글을 소유자 비공개 초안으로 저장하고 관리자의 명시적 게시만 허용합니다. 운영 배포 여부와 과거 공개 글의 신뢰성은 미확인입니다.
 - 신규 리뷰는 `articles/{articleId}/reviews/{opaqueReviewId}` 공개 문서에 별점·의견·표시 이름과 비민감 `schemaVersion: 2`만 저장하고, 계정과의 연결은 소유자만 읽을 수 있는 `users/{uid}/reviewOwnership/{articleId}`의 `{ reviewId }` 매핑으로 분리합니다. 스키마 마커 때문에 임의 문서 ID가 우연히/악의적으로 다른 UID와 같아도 신규 리뷰를 레거시 UID 소유 리뷰로 오인하지 않습니다. 작성·수정·탈퇴 삭제와 글 평점 집계는 Firestore 트랜잭션/규칙에서 함께 검증합니다. 기존 UID 문서 ID 리뷰는 호환 경로로만 처리하며 `userId`가 없더라도 문서 ID가 UID와 정확히 같은 경우 외에는 소유자를 추측하지 않습니다. 탈퇴는 재인증 확인 → 삭제 표식 → 비공개 매핑 리뷰 및 확인 가능한 레거시 리뷰 삭제·평점 재집계 → 개인 하위 데이터 삭제 → 프로필 삭제 → Auth 삭제 순서입니다. **비공개 삭제 표식의 UID는 재시도/쓰기 차단을 위해 남습니다.**
@@ -61,7 +61,7 @@
 | `src/app/about/page.tsx`, `src/app/privacy/page.tsx`, `src/app/terms/page.tsx` | 서비스·개인정보·약관 공개 페이지(운영 현실과 문구 별도 점검 필요) |
 | `src/components/NavBar.tsx`, `Footer.tsx`, `AlertModal.tsx`, `ArticleIllustration.tsx` | 공통 탐색/푸터/알림/이미지. 과거 `SeoTextBlock.tsx`는 존재하나 루트 레이아웃에서 현재 사용하지 않음 |
 | `src/contexts/AuthContext.tsx`, `src/lib/firebase.ts`, `src/lib/db.ts` | Firebase 인증 상태 및 클라이언트 데이터 접근 래퍼 |
-| `src/lib/reviewStore.ts`, `src/lib/deleteAccount.ts`, `src/lib/adminConfig.ts`, `src/lib/articlePublishing.ts`, `firestore.rules` | 리뷰 원자성/삭제와 평점, 계정 삭제, 관리자 UI 식별, 공개 이미지 허용 호스트, 실제 DB 권한 |
+| `src/lib/reviewStore.ts`, `src/lib/deleteAccount.ts`, `src/lib/db.ts`, `src/lib/articlePublishing.ts`, `firestore.rules` | 리뷰 원자성/삭제와 평점, 계정 삭제, UID 기반 관리자 UI 식별, 공개 이미지 허용 호스트, 실제 DB 권한 |
 | `src/app/api/ai/route.ts`, `src/lib/gemini.ts`, `src/lib/geminiModels.ts`, `src/lib/schemas.ts`, `src/lib/aiBudget.ts` | AI 요청 처리, 클라이언트 래퍼, 모델 체인/캐시, 입력·응답 형태 검사, 공급자 시도·30초 마감 예산 |
 | `src/lib/koreanCurriculum.ts`, `src/lib/topicSeeds.ts`, `src/lib/koreanVisuals.ts` | 교육 프롬프트, 소재·장르, 사진 검색/벡터 유틸 |
 | `src/hooks/useWordLookup.ts`, `src/lib/learning.ts`, `src/lib/storage.ts`, `src/lib/utils.ts` | 문맥 사전 상태/캐시, 레벨 추천·요약, 게스트 저장소, 일반 유틸 |
