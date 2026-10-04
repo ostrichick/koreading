@@ -20,7 +20,6 @@ import {
   type FieldValue,
 } from 'firebase/firestore';
 import { db } from './firebase';
-import { isAdminEmail } from './adminConfig';
 import type { CEFRLevel, NativeLanguage } from './gemini';
 import { articleSchema } from './schemas';
 import { approvedImageUrls } from './articlePublishing';
@@ -135,6 +134,12 @@ function articleFields(article: object) {
   return { ...parsed, ...(images.length ? { imageUrls: images } : {}) };
 }
 
+/** Admin access is provisioned out-of-band by creating admins/{uid}. */
+export async function getAdminStatus(uid: string): Promise<boolean> {
+  if (auth.currentUser?.uid !== uid) return false;
+  return (await getDoc(doc(db, 'admins', uid))).exists();
+}
+
 export interface ComprehensionQuestion {
   kind: 'main' | 'detail' | 'vocabulary';
   question: string;
@@ -188,7 +193,7 @@ export async function getDraftArticles(uid: string): Promise<Article[]> {
 /** Publication is an explicit administrator action, never an automatic user draft write. */
 export async function publishDraft(draftId: string): Promise<string> {
   const user = auth.currentUser;
-  if (!user || !user.emailVerified || !isAdminEmail(user.email)) throw new Error('Administrator sign-in required');
+  if (!user || !(await getAdminStatus(user.uid))) throw new Error('Administrator sign-in required');
   const draft = doc(db, 'users', user.uid, 'drafts', draftId);
   const published = doc(db, 'articles', draftId);
   await runTransaction(db, async tx => {
@@ -421,12 +426,11 @@ export async function getReviews(articleId: string): Promise<Review[]> {
 /**
  * AI가 생성한 한국어 독해 지문 중 품질이 미비하거나 비정상적인 지문을 완전히 영구 삭제합니다.
  * @param id - 삭제할 아티클 Firestore 문서 ID
- * @param callerEmail - 삭제를 요청하는 사용자의 이메일 (관리자 여부 검증에 사용)
  * @throws 사용자가 관리자가 아닰 경우 Error 발생
  */
-export async function deleteArticle(id: string, callerEmail: string | null | undefined): Promise<void> {
-  // 클라이언트 측 관리자 가드 (천번째 방어선: UI)
-  if (!isAdminEmail(callerEmail)) {
+export async function deleteArticle(id: string): Promise<void> {
+  const user = auth.currentUser;
+  if (!user || !(await getAdminStatus(user.uid))) {
     throw new Error('PERMISSION_DENIED: 관리자만 아티클을 삭제할 수 있습니다.');
   }
   const ref = doc(db, 'articles', id);

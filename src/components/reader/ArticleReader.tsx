@@ -12,7 +12,6 @@ import { useAuth } from '@/contexts/AuthContext';
 import { getArticleById, markArticleRead, saveVocabulary, getReadArticles, Article, saveReview, getReviews, Review, deleteArticle, getCustomCategories, startArticleProgress, getArticleProgress, saveQuizAttempt, saveDifficultyFeedback, saveSeriesChoice, type DifficultyFeedback } from '@/lib/db';
 import { TOPICS } from '@/lib/gemini';
 import { getGuestLang } from '@/lib/storage';
-import { isAdminEmail } from '@/lib/adminConfig';
 import AlertModal from '@/components/AlertModal';
 import ArticleIllustration from '@/components/ArticleIllustration';
 import EditorialHeroCard from '@/components/reader/EditorialHeroCard';
@@ -164,7 +163,7 @@ const TRANSLATIONS = {
 
 export default function ArticleReader({ initialArticle }: { initialArticle: Article }) {
   const id = initialArticle.id;                 // Next.js 동적 라우팅 파라미터 [id] 언팩
-  const { user, profile } = useAuth();        // AuthContext 세션 정보 조회
+  const { user, profile, isAdmin } = useAuth();        // AuthContext 세션 정보 조회
   const router = useRouter();
   const [guestLanguage, setGuestLanguage] = useState<import('@/lib/gemini').NativeLanguage>('en');
   useEffect(() => setGuestLanguage(getGuestLang()), []);
@@ -618,7 +617,6 @@ export default function ArticleReader({ initialArticle }: { initialArticle: Arti
   };
 
   // 현재 로그인한 사용자가 관리자인지 여부 (삭제 버튼 표시 제어)
-  const isAdmin = isAdminEmail(user?.email);
 
   // 품질 저하 시 독서 화면에서 해당 텍스트를 영구 삭제하는 관리자 전용 액션
   const handleDeleteArticle = async () => {
@@ -639,7 +637,7 @@ export default function ArticleReader({ initialArticle }: { initialArticle: Arti
     if (!confirmDelete) return;
 
     try {
-      await deleteArticle(id, user.email); // callerEmail 전달 → db.ts에서 관리자 검증
+      await deleteArticle(id);
       triggerAlert('텍스트가 성공적으로 삭제되었습니다. 도서관으로 이동합니다.', '삭제 완료', 'success');
       setTimeout(() => {
         router.push('/library');

@@ -15,3 +15,17 @@ test-results/
 !.env.local.example
 design_samples/
 .vercel
+*.pem
+*.key
+*.p8
+*.p12
+*.pfx
+*.jks
+*.keystore
+id_rsa
+id_dsa
+id_ecdsa
+id_ed25519
+credentials.json
+service-account*.json
+service_account*.json

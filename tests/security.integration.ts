@@ -10,7 +10,7 @@ import type { IdTokenResult } from 'firebase/auth';
 
 let env: RulesTestEnvironment;
 const dbFor = (uid: string): Firestore => (env.authenticatedContext(uid).firestore() as unknown as { _delegate: Firestore })._delegate;
-const adminDb = (): Firestore => (env.authenticatedContext('admin', { email: 'asulchoi@gmail.com', email_verified: true }).firestore() as unknown as { _delegate: Firestore })._delegate;
+const adminDb = (): Firestore => (env.authenticatedContext('admin').firestore() as unknown as { _delegate: Firestore })._delegate;
 const newArticle = () => ({
   title: '시장 이야기', content: '시장에 가요. 과일을 샀어요. '.repeat(8), summary: 'A market story',
   topicCategory: 'food', level: 'A1', estimatedMinutes: 2, keyVocabulary: ['시장', '과일'],
@@ -21,7 +21,10 @@ before(async () => {
   assert.ok(process.env.FIRESTORE_EMULATOR_HOST, 'Emulator required');
   env = await initializeTestEnvironment({ projectId: 'demo-koreading', firestore: { rules: await readFile('firestore.rules','utf8') } });
   await env.clearFirestore();
-  await env.withSecurityRulesDisabled(async c => { await setDoc(doc(c.firestore(),'articles/example'), { title:'예시', ratingCount:0, averageRating:0 }); });
+  await env.withSecurityRulesDisabled(async c => {
+    await setDoc(doc(c.firestore(),'articles/example'), { title:'예시', ratingCount:0, averageRating:0 });
+    await setDoc(doc(c.firestore(),'admins/admin'), { role: 'admin' });
+  });
 });
 after(async () => { await env.cleanup(); });
 test('public reads, private isolation and forged aggregate prevention', async () => {
@@ -37,6 +40,9 @@ test('public reads, private isolation and forged aggregate prevention', async ()
 test('ordinary members cannot publish, and admin publication validates initial aggregate, content and image hosts', async () => {
   const member = dbFor('mallory'); const admin = adminDb();
   const publicDoc = doc(member, 'articles/mallory-published');
+  await assertFails(setDoc(doc(member, 'admins/mallory'), { role: 'admin' }));
+  await assertFails(getDoc(doc(member, 'admins/admin')));
+  await assertSucceeds(getDoc(doc(admin, 'admins/admin')));
   await assertFails(setDoc(publicDoc, newArticle()));
   await assertFails(setDoc(doc(admin, 'articles/forged-sum'), { ...newArticle(), ratingSum: 123 }));
   await assertFails(setDoc(doc(admin, 'articles/forged-count'), { ...newArticle(), ratingCount: 1 }));
@@ -45,8 +51,8 @@ test('ordinary members cannot publish, and admin publication validates initial a
   await assertFails(setDoc(doc(admin, 'articles/lookalike-image'), { ...newArticle(), imageUrls: ['https://images.unsplash.com.evil.example/pixel'] }));
   await assertFails(setDoc(doc(admin, 'articles/mystery-field'), { ...newArticle(), customPublicFlag: true }));
   await assertFails(setDoc(doc(admin, 'articles/bad-time'), { ...newArticle(), createdAt: new Date(0) }));
-  const unverified = (env.authenticatedContext('unverified', { email: 'asulchoi@gmail.com', email_verified: false }).firestore() as unknown as { _delegate: Firestore })._delegate;
-  await assertFails(setDoc(doc(unverified, 'articles/unverified'), newArticle()));
+  const emailOnly = (env.authenticatedContext('email-only', { email: 'admin@example.com', email_verified: true }).firestore() as unknown as { _delegate: Firestore })._delegate;
+  await assertFails(setDoc(doc(emailOnly, 'articles/email-only'), newArticle()));
   await assertSucceeds(setDoc(doc(admin, 'articles/admin-published'), newArticle()));
   assert.equal((await getDoc(doc(env.unauthenticatedContext().firestore(), 'articles/admin-published'))).data()?.ratingSum, 0);
   await assertFails(updateDoc(publicDoc, { imageUrls: ['https://tracker.example/pixel'] }));

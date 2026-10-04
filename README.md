@@ -69,7 +69,7 @@ npm run dev
 | `CRON_SECRET` | 세 개의 Cron API용 정확한 `Authorization: Bearer ...` 인증 값 |
 | `UPSTASH_REDIS_REST_URL`, `UPSTASH_REDIS_REST_TOKEN` | **배포/프로덕션 AI 요청 시 둘 다 필수.** 하나가 없거나 Redis 장애 시 AI 요청은 503으로 거부. 로컬 개발에서 두 값 모두 없을 때만 인스턴스별 메모리 제한 적용 |
 | `AI_DAILY_REQUEST_LIMIT`, `AI_RATE_LIMIT_SALT` | 선택적 전역 HTTP 요청 상한(기본 일 1,000건)과 식별 해시용 값. 요청당 공급자 시도·토큰 제한과는 별개이며 실제 청구액 상한이 아님 |
-| `NEXT_PUBLIC_ADMIN_EMAILS` | 클라이언트 관리자 표시/가드용. 서버 권한은 `firestore.rules`의 이메일 목록이 결정하므로 동기화 필요 |
+| 관리자 권한 | Firebase Auth UID와 같은 ID의 `admins/{uid}` Firestore 문서로 판정. 일반 클라이언트 쓰기는 금지되며 Firebase Console/Admin SDK 등 신뢰된 관리 경로에서 프로비저닝 |
 
 개인 Gemini 키를 UI에 입력하면 브라우저 `localStorage`에 저장되어 AI 요청 때 서버로 전송됩니다. 배포 시 공유 제한 구성 및 실제 비용 계측 여부를 확인하세요.
 

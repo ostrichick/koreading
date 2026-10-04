@@ -5,11 +5,10 @@ import { usePathname, useRouter } from 'next/navigation';
 import Image from 'next/image';
 import { useAuth } from '@/contexts/AuthContext';
 import { useState, useRef, useEffect } from 'react';
-import { isAdminEmail } from '@/lib/adminConfig';
 
 // 서비스 최상단 공통 헤더 및 탐색 메뉴 역할을 수행하는 네비게이션 바 컴포넌트입니다.
 export default function NavBar() {
-  const { user, profile, logout } = useAuth(); // 사용자 세션 및 프로필 데이터 로드
+  const { user, profile, logout, isAdmin } = useAuth(); // 사용자 세션 및 프로필 데이터 로드
   const pathname = usePathname();              // 현재 활성화된 브라우저 주소 경로(URL)
   const router = useRouter();                  // Next.js 페이지 라우터
   const [menuOpen, setMenuOpen] = useState(false); // 프로필 드롭다운 메뉴 활성화 상태
@@ -18,9 +17,6 @@ export default function NavBar() {
   const navRef = useRef<HTMLDivElement>(null);
   const mobileToggleRef = useRef<HTMLButtonElement>(null);
   const accountToggleRef = useRef<HTMLButtonElement>(null);
-
-  // 현재 로그인한 사용자가 관리자인지 판별합니다.
-  const isAdmin = isAdminEmail(user?.email);
 
   // 드롭다운 메뉴 바깥 영역을 클릭했을 때 메뉴를 자동으로 닫아주는 기능입니다.
   useEffect(() => {
